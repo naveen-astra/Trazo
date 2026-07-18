@@ -1,0 +1,94 @@
+# The one true local environment (ADR-007). `make up` from the repo root.
+# MinIO is opt-in: `docker compose --profile minio up` (ADR-010).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-trazo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trazo}
+      POSTGRES_DB: ${POSTGRES_DB:-trazo}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trazo} -d ${POSTGRES_DB:-trazo}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # AOF on: the bus is the durability handoff between ingest ack and
+    # persistence (ARCHITECTURE §3, ADR-002).
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  opa:
+    image: openpolicyagent/opa:0.70.0
+    command: ["run", "--server", "--addr", ":8181", "/policies"]
+    ports:
+      - "${OPA_PORT:-8181}:8181"
+    volumes:
+      - ../policies:/policies:ro
+
+  control-plane:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.control-plane
+    environment:
+      TRAZO_API_KEY: ${TRAZO_API_KEY:-dev-change-me}
+      TRAZO_DATABASE_URL: postgresql://${POSTGRES_USER:-trazo}:${POSTGRES_PASSWORD:-trazo}@postgres:5432/${POSTGRES_DB:-trazo}
+      TRAZO_REDIS_URL: redis://redis:6379/0
+      TRAZO_OPA_URL: http://opa:8181
+    ports:
+      - "${CONTROL_PLANE_PORT:-8420}:8420"
+    volumes:
+      - blobdata:/var/lib/trazo/blobs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8420/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  dashboard:
+    build:
+      context: ../dashboard
+      dockerfile: ../deploy/Dockerfile.dashboard
+    ports:
+      - "${DASHBOARD_PORT:-5173}:80"
+    depends_on:
+      - control-plane
+
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    profiles: ["minio"]
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-trazo}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-trazo-dev-only}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - miniodata:/data
+
+volumes:
+  pgdata:
+  redisdata:
+  blobdata:
+  miniodata:

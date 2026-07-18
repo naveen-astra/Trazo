@@ -1,0 +1,12 @@
+# Normalize line endings: LF in the repository, LF on checkout everywhere.
+# Contributors are on mixed platforms; shell scripts and compose files break on CRLF.
+* text=auto eol=lf
+
+*.sh text eol=lf
+Makefile text eol=lf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary

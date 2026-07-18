@@ -1,0 +1,27 @@
+# Root tool configuration only — this is not an installable package.
+# Installable packages live in sdk/ (trazo) and control-plane/ (trazo-server),
+# each with its own lockfile (ADR-001, DEVELOPMENT_GUIDE §3).
+
+[tool.ruff]
+# SDK must stay 3.10-compatible (ADR-008); lint the whole repo at the
+# lowest supported version so 3.11-only syntax can't leak into sdk/.
+target-version = "py310"
+line-length = 88
+src = ["sdk/src", "control-plane/src"]
+extend-exclude = ["dashboard", "deploy"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # bugbear
+    "C4",  # comprehensions
+    "SIM", # simplify
+    "RUF", # ruff-specific
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["trazo", "trazo_server"]

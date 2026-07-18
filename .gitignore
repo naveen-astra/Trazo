@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+
+# Node / dashboard
+node_modules/
+dashboard/dist/
+*.tsbuildinfo
+
+# Environment & secrets
+.env
+deploy/.env
+
+# Trazo runtime artifacts (SDK spool/cache, local blob store)
+.trazo/
+blobs/
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
