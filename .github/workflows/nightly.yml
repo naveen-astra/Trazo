@@ -1,0 +1,22 @@
+# Nightly skeleton (TRZ-P0-05). Jobs are placeholders that fail loudly if
+# their phase has closed without wiring them up:
+#   smoke            — highest closed phase's scripts/smoke/phaseN.sh (P0+)
+#   adapter-matrix   — LangGraph/CrewAI min+latest versions (TRZ-P3-06)
+#   overhead         — SDK ≤10% wall-clock benchmark (TRZ-P2-09)
+#   corpus           — demo-agent trace generation (TRZ-P3-05)
+name: nightly
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Phase 0 smoke (compose stack boots)
+        run: |
+          cp deploy/.env.example deploy/.env
+          bash scripts/smoke/phase0.sh
