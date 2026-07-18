@@ -30,3 +30,8 @@ blobs/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Internal planning/design docs: kept locally, not published in the repo.
+# Any file named README.md (at any depth) is the one exception.
+*.md
+!README.md
