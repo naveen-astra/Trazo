@@ -1,6 +1,8 @@
 # CI (TRZ-P0-05). Path-filtered per lane so dashboard-only PRs skip Python
-# jobs (DEVELOPMENT_GUIDE §5). Contract and integration jobs are added with
-# Phase 1 (TRZ-P1-02/05) once there is a schema and a compose-backed test.
+# jobs (DEVELOPMENT_GUIDE §5). Contract tests run as part of the normal
+# pytest suite (test_events_contract.py, both packages); integration tests
+# run against the postgres/redis service containers below and self-skip
+# gracefully if a runner ever lacks them (TRZ-P1-02/05/09).
 name: ci
 
 on:
@@ -38,8 +40,30 @@ jobs:
     needs: changes
     if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: trazo
+          POSTGRES_PASSWORD: trazo
+          POSTGRES_DB: trazo
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U trazo -d trazo"
+          --health-interval=5s --health-timeout=3s --health-retries=10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s --health-timeout=3s --health-retries=10
+    env:
+      TRAZO_DATABASE_URL: postgresql://trazo:trazo@localhost:5432/trazo
+      TRAZO_REDIS_URL: redis://localhost:6379/0
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # schema-freeze check below diffs against origin/main
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.11"
@@ -47,6 +71,10 @@ jobs:
         run: |
           uvx ruff check .
           uvx ruff format --check .
+      - name: Schema freeze check (no drift without a version bump)
+        run: |
+          git show origin/main:schema/trace-event.v1.schema.json > /tmp/schema-before.json 2>/dev/null || echo '{}' > /tmp/schema-before.json
+          python scripts/check_schema_version_bump.py /tmp/schema-before.json schema/trace-event.v1.schema.json
       - name: SDK — sync, typecheck, test
         working-directory: sdk
         run: |

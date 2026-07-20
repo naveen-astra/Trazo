@@ -16,7 +16,7 @@ nuke:
 	$(COMPOSE) down --volumes --remove-orphans
 
 seed:
-	@echo "seed: sample-trace ingest lands with TRZ-P1-01 (schema/examples/)"; exit 1
+	bash scripts/seed.sh
 
 dev-server:
 	cd control-plane && uv run python -m trazo_server
@@ -29,7 +29,11 @@ test:
 	cd control-plane && uv run pytest
 
 test-int:
-	@echo "test-int: integration tests land with Phase 1 (needs compose up)"; exit 1
+	# Same suite as 'test': the integration tests self-skip without live
+	# Postgres/Redis and execute for real once 'make up' has provided them
+	# (DEVELOPMENT_GUIDE.md §4). Run `make up` first.
+	cd sdk && uv run pytest
+	cd control-plane && uv run pytest
 
 lint:
 	uvx ruff check .
