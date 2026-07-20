@@ -6,9 +6,14 @@ WORKDIR /app
 
 COPY control-plane/pyproject.toml control-plane/README.md ./
 COPY control-plane/src ./src
+COPY control-plane/alembic.ini ./
+COPY control-plane/migrations ./migrations
 
 RUN pip install --no-cache-dir .
 
 EXPOSE 8420
 
-CMD ["python", "-m", "trazo_server"]
+# Migrate then serve: TRZ-P1-04's baseline migration must be applied before
+# the control plane can persist anything (ARCHITECTURE.md: this container
+# owns the store worker too, so there's no separate migration step to run).
+CMD ["sh", "-c", "alembic upgrade head && python -m trazo_server"]
