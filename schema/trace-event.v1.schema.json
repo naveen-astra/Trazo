@@ -1,0 +1,288 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trazo.dev/schema/trace-event.v1.schema.json",
+  "title": "Trazo Trace Event v1",
+  "description": "Canonical envelope for every Trazo trace event. Implements EVENTS.md exactly. Additive-only within v1 (TRZ-P1-09 freeze); renames/removals require v2 + an ADR.",
+  "x-trazo-schema-version": "1.0",
+  "type": "object",
+  "required": ["schema", "event_id", "run_id", "project", "seq", "ts", "kind", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "trazo.v1" },
+    "event_id": { "type": "string", "pattern": "^evt_" },
+    "run_id": { "type": "string", "pattern": "^run_" },
+    "project": { "type": "string", "minLength": 1 },
+    "seq": { "type": "integer", "minimum": 0 },
+    "ts": { "type": "string", "format": "date-time" },
+    "kind": { "$ref": "#/$defs/kind" },
+    "step_id": { "type": "string", "pattern": "^stp_" },
+    "agent_id": { "type": "string", "minLength": 1 },
+    "parent_event_id": { "type": "string", "pattern": "^evt_" },
+    "fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "otel": { "$ref": "#/$defs/otel" },
+    "payload": { "type": "object" },
+    "blobs": {
+      "type": "array",
+      "default": [],
+      "items": { "$ref": "#/$defs/blobEntry" }
+    }
+  },
+  "allOf": [
+    { "if": { "properties": { "kind": { "const": "run.started" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/runStartedPayload" } } } },
+    { "if": { "properties": { "kind": { "const": "run.finished" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/runFinishedPayload" } } } },
+    { "if": { "properties": { "kind": { "const": "step.started" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/stepStartedPayload" } } } },
+    { "if": { "properties": { "kind": { "const": "step.finished" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/stepFinishedPayload" } } } },
+    { "if": { "properties": { "kind": { "const": "llm.call" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/llmCallPayload" } }, "required": ["fingerprint"] } },
+    { "if": { "properties": { "kind": { "const": "tool.call" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/toolCallPayload" } }, "required": ["fingerprint"] } },
+    { "if": { "properties": { "kind": { "const": "memory.read" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/memoryReadPayload" } }, "required": ["fingerprint"] } },
+    { "if": { "properties": { "kind": { "const": "memory.write" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/memoryWritePayload" } }, "required": ["fingerprint"] } },
+    { "if": { "properties": { "kind": { "const": "agent.message" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/agentMessagePayload" } } } },
+    { "if": { "properties": { "kind": { "const": "plan.updated" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/planUpdatedPayload" } } } },
+    { "if": { "properties": { "kind": { "const": "human.checkpoint" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/humanCheckpointPayload" } }, "required": ["fingerprint"] } },
+    { "if": { "properties": { "kind": { "const": "policy.decision" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/policyDecisionPayload" } } } },
+    { "if": { "properties": { "kind": { "const": "detection.raised" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/detectionRaisedPayload" } } } },
+    { "if": { "properties": { "kind": { "const": "sdk.diagnostic" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/sdkDiagnosticPayload" } } } }
+  ],
+  "$defs": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "run.started", "run.finished",
+        "step.started", "step.finished",
+        "llm.call", "tool.call", "memory.read", "memory.write",
+        "agent.message", "plan.updated", "human.checkpoint",
+        "policy.decision", "detection.raised", "sdk.diagnostic"
+      ]
+    },
+    "offloadable": {
+      "description": "Any JSON value. May be replaced by a blobRef when the inline payload exceeds the 32KB offload limit (EVENTS.md §1); the substitution is listed in the envelope's blobs array."
+    },
+    "blobRef": {
+      "type": "object",
+      "required": ["$blob"],
+      "additionalProperties": false,
+      "properties": {
+        "$blob": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "blobEntry": {
+      "type": "object",
+      "required": ["field", "sha256", "bytes"],
+      "additionalProperties": false,
+      "properties": {
+        "field": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "bytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "otel": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "trace_id": { "type": "string" },
+        "span_id": { "type": "string" }
+      }
+    },
+    "errorInfo": {
+      "type": "object",
+      "required": ["type", "message"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "type": "string" },
+        "message": { "type": "string" },
+        "stack": { "type": "string" }
+      }
+    },
+
+    "runStartedPayload": {
+      "type": "object",
+      "required": ["framework", "framework_version", "sdk_version", "entry_input", "tags"],
+      "additionalProperties": false,
+      "properties": {
+        "framework": { "type": "string", "enum": ["langgraph", "crewai", "custom"] },
+        "framework_version": { "type": "string" },
+        "sdk_version": { "type": "string" },
+        "entry_input": { "$ref": "#/$defs/offloadable" },
+        "tags": { "type": "object" },
+        "code_ref": { "type": "string" }
+      }
+    },
+    "runFinishedPayload": {
+      "type": "object",
+      "required": ["status", "totals"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "string", "enum": ["ok", "error", "blocked", "cancelled"] },
+        "error": { "$ref": "#/$defs/errorInfo" },
+        "totals": {
+          "type": "object",
+          "required": ["events", "llm_calls", "tool_calls", "cost_usd", "tokens_in", "tokens_out", "duration_ms"],
+          "additionalProperties": false,
+          "properties": {
+            "events": { "type": "integer", "minimum": 0 },
+            "llm_calls": { "type": "integer", "minimum": 0 },
+            "tool_calls": { "type": "integer", "minimum": 0 },
+            "cost_usd": { "type": "number", "minimum": 0 },
+            "tokens_in": { "type": "integer", "minimum": 0 },
+            "tokens_out": { "type": "integer", "minimum": 0 },
+            "duration_ms": { "type": "number", "minimum": 0 }
+          }
+        }
+      }
+    },
+
+    "stepStartedPayload": {
+      "type": "object",
+      "required": ["name", "step_index", "state_before_hash", "state_before"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "step_index": { "type": "integer", "minimum": 0 },
+        "state_before_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "state_before": { "$ref": "#/$defs/offloadable" },
+        "unhashed_keys": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "stepFinishedPayload": {
+      "type": "object",
+      "required": ["status", "state_after_hash", "state_after", "duration_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "string" },
+        "state_after_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "state_after": { "$ref": "#/$defs/offloadable" },
+        "duration_ms": { "type": "number", "minimum": 0 },
+        "unhashed_keys": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+
+    "llmCallPayload": {
+      "type": "object",
+      "required": ["provider", "model", "params", "messages_in", "response", "tokens_in", "tokens_out", "cost_usd", "latency_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "params": { "type": "object" },
+        "messages_in": { "$ref": "#/$defs/offloadable" },
+        "response": { "$ref": "#/$defs/offloadable" },
+        "tokens_in": { "type": "integer", "minimum": 0 },
+        "tokens_out": { "type": "integer", "minimum": 0 },
+        "cost_usd": { "type": "number", "minimum": 0 },
+        "latency_ms": { "type": "number", "minimum": 0 },
+        "error": { "$ref": "#/$defs/errorInfo" }
+      }
+    },
+    "toolCallPayload": {
+      "type": "object",
+      "required": ["tool_name", "args", "result", "status", "latency_ms", "side_effect_class"],
+      "additionalProperties": false,
+      "properties": {
+        "tool_name": { "type": "string" },
+        "args": { "$ref": "#/$defs/offloadable" },
+        "result": { "$ref": "#/$defs/offloadable" },
+        "status": { "type": "string" },
+        "latency_ms": { "type": "number", "minimum": 0 },
+        "error": { "$ref": "#/$defs/errorInfo" },
+        "side_effect_class": { "type": "string", "enum": ["read", "write", "external"] }
+      }
+    },
+    "memoryReadPayload": {
+      "type": "object",
+      "required": ["store", "query", "results", "k", "latency_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "store": { "type": "string", "enum": ["vector", "kv", "framework"] },
+        "query": { "$ref": "#/$defs/offloadable" },
+        "results": { "$ref": "#/$defs/offloadable" },
+        "k": { "type": "integer", "minimum": 0 },
+        "latency_ms": { "type": "number", "minimum": 0 }
+      }
+    },
+    "memoryWritePayload": {
+      "type": "object",
+      "required": ["store", "key_or_ns", "value", "latency_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "store": { "type": "string", "enum": ["vector", "kv", "framework"] },
+        "key_or_ns": { "type": "string" },
+        "value": { "$ref": "#/$defs/offloadable" },
+        "latency_ms": { "type": "number", "minimum": 0 }
+      }
+    },
+
+    "agentMessagePayload": {
+      "type": "object",
+      "required": ["from_agent", "to_agent", "content", "message_type"],
+      "additionalProperties": false,
+      "properties": {
+        "from_agent": { "type": "string" },
+        "to_agent": { "type": "string" },
+        "content": { "$ref": "#/$defs/offloadable" },
+        "message_type": { "type": "string", "enum": ["handoff", "delegation", "result", "other"] }
+      }
+    },
+    "planUpdatedPayload": {
+      "type": "object",
+      "required": ["plan", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "plan": { "$ref": "#/$defs/offloadable" },
+        "reason": { "type": "string" }
+      }
+    },
+    "humanCheckpointPayload": {
+      "type": "object",
+      "required": ["prompt", "response", "latency_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "prompt": { "type": "string" },
+        "response": { "$ref": "#/$defs/offloadable" },
+        "latency_ms": { "type": "number", "minimum": 0 }
+      }
+    },
+    "policyDecisionPayload": {
+      "type": "object",
+      "required": ["policy_id", "action_ref", "decision", "reasons", "eval_latency_ms", "mode"],
+      "additionalProperties": false,
+      "properties": {
+        "policy_id": { "type": "string" },
+        "action_ref": {
+          "type": "object",
+          "required": ["fingerprint", "kind"],
+          "additionalProperties": false,
+          "properties": {
+            "fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+            "kind": { "$ref": "#/$defs/kind" }
+          }
+        },
+        "decision": { "type": "string", "enum": ["allow", "deny", "escalate"] },
+        "reasons": { "type": "array", "items": { "type": "string" } },
+        "eval_latency_ms": { "type": "number", "minimum": 0 },
+        "mode": { "type": "string", "enum": ["observe", "enforce"] }
+      }
+    },
+    "detectionRaisedPayload": {
+      "type": "object",
+      "required": ["detector", "severity", "evidence_event_ids", "details", "window"],
+      "additionalProperties": false,
+      "properties": {
+        "detector": { "type": "string", "enum": ["loop", "budget", "thrash", "drift"] },
+        "severity": { "type": "string", "enum": ["info", "warn", "critical"] },
+        "evidence_event_ids": { "type": "array", "items": { "type": "string", "pattern": "^evt_" } },
+        "details": { "type": "object" },
+        "window": { "type": "object" }
+      }
+    },
+    "sdkDiagnosticPayload": {
+      "type": "object",
+      "required": ["level", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "level": { "type": "string", "enum": ["debug", "info", "warn", "error"] },
+        "message": { "type": "string" },
+        "dropped_events": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}
