@@ -185,3 +185,28 @@ async def test_list_events__filters_by_kind(
 
     body = response.json()
     assert [e["seq"] for e in body["events"]] == [1]
+
+
+def test_get_blob__returns_stored_bytes_with_cache_headers(client: TestClient) -> None:
+    import hashlib
+
+    data = b'{"hello":"world"}'
+    digest = hashlib.sha256(data).hexdigest()
+    blob_root = client.app.state.blob_store._root  # type: ignore[attr-defined]
+    shard = blob_root / digest[:2] / digest[2:4]
+    shard.mkdir(parents=True, exist_ok=True)
+    (shard / digest).write_bytes(data)
+
+    response = client.get(f"/v1/blobs/sha256:{digest}")
+
+    assert response.status_code == 200
+    assert response.content == data
+    assert response.headers["content-type"] == "application/json"
+    assert "immutable" in response.headers["cache-control"]
+
+
+def test_get_blob__404_for_unknown_sha(client: TestClient) -> None:
+    response = client.get("/v1/blobs/sha256:" + "0" * 64)
+
+    assert response.status_code == 404
+    assert response.headers["content-type"] == "application/problem+json"
