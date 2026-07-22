@@ -20,7 +20,7 @@ from prometheus_client import make_asgi_app
 from redis.asyncio import Redis
 
 from trazo_server import __version__
-from trazo_server.api import ingest_router, query_router
+from trazo_server.api import ingest_router, live_router, query_router
 from trazo_server.api.problem_details import register_problem_details_handlers
 from trazo_server.bus.redis_streams import RedisStreamsBus
 from trazo_server.config import Settings
@@ -82,6 +82,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_problem_details_handlers(app)
     app.include_router(ingest_router)
     app.include_router(query_router)
+    app.include_router(live_router)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
