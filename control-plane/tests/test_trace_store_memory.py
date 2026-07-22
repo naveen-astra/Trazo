@@ -165,3 +165,47 @@ async def test_trace_store__list_runs_keyset_pagination_stable_under_insert() ->
 
     page2 = await store.list_runs(limit=2, before=cursor)
     assert [r.run_id for r in page2] == ["run_2", "run_1"]
+
+
+async def test_trace_store__get_project_events_spans_runs_ordered_by_event_id() -> None:
+    store = InMemoryTraceStore()
+    await store.upsert_run(_run(run_id="run_a", project_id="proj_a"))
+    await store.upsert_run(_run(run_id="run_b", project_id="proj_a"))
+    await store.upsert_run(_run(run_id="run_other", project_id="proj_b"))
+    await store.upsert_events(
+        [
+            _event(run_id="run_a", seq=0, event_id="evt_0000000000000000000000001"),
+            _event(run_id="run_b", seq=0, event_id="evt_0000000000000000000000002"),
+            _event(run_id="run_other", seq=0, event_id="evt_0000000000000000000000003"),
+        ]
+    )
+
+    events = await store.get_project_events("proj_a")
+
+    assert [e.event_id for e in events] == [
+        "evt_0000000000000000000000001",
+        "evt_0000000000000000000000002",
+    ]
+
+
+async def test_trace_store__get_project_events_after_event_id_resumes_correctly() -> (
+    None
+):
+    store = InMemoryTraceStore()
+    await store.upsert_run(_run(run_id="run_a", project_id="proj_a"))
+    await store.upsert_events(
+        [
+            _event(run_id="run_a", seq=0, event_id="evt_0000000000000000000000001"),
+            _event(run_id="run_a", seq=1, event_id="evt_0000000000000000000000002"),
+            _event(run_id="run_a", seq=2, event_id="evt_0000000000000000000000003"),
+        ]
+    )
+
+    events = await store.get_project_events(
+        "proj_a", after_event_id="evt_0000000000000000000000001"
+    )
+
+    assert [e.event_id for e in events] == [
+        "evt_0000000000000000000000002",
+        "evt_0000000000000000000000003",
+    ]

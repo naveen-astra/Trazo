@@ -85,3 +85,22 @@ class InMemoryTraceStore:
         ]
         rows.sort(key=lambda event: event.seq)
         return rows[:limit]
+
+    async def get_project_events(
+        self,
+        project_id: str,
+        *,
+        after_event_id: str | None = None,
+        limit: int = 100,
+    ) -> list[EventRow]:
+        run_ids_in_project = {
+            run.run_id for run in self._runs.values() if run.project_id == project_id
+        }
+        rows = [
+            event
+            for (event_run_id, _seq), event in self._events.items()
+            if event_run_id in run_ids_in_project
+            and (after_event_id is None or event.event_id > after_event_id)
+        ]
+        rows.sort(key=lambda event: event.event_id)
+        return rows[:limit]

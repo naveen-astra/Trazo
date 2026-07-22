@@ -73,3 +73,18 @@ class TraceStore(Protocol):
     ) -> list[EventRow]:
         """List one run's events in seq order, optionally filtered."""
         ...
+
+    async def get_project_events(
+        self,
+        project_id: str,
+        *,
+        after_event_id: str | None = None,
+        limit: int = 100,
+    ) -> list[EventRow]:
+        """List events across every run in a project, ordered by
+        ``event_id`` (a ULID — globally unique and creation-time-sortable,
+        unlike ``seq`` which only orders events within one run). Backs the
+        live firehose (TRZ-P2-06), where ``after_event_id`` is the resume
+        cursor.
+        """
+        ...

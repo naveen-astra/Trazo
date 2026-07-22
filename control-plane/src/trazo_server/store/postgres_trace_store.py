@@ -151,6 +151,27 @@ class PostgresTraceStore:
             fetched = result.mappings().all()
         return [_event_row_from_mapping(row) for row in fetched]
 
+    async def get_project_events(
+        self,
+        project_id: str,
+        *,
+        after_event_id: str | None = None,
+        limit: int = 100,
+    ) -> list[EventRow]:
+        stmt = (
+            sa.select(events)
+            .select_from(events.join(runs, events.c.run_id == runs.c.run_id))
+            .where(runs.c.project_id == project_id)
+            .order_by(events.c.event_id)
+            .limit(limit)
+        )
+        if after_event_id is not None:
+            stmt = stmt.where(events.c.event_id > after_event_id)
+        async with self._engine.connect() as conn:
+            result = await conn.execute(stmt)
+            fetched = result.mappings().all()
+        return [_event_row_from_mapping(row) for row in fetched]
+
 
 def _run_row_from_mapping(row: sa.RowMapping) -> RunRow:
     return RunRow(
