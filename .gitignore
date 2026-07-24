@@ -16,6 +16,8 @@ build/
 node_modules/
 dashboard/dist/
 *.tsbuildinfo
+dashboard/playwright-report/
+dashboard/test-results/
 
 # Environment & secrets
 .env
