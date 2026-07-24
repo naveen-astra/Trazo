@@ -9,7 +9,9 @@
     "lint": "eslint .",
     "format": "prettier --check .",
     "preview": "vite preview",
-    "gen-api-types": "openapi-typescript openapi.json -o src/api/types.generated.ts"
+    "gen-api-types": "openapi-typescript openapi.json -o src/api/types.generated.ts",
+    "typecheck:e2e": "tsc --noEmit -p tsconfig.playwright.json",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
@@ -19,6 +21,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^26.1.1",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.4",
