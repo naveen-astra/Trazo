@@ -7,6 +7,7 @@ counters, compared against the events actually recorded).
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from agents.research_assistant import ToyState, build_toy_graph, initial_state
@@ -96,6 +97,13 @@ def test_instrument__traces_full_toy_agent_run_with_boundary_coverage() -> None:
 
     # --- events count in totals matches what was actually recorded ---
     assert run_finished[0]["payload"]["totals"]["events"] == len(events)
+
+    # --- every event is actually JSON-serializable, not just capturable by
+    # a fake shipper: `_FakeShipper` above only appends raw dicts, so a
+    # non-JSON-safe field (e.g. a raw LangChain message object leaking into
+    # a payload) would pass every other assertion here and still crash the
+    # real Shipper's background thread the moment it tried to ship a batch
+    json.dumps(events)
 
 
 def test_instrument__run_error_still_emits_run_finished_with_error_status() -> None:

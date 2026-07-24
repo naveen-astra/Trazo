@@ -21,6 +21,7 @@ from trazo.core.context import get_config, run_scope
 from trazo.core.recorder import Recorder
 from trazo.core.runtime import get_recorder
 from trazo.integrations.langgraph.callback_handler import TrazoCallbackHandler
+from trazo.integrations.langgraph.state_serializer import to_json_safe
 
 _LANGGRAPH_VERSION = getattr(langgraph, "__version__", "unknown")
 
@@ -50,7 +51,7 @@ class InstrumentedGraph:
                     "framework": "langgraph",
                     "framework_version": _LANGGRAPH_VERSION,
                     "sdk_version": _SDK_VERSION,
-                    "entry_input": input,
+                    "entry_input": to_json_safe(input),
                     "tags": {},
                 },
             )
