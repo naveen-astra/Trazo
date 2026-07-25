@@ -78,7 +78,7 @@ jobs:
       - name: SDK — sync, typecheck, test
         working-directory: sdk
         run: |
-          uv sync --dev
+          uv sync --dev --all-extras
           uv run mypy
           uv run pytest
       - name: Control plane — sync, typecheck, test
