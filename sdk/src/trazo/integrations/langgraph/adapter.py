@@ -20,8 +20,8 @@ from trazo import __version__ as _SDK_VERSION
 from trazo.core.context import get_config, run_scope
 from trazo.core.recorder import Recorder
 from trazo.core.runtime import get_recorder
+from trazo.core.serialization import to_json_safe
 from trazo.integrations.langgraph.callback_handler import TrazoCallbackHandler
-from trazo.integrations.langgraph.state_serializer import to_json_safe
 
 _LANGGRAPH_VERSION = getattr(langgraph, "__version__", "unknown")
 

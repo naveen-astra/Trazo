@@ -1,13 +1,19 @@
-"""LangGraph state serialization for step.* hashing (TRZ-P2-04).
+"""Framework-object JSON-safety normalization, shared by every adapter
+(originally TRZ-P2-04's LangGraph-specific ``state_serializer``, hoisted
+here for TRZ-P3-01 since none of this is LangGraph-specific: any adapter's
+framework objects — LangChain messages, CrewAI Task/Agent/TaskOutput
+models, a plain dict/list — need the exact same JSON-native-or-fallback
+treatment before landing in an event payload or being hashed).
 
 Per EVENTS.md §4: ``state_*_hash`` is ``sha256(canonical_json(...))`` of
-"the adapter's state_serializer" output, and this adapter documents
-exactly what's included/excluded: LangGraph channel values that are JSON-
-native or LangChain-message-like (have ``model_dump``) pass through;
-anything else is replaced by a ``$unrepresentable`` marker in the
-snapshot payload and its key is listed in ``unhashed_keys`` — excluded
-from the hash so an opaque object's ``repr()`` (which may not even be
-stable) never silently makes replay fidelity impossible to achieve.
+"the adapter's state_serializer" output, and each adapter documents exactly
+what's included/excluded: values that are JSON-native or expose
+``model_dump`` (any pydantic model — LangChain messages, CrewAI's own
+models, ...) pass through; anything else is replaced by a
+``$unrepresentable`` marker in the snapshot payload and its key is listed
+in ``unhashed_keys`` — excluded from the hash so an opaque object's
+``repr()`` (which may not even be stable) never silently makes replay
+fidelity impossible to achieve.
 """
 
 from __future__ import annotations

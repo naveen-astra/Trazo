@@ -1,10 +1,11 @@
-"""Unit tests for trazo.integrations.langgraph.state_serializer (TRZ-P2-04)."""
+"""Unit tests for trazo.core.serialization (hoisted from the LangGraph
+adapter in TRZ-P2-04 to TRZ-P3-01, since none of it is framework-specific)."""
 
 from __future__ import annotations
 
 from langchain_core.messages import HumanMessage
 
-from trazo.integrations.langgraph.state_serializer import hash_state, serialize_state
+from trazo.core.serialization import hash_state, serialize_state
 
 
 def test_serialize_state__plain_json_native_state_has_no_unhashed_keys() -> None:
@@ -14,7 +15,11 @@ def test_serialize_state__plain_json_native_state_has_no_unhashed_keys() -> None
     assert unhashed == []
 
 
-def test_serialize_state__langchain_message_is_serialized_via_model_dump() -> None:
+def test_serialize_state__pydantic_model_is_serialized_via_model_dump() -> None:
+    """Any pydantic model with model_dump passes through natively — proven
+    here with a real LangChain message (the LangGraph adapter's own case),
+    but the module has no LangChain import: it's the ``model_dump`` duck
+    type that matters, not the specific class."""
     snapshot, unhashed = serialize_state({"messages": [HumanMessage(content="hi")]})
 
     assert unhashed == []

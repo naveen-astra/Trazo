@@ -33,10 +33,15 @@ from uuid import UUID
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
 
-from trazo.core.context import agent_scope, step_scope
+from trazo.core.context import (
+    agent_scope,
+    optional_agent_scope,
+    optional_step_scope,
+    step_scope,
+)
 from trazo.core.recorder import Recorder
+from trazo.core.serialization import hash_state, to_json_safe
 from trazo.core.ulid import new_step_id
-from trazo.integrations.langgraph.state_serializer import hash_state, to_json_safe
 
 
 @dataclass
@@ -327,36 +332,8 @@ class TrazoCallbackHandler(BaseCallbackHandler):
     ) -> None:
         step_id = step.step_id if step is not None else None
         node_name = step.node_name if step is not None else None
-        with _optional_step_scope(step_id), _optional_agent_scope(node_name):
+        with optional_step_scope(step_id), optional_agent_scope(node_name):
             self._recorder.boundary(kind, inputs, lambda: result)
-
-
-class _optional_step_scope:
-    """No-op context manager when there's no enclosing step to attribute to."""
-
-    def __init__(self, step_id: str | None) -> None:
-        self._inner = step_scope(step_id) if step_id is not None else None
-
-    def __enter__(self) -> None:
-        if self._inner is not None:
-            self._inner.__enter__()
-
-    def __exit__(self, *exc_info: object) -> None:
-        if self._inner is not None:
-            self._inner.__exit__(*exc_info)
-
-
-class _optional_agent_scope:
-    def __init__(self, agent_id: str | None) -> None:
-        self._inner = agent_scope(agent_id) if agent_id is not None else None
-
-    def __enter__(self) -> None:
-        if self._inner is not None:
-            self._inner.__enter__()
-
-    def __exit__(self, *exc_info: object) -> None:
-        if self._inner is not None:
-            self._inner.__exit__(*exc_info)
 
 
 def _provider_and_model(
