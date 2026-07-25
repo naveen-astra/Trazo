@@ -173,3 +173,35 @@ class agent_scope:
     def __exit__(self, *exc_info: object) -> None:
         if self._token is not None:
             _agent_id_var.reset(self._token)
+
+
+class optional_step_scope:
+    """``step_scope`` that no-ops when there's no enclosing step to
+    attribute to — every adapter's boundary-event handlers hit this case
+    (a boundary observed with no step correlation available)."""
+
+    def __init__(self, step_id: str | None) -> None:
+        self._inner = step_scope(step_id) if step_id is not None else None
+
+    def __enter__(self) -> None:
+        if self._inner is not None:
+            self._inner.__enter__()
+
+    def __exit__(self, *exc_info: object) -> None:
+        if self._inner is not None:
+            self._inner.__exit__(*exc_info)
+
+
+class optional_agent_scope:
+    """``agent_scope`` that no-ops when there's no agent to attribute to."""
+
+    def __init__(self, agent_id: str | None) -> None:
+        self._inner = agent_scope(agent_id) if agent_id is not None else None
+
+    def __enter__(self) -> None:
+        if self._inner is not None:
+            self._inner.__enter__()
+
+    def __exit__(self, *exc_info: object) -> None:
+        if self._inner is not None:
+            self._inner.__exit__(*exc_info)

@@ -21,6 +21,8 @@ from trazo.core.context import (
     get_config,
     init,
     is_initialized,
+    optional_agent_scope,
+    optional_step_scope,
     run_scope,
     step_scope,
 )
@@ -94,6 +96,28 @@ def test_agent_scope__sets_and_restores_agent_id() -> None:
     with agent_scope("researcher"):
         assert current_agent_id() == "researcher"
     assert current_agent_id() is None
+
+
+def test_optional_step_scope__sets_step_id_when_given() -> None:
+    with optional_step_scope("step_1"):
+        assert current_step_id() == "step_1"
+    assert current_step_id() is None
+
+
+def test_optional_step_scope__is_a_no_op_when_step_id_is_none() -> None:
+    with optional_step_scope(None):
+        assert current_step_id() is None
+
+
+def test_optional_agent_scope__sets_agent_id_when_given() -> None:
+    with optional_agent_scope("researcher"):
+        assert current_agent_id() == "researcher"
+    assert current_agent_id() is None
+
+
+def test_optional_agent_scope__is_a_no_op_when_agent_id_is_none() -> None:
+    with optional_agent_scope(None):
+        assert current_agent_id() is None
 
 
 def test_context__isolated_across_threads() -> None:
