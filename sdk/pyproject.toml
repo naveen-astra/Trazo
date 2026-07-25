@@ -25,9 +25,12 @@ dependencies = [
 langgraph = [
     "langgraph>=0.2,<0.3",
 ]
-# Framework adapters are optional extras; version ranges are pinned when the
-# adapter tasks land (TRZ-P2-04, TRZ-P3-01) — declaring ranges before the
-# adapters exist would be a guess.
+crewai = [
+    "crewai>=1.15,<2",
+]
+# Framework adapters are optional extras; each range is pinned to the
+# major version verified against when its adapter task landed
+# (TRZ-P2-04: langgraph 0.2.76; TRZ-P3-01: crewai 1.15.6).
 
 [project.scripts]
 trazo = "trazo.cli.main:main"
@@ -55,6 +58,15 @@ addopts = "-q"
 
 [tool.mypy]
 strict = true
-python_version = "3.10"
+# Not a relaxation of trazo's own 3.10 support (requires-python above, and
+# ruff's target-version = "py310" at the repo root, are what actually gate
+# that): with both framework extras installed, langgraph's langsmith
+# dependency imports pytest in its normal (non-test) code, which — now
+# that crewai's chromadb dependency pulls numpy into the venv for the
+# first time — reaches numpy's own stub using Python 3.12+ ``type``
+# statement syntax. Stub files are always fully parsed by mypy regardless
+# of follow_imports, so a parse error there is fatal to the whole run
+# unless python_version allows that syntax.
+python_version = "3.12"
 mypy_path = "src"
 packages = ["trazo"]
