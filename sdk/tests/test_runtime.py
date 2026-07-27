@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import httpx
@@ -10,6 +11,7 @@ import pytest
 
 import trazo
 from trazo.core import context, runtime
+from trazo.core.context import run_scope
 from trazo.core.recorder import Recorder
 from trazo.errors import NotInitializedError
 
@@ -52,3 +54,28 @@ def test_trazo_init__wires_config_and_starts_a_recorder(
 
     assert context.get_config().project == "research-assistant"
     assert runtime.is_initialized() is True
+
+
+def test_trazo_shutdown__flushes_the_installed_recorder(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The public flush-before-exit call (TRZ-P3-02): short-lived
+    processes can't rely on atexit alone — confirmed empirically while
+    building the research-assistant demo, where most of a run's events
+    were still queued when the process exited a few hundred ms after the
+    graph finished."""
+    monkeypatch.chdir(tmp_path)
+    posted_batches: list[list[dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        posted_batches.append(json.loads(request.content)["events"])
+        return httpx.Response(202, json={"accepted": 1})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    runtime.init_recorder(endpoint="http://example.test", api_key="k", client=client)
+
+    with run_scope("shutdown-test"):
+        runtime.get_recorder().emit("run.started", {"framework": "custom", "tags": {}})
+    trazo.shutdown()
+
+    assert posted_batches, "shutdown() must flush the queued event before returning"
