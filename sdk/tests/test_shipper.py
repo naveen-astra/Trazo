@@ -15,7 +15,11 @@ from pathlib import Path
 
 import httpx
 
-from trazo.core.shipper import Shipper
+from trazo.core.shipper import (
+    _POST_TIMEOUT_SECONDS,
+    RECOMMENDED_SHUTDOWN_TIMEOUT_SECONDS,
+    Shipper,
+)
 from trazo.core.spool import DiskSpool
 
 
@@ -159,3 +163,14 @@ def test_shipper__spool_full_drops_with_warning_not_a_crash(tmp_path: Path) -> N
     shipper2.flush_and_stop()
 
     assert spool.pending_batch_count() == 1  # unchanged: the second batch was dropped
+
+
+def test_recommended_shutdown_timeout__covers_two_full_post_attempts() -> None:
+    """TRZ-P3-03: one flush cycle can need two full POST attempts against
+    an unreachable endpoint (_drain_spool()'s retry, then the new batch's
+    own _post()) — a shutdown()/flush_and_stop() timeout shorter than that
+    can return via join()'s own timeout while the daemon thread is still
+    mid-POST, and the process exiting anyway then kills it, silently
+    dropping whatever it was sending. Locks in the invariant that made
+    this the new default, not just the specific numbers."""
+    assert RECOMMENDED_SHUTDOWN_TIMEOUT_SECONDS >= 2 * _POST_TIMEOUT_SECONDS

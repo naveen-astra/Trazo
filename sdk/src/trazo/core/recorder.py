@@ -22,7 +22,7 @@ from typing import Any, TypeVar
 from trazo.core.context import current_agent_id, current_run_context, current_step_id
 from trazo.core.fingerprint import FINGERPRINTED_KINDS, fingerprint_for
 from trazo.core.redactor import Redactor
-from trazo.core.shipper import Shipper
+from trazo.core.shipper import RECOMMENDED_SHUTDOWN_TIMEOUT_SECONDS, Shipper
 from trazo.core.ulid import new_event_id
 from trazo.errors import NoActiveRunError
 
@@ -83,7 +83,9 @@ class Recorder:
         self._ship_event(kind, payload, fingerprint=fingerprint)
         return result
 
-    def shutdown(self, *, timeout: float = 5.0) -> None:
+    def shutdown(
+        self, *, timeout: float = RECOMMENDED_SHUTDOWN_TIMEOUT_SECONDS
+    ) -> None:
         """Flush buffered events and stop the shipper thread. The atexit
         hook does this too; call explicitly for a deterministic flush in
         short-lived processes (CLI invocations, tests)."""

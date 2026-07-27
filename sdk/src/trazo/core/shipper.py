@@ -33,6 +33,16 @@ FLUSH_MAX_BYTES = 1_000_000
 FLUSH_INTERVAL_SECONDS = 0.5
 _POST_TIMEOUT_SECONDS = 10.0
 
+# A single flush cycle can need two full POST attempts against an
+# unreachable endpoint — _drain_spool() retrying a previously-failed batch,
+# then _post() for the new one — each up to _POST_TIMEOUT_SECONDS. Found
+# empirically (TRZ-P3-03): a shutdown()/flush_and_stop() timeout shorter
+# than this can return via its join() timeout while the daemon Shipper
+# thread is still mid-POST, and the process exiting anyway then kills that
+# thread — silently dropping whatever batch it was sending. +5s margin for
+# scheduling/GIL overhead beyond the two raw POST attempts.
+RECOMMENDED_SHUTDOWN_TIMEOUT_SECONDS = 2 * _POST_TIMEOUT_SECONDS + 5.0
+
 
 @dataclass(frozen=True)
 class _StopSignal:
@@ -76,7 +86,9 @@ class Shipper:
             return
         self._queue.put(event)
 
-    def flush_and_stop(self, *, timeout: float = 5.0) -> None:
+    def flush_and_stop(
+        self, *, timeout: float = RECOMMENDED_SHUTDOWN_TIMEOUT_SECONDS
+    ) -> None:
         if self._stopped:
             return
         self._stopped = True
