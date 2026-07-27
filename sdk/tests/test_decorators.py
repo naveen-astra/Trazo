@@ -13,7 +13,12 @@ import pytest
 
 from trazo.core.context import run_scope
 from trazo.core.recorder import Recorder
-from trazo.decorators import trace_llm, trace_tool
+from trazo.decorators import (
+    trace_llm,
+    trace_memory_read,
+    trace_memory_write,
+    trace_tool,
+)
 
 
 class _FakeShipper:
@@ -135,6 +140,72 @@ def test_trace_llm__non_dict_return_becomes_the_response_verbatim() -> None:
     assert result == "a plain string answer"
     assert shipper.enqueued[0]["payload"]["response"] == "a plain string answer"
     assert shipper.enqueued[0]["payload"]["tokens_in"] == 0
+
+
+def test_trace_memory_read__records_memory_read_and_returns_results() -> None:
+    _, shipper = _install_recorder()
+
+    @trace_memory_read(store="vector")
+    def query_memory(query: str, k: int) -> list[str]:
+        return [f"result-for-{query}"]
+
+    with run_scope("proj"):
+        result = query_memory("what is trazo?", k=3)
+
+    assert result == ["result-for-what is trazo?"]
+    [event] = shipper.enqueued
+    assert event["kind"] == "memory.read"
+    assert event["payload"]["store"] == "vector"
+    assert event["payload"]["query"] == "what is trazo?"
+    assert event["payload"]["k"] == 3
+    assert event["payload"]["results"] == ["result-for-what is trazo?"]
+    assert event["fingerprint"].startswith("sha256:")
+
+
+def test_trace_memory_read__falls_back_to_full_args_when_no_query_param() -> None:
+    _, shipper = _install_recorder()
+
+    @trace_memory_read()
+    def lookup(a: str, b: str) -> str:
+        return "x"
+
+    with run_scope("proj"):
+        lookup("1", "2")
+
+    assert shipper.enqueued[0]["payload"]["query"] == {"a": "1", "b": "2"}
+
+
+def test_trace_memory_write__records_memory_write_and_returns_the_real_value() -> None:
+    _, shipper = _install_recorder()
+
+    @trace_memory_write(store="vector")
+    def save_memory(key_or_ns: str, value: str) -> bool:
+        return True
+
+    with run_scope("proj"):
+        result = save_memory("researcher", value="trazo is an SDK")
+
+    assert result is True
+    [event] = shipper.enqueued
+    assert event["kind"] == "memory.write"
+    assert event["payload"]["store"] == "vector"
+    assert event["payload"]["key_or_ns"] == "researcher"
+    assert event["payload"]["value"] == "trazo is an SDK"
+    assert event["fingerprint"].startswith("sha256:")
+
+
+def test_trace_memory_write__defaults_key_or_ns_when_absent() -> None:
+    _, shipper = _install_recorder()
+
+    @trace_memory_write()
+    def save(value: str) -> None:
+        return None
+
+    with run_scope("proj"):
+        save("trazo is an SDK")
+
+    assert shipper.enqueued[0]["payload"]["key_or_ns"] == "default"
+    assert shipper.enqueued[0]["payload"]["value"] == "trazo is an SDK"
 
 
 def test_custom_agent__traces_full_run() -> None:

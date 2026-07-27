@@ -1,12 +1,20 @@
-"""``@trace_tool`` / ``@trace_llm`` — the custom-agent escape hatch (TRZ-P2-05).
+"""``@trace_tool`` / ``@trace_llm`` / ``@trace_memory_read`` /
+``@trace_memory_write`` — the custom-agent escape hatch (TRZ-P2-05;
+memory variants added in TRZ-P3-02 since a demo needing "memory events
+present" — IMPLEMENTATION_PLAN.md's lane table restricts `demos/` to the
+SDK's public API only, and no adapter auto-captures memory operations
+(EVENTS.md §2.3's `memory.read`/`memory.write` — SDK.md §2's coverage
+table: "yes if framework exposes it", and none of Phase 2/3's adapters
+do) — needed a public way to emit them without reaching into
+`trazo.core`).
 
 For code with no framework adapter (or a specific call an adapter doesn't
 catch): wraps a plain function so every call goes through
 ``Recorder.boundary`` automatically, exactly like an adapter would (SDK.md
-§1). Both decorators bind the call's positional/keyword arguments to the
-wrapped function's parameter names (via ``inspect.signature(...).bind``)
-so the recorded ``args``/``messages_in`` are a real dict, not an opaque
-positional tuple.
+§1). All four decorators bind the call's positional/keyword arguments to
+the wrapped function's parameter names (via ``inspect.signature(...)
+.bind``) so the recorded ``args``/``messages_in``/``query``/``value`` are
+real values, not an opaque positional tuple.
 """
 
 from __future__ import annotations
@@ -123,6 +131,78 @@ def trace_llm(*, provider: str, model: str) -> Callable[[F], F]:
                     "params": {},
                     "messages_in": call_args,
                 },
+                execute,
+            )
+            return raw_result_holder["value"]
+
+        return wrapper  # type: ignore[return-value]
+
+    return decorator
+
+
+def trace_memory_read(*, store: str = "vector") -> Callable[[F], F]:
+    """Wrap a plain function as a traced ``memory.read`` boundary.
+
+    The wrapped function's bound arguments supply ``query`` (its ``query``
+    parameter if present, otherwise the whole bound-argument dict) and
+    ``k`` (its ``k`` parameter, if present). The function's return value
+    becomes ``results`` and is returned to the caller unchanged.
+    """
+
+    def decorator(fn: F) -> F:
+        @functools.wraps(fn)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            recorder = get_recorder()
+            call_args = _bind_args(fn, args, kwargs)
+            query = call_args.get("query", call_args)
+            k = call_args.get("k")
+            start = time.monotonic()
+
+            def execute() -> dict[str, Any]:
+                results = fn(*args, **kwargs)
+                latency_ms = (time.monotonic() - start) * 1000
+                return {"results": results, "latency_ms": latency_ms}
+
+            merged = recorder.boundary(
+                "memory.read",
+                {"store": store, "query": query, "k": k},
+                execute,
+            )
+            return merged["results"]
+
+        return wrapper  # type: ignore[return-value]
+
+    return decorator
+
+
+def trace_memory_write(*, store: str = "vector") -> Callable[[F], F]:
+    """Wrap a plain function as a traced ``memory.write`` boundary.
+
+    The wrapped function's bound arguments supply ``key_or_ns`` (its
+    ``key_or_ns`` or ``key`` parameter, if present, else ``"default"``)
+    and ``value`` (its ``value`` parameter if present, otherwise the whole
+    bound-argument dict). The function's return value is returned to the
+    caller unchanged.
+    """
+
+    def decorator(fn: F) -> F:
+        @functools.wraps(fn)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            recorder = get_recorder()
+            call_args = _bind_args(fn, args, kwargs)
+            key_or_ns = call_args.get("key_or_ns") or call_args.get("key") or "default"
+            value = call_args.get("value", call_args)
+            start = time.monotonic()
+            raw_result_holder: dict[str, Any] = {}
+
+            def execute() -> dict[str, Any]:
+                raw_result_holder["value"] = fn(*args, **kwargs)
+                latency_ms = (time.monotonic() - start) * 1000
+                return {"latency_ms": latency_ms}
+
+            recorder.boundary(
+                "memory.write",
+                {"store": store, "key_or_ns": key_or_ns, "value": value},
                 execute,
             )
             return raw_result_holder["value"]
