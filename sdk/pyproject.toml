@@ -31,6 +31,12 @@ crewai = [
 # Framework adapters are optional extras; each range is pinned to the
 # major version verified against when its adapter task landed
 # (TRZ-P2-04: langgraph 0.2.76; TRZ-P3-01: crewai 1.15.6).
+demos = [
+    # demos/research-assistant's vector memory (TRZ-P3-02). A dedicated
+    # extra, not folded into `langgraph` — chromadb isn't LangGraph-
+    # specific, and other demos may need it without needing an adapter.
+    "chromadb>=1.1,<2",
+]
 
 [project.scripts]
 trazo = "trazo.cli.main:main"
