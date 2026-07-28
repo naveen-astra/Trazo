@@ -28,3 +28,8 @@ class NoActiveRunError(TrazoError):
         super().__init__(
             "no active run — call within `with trazo.core.context.run_scope(...)`"
         )
+
+
+class ReplayNotConfiguredError(TrazoError):
+    """Raised when a Recorder in REPLAY mode has no Substituter attached —
+    a setup-time contract violation (TRZ-P4-02), not a replay divergence."""
