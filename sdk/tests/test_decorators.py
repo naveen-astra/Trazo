@@ -12,7 +12,9 @@ from typing import Any
 import pytest
 
 from trazo.core.context import run_scope
-from trazo.core.recorder import Recorder
+from trazo.core.recorder import Recorder, RecorderMode
+from trazo.core.replay_bundle import RecordedEvent, ReplayBundle
+from trazo.core.substituter import Substituter
 from trazo.decorators import (
     trace_llm,
     trace_memory_read,
@@ -208,6 +210,55 @@ def test_trace_memory_write__defaults_key_or_ns_when_absent() -> None:
     assert shipper.enqueued[0]["payload"]["value"] == "trazo is an SDK"
 
 
+def test_trace_memory_write__replay_mode_returns_none_without_calling_fn() -> None:
+    """memory.write's recorded payload has no return-value field to
+    reconstruct (EVENTS.md §2.3) — REPLAY mode must return None, matching
+    every real write function's actual return value, and must not call
+    fn at all (TRZ-P4-02)."""
+    _, record_shipper = _install_recorder()
+    live_call_count = 0
+
+    @trace_memory_write()
+    def save(value: str) -> None:
+        nonlocal live_call_count
+        live_call_count += 1
+        return None
+
+    with run_scope("proj"):
+        save("trazo is an SDK")
+    assert live_call_count == 1
+
+    event = _as_recorded_event(record_shipper.enqueued[0])
+    bundle = ReplayBundle(
+        run_id=event.run_id,
+        project_id="proj",
+        framework="custom",
+        status="ok",
+        started_at="2026-01-01T00:00:00Z",
+        finished_at="2026-01-01T00:00:05Z",
+        tags={},
+        totals={},
+        event_count=1,
+        blob_manifest=[],
+        events=[event],
+        _events_by_kind={"memory.write": [event]},
+    )
+    replay_recorder = Recorder(
+        shipper=_FakeShipper(),
+        mode=RecorderMode.REPLAY,
+        substituter=Substituter(bundle),
+    )
+    from trazo.core.runtime import _install_recorder_for_tests
+
+    _install_recorder_for_tests(replay_recorder)
+
+    with run_scope("proj"):
+        result = save("trazo is an SDK")
+
+    assert result is None
+    assert live_call_count == 1  # unchanged: fn never ran during replay
+
+
 def test_custom_agent__traces_full_run() -> None:
     """A hand-rolled 'agent' with no framework adapter — the escape hatch
     this task exists for."""
@@ -235,3 +286,87 @@ def test_custom_agent__traces_full_run() -> None:
     assert shipper.enqueued[0]["seq"] == 0
     assert shipper.enqueued[1]["seq"] == 1
     assert shipper.enqueued[0]["run_id"] == shipper.enqueued[1]["run_id"]
+
+
+def _as_recorded_event(envelope: dict[str, Any]) -> RecordedEvent:
+    return RecordedEvent(
+        run_id=envelope["run_id"],
+        seq=envelope["seq"],
+        event_id=envelope["event_id"],
+        kind=envelope["kind"],
+        ts=envelope["ts"],
+        step_id=envelope.get("step_id"),
+        agent_id=envelope.get("agent_id"),
+        fingerprint=envelope.get("fingerprint"),
+        payload=envelope["payload"],
+        blobs=[],
+    )
+
+
+def test_custom_agent__record_then_replay_round_trip_makes_zero_live_calls() -> None:
+    """TRZ-P4-02's DoD: record->replay of a scripted toy run has zero
+    divergence and zero live calls (network guard). ``@trace_llm``/
+    ``@trace_tool`` are the escape hatch this task's own toy agent uses —
+    this proves boundary() substitution actually works through them, not
+    just through Recorder.boundary() called directly."""
+    _, record_shipper = _install_recorder()
+
+    live_call_count = 0
+
+    @trace_llm(provider="openai", model="gpt-4o-mini")
+    def call_llm(prompt: str) -> dict[str, Any]:
+        nonlocal live_call_count
+        live_call_count += 1
+        return {"response": "search for trazo docs", "tokens_in": 10, "tokens_out": 4}
+
+    @trace_tool(side_effect_class="external")
+    def web_search(query: str) -> str:
+        nonlocal live_call_count
+        live_call_count += 1
+        return f"results for {query}"
+
+    def run_custom_agent(user_input: str) -> str:
+        with run_scope("custom-agent-test"):
+            plan = call_llm(user_input)
+            return web_search(plan["response"])
+
+    # --- record ---
+    original_final = run_custom_agent("find trazo")
+    assert live_call_count == 2
+
+    events = [_as_recorded_event(e) for e in record_shipper.enqueued]
+    bundle = ReplayBundle(
+        run_id=events[0].run_id,
+        project_id="proj",
+        framework="custom",
+        status="ok",
+        started_at="2026-01-01T00:00:00Z",
+        finished_at="2026-01-01T00:00:05Z",
+        tags={},
+        totals={},
+        event_count=len(events),
+        blob_manifest=[],
+        events=events,
+        _events_by_kind={
+            "llm.call": [e for e in events if e.kind == "llm.call"],
+            "tool.call": [e for e in events if e.kind == "tool.call"],
+        },
+    )
+
+    # --- replay ---
+    substituter = Substituter(bundle)
+    replay_shipper = _FakeShipper()
+    replay_recorder = Recorder(
+        shipper=replay_shipper, mode=RecorderMode.REPLAY, substituter=substituter
+    )
+    from trazo.core.runtime import _install_recorder_for_tests
+
+    _install_recorder_for_tests(replay_recorder)
+
+    replayed_final = run_custom_agent("find trazo")
+
+    assert replayed_final == original_final
+    assert live_call_count == 2  # unchanged: neither fn ran again during replay
+    assert replay_shipper.enqueued == []  # replays are read-only over history
+    assert substituter.report.fidelity == 1.0
+    assert substituter.report.divergences == []
