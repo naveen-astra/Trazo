@@ -56,6 +56,36 @@ def test_trazo_init__wires_config_and_starts_a_recorder(
     assert runtime.is_initialized() is True
 
 
+class _FakeShipper:
+    def enqueue(self, event: object) -> None:
+        pass
+
+    def flush_and_stop(self, *, timeout: float = 5.0) -> None:
+        pass
+
+
+def test_replay_recorder_scope__installs_and_restores_the_previous_recorder() -> None:
+    """TRZ-P4-05: a replay session must never permanently clobber a real
+    trazo.init()'d recorder, if one exists in this process."""
+    original = runtime.init_recorder(endpoint="http://example.test", api_key="k")
+    replacement = Recorder(shipper=_FakeShipper())
+
+    with runtime.replay_recorder_scope(replacement):
+        assert runtime.get_recorder() is replacement
+
+    assert runtime.get_recorder() is original
+
+
+def test_replay_recorder_scope__restores_none_if_nothing_was_installed_before() -> None:
+    assert runtime.is_initialized() is False
+    replacement = Recorder(shipper=_FakeShipper())
+
+    with runtime.replay_recorder_scope(replacement):
+        assert runtime.get_recorder() is replacement
+
+    assert runtime.is_initialized() is False
+
+
 def test_trazo_shutdown__flushes_the_installed_recorder(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
