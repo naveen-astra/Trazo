@@ -1,7 +1,7 @@
 # Nightly jobs (TRZ-P0-05). Unimplemented ones are placeholders that fail
 # loudly if their phase has closed without wiring them up:
 #   smoke            — highest closed phase's scripts/smoke/phaseN.sh (P0+)
-#   adapter-matrix   — LangGraph/CrewAI min+latest versions (TRZ-P3-06)
+#   adapter-matrix   — LangGraph/CrewAI min+latest versions (TRZ-P3-06) — wired
 #   overhead         — SDK <=10% wall-clock benchmark (TRZ-P2-09) — wired
 #   corpus           — demo-agent trace generation (TRZ-P3-05)
 name: nightly
@@ -20,6 +20,59 @@ jobs:
         run: |
           cp deploy/.env.example deploy/.env
           bash scripts/smoke/phase0.sh
+
+  adapter-matrix:
+    # Confirms each framework adapter works across the *whole* declared
+    # range in sdk/pyproject.toml's optional-dependencies (TRZ-P3-06), not
+    # just whatever version happens to be locked day-to-day. "max" needs no
+    # override: a plain `uv sync` already resolves to the highest version
+    # satisfying the range, so it never goes stale as new releases land.
+    # "min" pins down to the range's lower bound via a targeted
+    # `uv pip install pkg==<min>` *after* a normal sync (not
+    # `--resolution lowest-direct`, which was tried and rejected here: it
+    # also drags trazo's own base deps — pydantic et al. — down to their
+    # minimums, and pydantic==2.7's pydantic-core has no prebuilt wheel for
+    # this runner, forcing a Rust build that fails outright — noise
+    # unrelated to what this job is meant to catch).
+    #
+    # Bump the two `min` literals below only in lockstep with the matching
+    # lower bound in sdk/pyproject.toml's `langgraph`/`crewai` extras.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - framework: langgraph
+            version: min
+            pin: "langgraph==0.2.17 langchain-core>=0.3"
+            tests: tests/test_langgraph_adapter.py tests/test_core_serialization.py
+          - framework: langgraph
+            version: max
+            pin: ""
+            tests: tests/test_langgraph_adapter.py tests/test_core_serialization.py
+          - framework: crewai
+            version: min
+            pin: "crewai==1.15.0"
+            tests: tests/test_crewai_adapter.py tests/test_crewai_listener_memory.py
+          - framework: crewai
+            version: max
+            pin: ""
+            tests: tests/test_crewai_adapter.py tests/test_crewai_listener_memory.py
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+      - name: SDK — sync (${{ matrix.framework }})
+        working-directory: sdk
+        run: uv sync --dev --extra ${{ matrix.framework }}
+      - name: Pin to ${{ matrix.version }} version
+        if: matrix.pin != ''
+        working-directory: sdk
+        run: uv pip install ${{ matrix.pin }}
+      - name: Adapter tests (${{ matrix.framework }} ${{ matrix.version }})
+        working-directory: sdk
+        run: uv run pytest ${{ matrix.tests }} -v
 
   overhead:
     # SDK instrumentation overhead vs the toy LangGraph agent
