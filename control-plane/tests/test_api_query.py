@@ -10,6 +10,7 @@ concerns (404s, invalid cursor/limit, unauthenticated access).
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -185,6 +186,116 @@ async def test_list_events__filters_by_kind(
 
     body = response.json()
     assert [e["seq"] for e in body["events"]] == [1]
+
+
+async def test_get_replay_bundle__manifest_then_events_in_seq_order(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    await trace_store.upsert_run(_run(status="ok", totals={"events": 3}))
+    await trace_store.upsert_events(
+        [_event(seq=1, kind="step.started"), _event(seq=0, kind="run.started")]
+    )
+
+    response = client.get("/v1/runs/run_1/replay-bundle")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/x-ndjson"
+    lines = response.text.strip("\n").split("\n")
+    manifest = json.loads(lines[0])
+    assert manifest["schema"] == "trazo.replay-bundle.v1"
+    assert manifest["run_id"] == "run_1"
+    assert manifest["event_count"] == 2
+    assert manifest["totals"] == {"events": 3}
+
+    events = [json.loads(line) for line in lines[1:]]
+    assert [e["seq"] for e in events] == [0, 1]
+    assert [e["kind"] for e in events] == ["run.started", "step.started"]
+
+
+async def test_get_replay_bundle__dedupes_blob_manifest_across_events(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    await trace_store.upsert_run(_run())
+    await trace_store.upsert_events(
+        [
+            _event(
+                seq=0,
+                blobs=[
+                    {
+                        "field": "payload.entry_input",
+                        "sha256": "sha256:aaa",
+                        "bytes": 10,
+                    }
+                ],
+            ),
+            _event(
+                seq=1,
+                blobs=[
+                    {
+                        "field": "payload.entry_input",
+                        "sha256": "sha256:aaa",
+                        "bytes": 10,
+                    }
+                ],
+            ),
+            _event(
+                seq=2,
+                blobs=[
+                    {"field": "payload.result", "sha256": "sha256:bbb", "bytes": 20}
+                ],
+            ),
+        ]
+    )
+
+    response = client.get("/v1/runs/run_1/replay-bundle")
+
+    manifest = json.loads(response.text.split("\n", 1)[0])
+    assert manifest["blob_manifest"] == [
+        {"sha256": "sha256:aaa", "bytes": 10},
+        {"sha256": "sha256:bbb", "bytes": 20},
+    ]
+
+
+def test_get_replay_bundle__404_for_unknown_run(client: TestClient) -> None:
+    response = client.get("/v1/runs/run_does_not_exist/replay-bundle")
+
+    assert response.status_code == 404
+    assert response.headers["content-type"] == "application/problem+json"
+
+
+async def test_get_replay_bundle__immutable_cache_once_finished(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    await trace_store.upsert_run(_run(status="ok"))
+
+    response = client.get("/v1/runs/run_1/replay-bundle")
+
+    assert "immutable" in response.headers["cache-control"]
+    assert "etag" in response.headers
+
+
+async def test_get_replay_bundle__not_cached_while_still_running(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    await trace_store.upsert_run(_run(status="running"))
+
+    response = client.get("/v1/runs/run_1/replay-bundle")
+
+    assert response.headers["cache-control"] == "no-store"
+
+
+async def test_get_replay_bundle__byte_stable_across_repeated_fetches(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    """P4-01's DoD: bundle round-trips a sample corpus byte-stable."""
+    await trace_store.upsert_run(_run(status="ok"))
+    await trace_store.upsert_events([_event(seq=0), _event(seq=1), _event(seq=2)])
+
+    first = client.get("/v1/runs/run_1/replay-bundle")
+    second = client.get("/v1/runs/run_1/replay-bundle")
+
+    assert first.content == second.content
+    assert first.headers["etag"] == second.headers["etag"]
 
 
 def test_get_blob__returns_stored_bytes_with_cache_headers(client: TestClient) -> None:
