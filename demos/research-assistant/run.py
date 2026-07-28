@@ -3,7 +3,13 @@
 
     uv run --project sdk --extra langgraph --extra demos \\
         python demos/research-assistant/run.py \\
-        [--question "..."] [--endpoint http://localhost:8420]
+        [--question "..."] [--endpoint http://localhost:8420] [--live]
+
+``--live`` calls a real model (needs ``TRAZO_DEMO_API_KEY`` or
+``OPENAI_API_KEY``) instead of the deterministic fixture stub, and
+records the exchange to ``cassette.json`` for fixture mode to replay
+later (TRZ-P3-04) — used by the nightly corpus job (TRZ-P3-05), not by
+CI, which stays zero-cost on the default fixture path.
 
 Only the SDK's public API is used here (``trazo.init``,
 ``trazo.integrations.langgraph.instrument``) — IMPLEMENTATION_PLAN.md's
@@ -19,6 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import llm
 from agent import build_graph, initial_state
 
 import trazo
@@ -34,7 +41,15 @@ def main() -> int:
         "--endpoint", default=os.environ.get("TRAZO_ENDPOINT", "http://localhost:8420")
     )
     parser.add_argument("--target-iterations", type=int, default=3)
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="call a real model and record it to cassette.json, instead of "
+        "the deterministic fixture stub",
+    )
     args = parser.parse_args()
+
+    llm.set_live_mode(args.live)
 
     trazo.init(
         project="research-assistant",
@@ -47,6 +62,7 @@ def main() -> int:
     try:
         result = traced.invoke(initial_state(args.question))
         print(result["answer"])
+        print(f"TRAZO_RUN_ID={traced.last_run_id}")
     finally:
         # atexit alone is not reliable for a short-lived process — see
         # trazo.shutdown()'s docstring (found the hard way, running this
