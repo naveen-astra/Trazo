@@ -30,6 +30,7 @@ jobs:
               - 'sdk/**'
               - 'control-plane/**'
               - 'schema/**'
+              - 'demos/**'
               - 'pyproject.toml'
               - '.github/workflows/ci.yml'
             dashboard:
@@ -81,6 +82,17 @@ jobs:
           uv sync --dev --all-extras
           uv run mypy
           uv run pytest
+      - name: Demos — cassette tests + fixture-mode smoke (zero API cost)
+        # No TRAZO_DEMO_API_KEY/OPENAI_API_KEY is set here on purpose:
+        # this asserts the default (non---live) path never needs one
+        # (TRZ-P3-04's DoD). --endpoint points at a closed port so each
+        # demo spools instead of failing (Shipper's documented fallback,
+        # same as a real unreachable control plane).
+        working-directory: sdk
+        run: |
+          uv run pytest ../demos/_shared -q
+          uv run python ../demos/research-assistant/run.py --endpoint http://localhost:1
+          uv run python ../demos/content-pipeline/run.py --endpoint http://localhost:1
       - name: Control plane — sync, typecheck, test
         working-directory: control-plane
         run: |
