@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from trazo.errors import TrazoError
+
 
 @dataclass(frozen=True)
 class ReplayStepRecord:
@@ -37,7 +39,7 @@ class DivergenceDetail:
     live_inputs: dict[str, Any]
 
 
-class ReplayDivergence(Exception):
+class ReplayDivergence(TrazoError):
     """Raised in ``strict`` mode the moment a boundary call can't be
     answered by history: fingerprint mismatch beyond lookahead, cursor
     exhausted, or a kind never recorded at all (REPLAY_ENGINE.md §3)."""
