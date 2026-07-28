@@ -106,6 +106,23 @@ def test_instrument__traces_full_toy_agent_run_with_boundary_coverage() -> None:
     json.dumps(events)
 
 
+def test_instrument__last_run_id_matches_every_emitted_events_run_id() -> None:
+    """TRZ-P3-05 needs a public way to learn which run_id a completed
+    ``.invoke()`` call used (to archive it to the demo corpus index) —
+    ``run_scope``'s run_id is otherwise only readable *during* the call,
+    via a contextvar that resets the moment ``.invoke()`` returns."""
+    context_init(project="toy-agent-test")
+    shipper = _FakeShipper()
+    recorder = Recorder(shipper=shipper)
+    graph, _counters = build_toy_graph()
+
+    traced = instrument(graph, recorder=recorder)
+    traced.invoke(initial_state())
+
+    assert traced.last_run_id is not None
+    assert {e["run_id"] for e in shipper.enqueued} == {traced.last_run_id}
+
+
 def test_instrument__run_error_still_emits_run_finished_with_error_status() -> None:
     context_init(project="toy-agent-test")
     shipper = _FakeShipper()

@@ -34,6 +34,7 @@ class InstrumentedGraph:
     def __init__(self, graph: Any, *, recorder: Recorder | None = None) -> None:
         self._graph = graph
         self._recorder_override = recorder
+        self.last_run_id: str | None = None
 
     def invoke(
         self, input: dict[str, Any], config: dict[str, Any] | None = None
@@ -43,7 +44,8 @@ class InstrumentedGraph:
         handler = TrazoCallbackHandler(recorder)
         run_config["callbacks"] = [*run_config.get("callbacks", []), handler]
 
-        with run_scope(get_config().project):
+        with run_scope(get_config().project) as run_ctx:
+            self.last_run_id = run_ctx.run_id
             start_time = time.monotonic()
             recorder.emit(
                 "run.started",
