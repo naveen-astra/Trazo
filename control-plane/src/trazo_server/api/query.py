@@ -1,5 +1,5 @@
 """Query API: GET /v1/runs, /v1/runs/{run_id}, /v1/runs/{run_id}/events,
-/v1/blobs/{sha256}.
+/v1/runs/{run_id}/replay-bundle, /v1/blobs/{sha256}.
 
 Unauthenticated by design — "query/dashboard bind to localhost by
 default" (ADR-009); only ingest and policy endpoints require the bearer
@@ -9,6 +9,8 @@ under concurrent inserts, unlike OFFSET.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime
 from typing import Annotated, Any
 
@@ -190,6 +192,90 @@ async def list_events(
     next_cursor = encode_cursor({"seq": page[-1].seq}) if has_more and page else None
 
     return EventsPage(events=[_event_out(e) for e in page], next_cursor=next_cursor)
+
+
+_BUNDLE_PAGE_SIZE = 1000
+
+
+async def _all_events(store: TraceStore, run_id: str) -> list[EventRow]:
+    """Every event for one run, in seq order, ignoring the query API's own
+    page-size cap (that cap is a client-pagination concern; a replay
+    bundle is a single complete document — REPLAY_ENGINE.md §7). Pages
+    internally so this works the same against Postgres (fetch-limited)
+    and the in-memory fake."""
+    events: list[EventRow] = []
+    after_seq: int | None = None
+    while True:
+        page = await store.get_events(
+            run_id, after_seq=after_seq, limit=_BUNDLE_PAGE_SIZE
+        )
+        if not page:
+            break
+        events.extend(page)
+        after_seq = page[-1].seq
+        if len(page) < _BUNDLE_PAGE_SIZE:
+            break
+    return events
+
+
+def _bundle_etag(run_id: str, events: list[EventRow]) -> str:
+    """Cheap content identity: (run_id, count, last event_id) changes
+    whenever the event set changes, without hashing every payload."""
+    last_event_id = events[-1].event_id if events else ""
+    basis = f"{run_id}:{len(events)}:{last_event_id}"
+    return hashlib.sha256(basis.encode("utf-8")).hexdigest()[:16]
+
+
+@router.get("/runs/{run_id}/replay-bundle")
+async def get_replay_bundle(
+    run_id: str, store: Annotated[TraceStore, Depends(get_trace_store)]
+) -> Response:
+    """NDJSON: line 1 a manifest (run metadata, event count, deduplicated
+    blob manifest), then one line per event in seq order — everything a
+    replay session (SDK.md's ``trazo.replay``) needs, in one document
+    (REPLAY_ENGINE.md §7). Immutable/cacheable forever *once a run is no
+    longer ``running``*: a still-running run's bundle would otherwise be
+    cached as if complete, which it isn't yet.
+    """
+    run = await store.get_run(run_id)
+    if run is None:
+        raise ProblemDetailsError(
+            status=404, title="Not Found", detail=f"no run {run_id}"
+        )
+
+    events = await _all_events(store, run_id)
+
+    blob_bytes_by_sha: dict[str, int] = {}
+    for event in events:
+        for blob in event.blobs:
+            blob_bytes_by_sha[blob["sha256"]] = blob["bytes"]
+
+    manifest = {
+        "schema": "trazo.replay-bundle.v1",
+        "run_id": run.run_id,
+        "project_id": run.project_id,
+        "framework": run.framework,
+        "status": run.status,
+        "started_at": run.started_at.isoformat(),
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        "tags": run.tags,
+        "totals": run.totals,
+        "event_count": len(events),
+        "blob_manifest": [
+            {"sha256": sha, "bytes": n} for sha, n in sorted(blob_bytes_by_sha.items())
+        ],
+    }
+
+    lines = [json.dumps(manifest, sort_keys=True)]
+    lines.extend(_event_out(e).model_dump_json() for e in events)
+    body = ("\n".join(lines) + "\n").encode("utf-8")
+
+    headers = {"ETag": f'"{_bundle_etag(run_id, events)}"'}
+    headers["Cache-Control"] = (
+        "public, max-age=31536000, immutable" if run.status != "running" else "no-store"
+    )
+
+    return Response(content=body, media_type="application/x-ndjson", headers=headers)
 
 
 @router.get("/blobs/{sha256}")
