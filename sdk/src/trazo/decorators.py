@@ -91,8 +91,15 @@ def trace_llm(*, provider: str, model: str) -> Callable[[F], F]:
     function returns a dict containing a ``response`` key, its
     ``tokens_in``/``tokens_out``/``cost_usd`` are used too (0/0.0 if
     absent); otherwise the whole return value is treated as ``response``.
-    Either way, the caller gets back exactly what the function returned,
-    unchanged.
+    In RECORD mode, the caller gets back exactly what the function
+    returned, unchanged. In REPLAY mode ``fn`` is never called (TRZ-P4-02:
+    that's the entire point), so there is no original return value to
+    reproduce verbatim — the caller gets back the recorded/substituted
+    ``{"response", "tokens_in", "tokens_out", "cost_usd", "latency_ms"}``
+    dict instead (matching the common case of a dict-shaped return; a
+    function that returns a bare value in RECORD mode gets a dict back
+    in REPLAY mode instead of its original bare shape — a documented,
+    narrow limitation of this escape hatch, not of framework adapters).
     """
 
     def decorator(fn: F) -> F:
@@ -123,7 +130,7 @@ def trace_llm(*, provider: str, model: str) -> Callable[[F], F]:
                     "latency_ms": latency_ms,
                 }
 
-            recorder.boundary(
+            merged = recorder.boundary(
                 "llm.call",
                 {
                     "provider": provider,
@@ -133,7 +140,13 @@ def trace_llm(*, provider: str, model: str) -> Callable[[F], F]:
                 },
                 execute,
             )
-            return raw_result_holder["value"]
+            # RECORD mode: execute() ran, so raw_result_holder has fn's
+            # exact original return value — return that, unchanged. REPLAY
+            # mode never calls execute(), so it's absent; fall back to the
+            # recorded/substituted dict (see docstring for the tradeoff).
+            if "value" in raw_result_holder:
+                return raw_result_holder["value"]
+            return merged
 
         return wrapper  # type: ignore[return-value]
 
@@ -181,8 +194,11 @@ def trace_memory_write(*, store: str = "vector") -> Callable[[F], F]:
     The wrapped function's bound arguments supply ``key_or_ns`` (its
     ``key_or_ns`` or ``key`` parameter, if present, else ``"default"``)
     and ``value`` (its ``value`` parameter if present, otherwise the whole
-    bound-argument dict). The function's return value is returned to the
-    caller unchanged.
+    bound-argument dict). In RECORD mode the function's return value is
+    returned to the caller unchanged. In REPLAY mode ``fn`` is never
+    called (TRZ-P4-02), and ``memory.write``'s recorded payload carries no
+    return-value field to reproduce (EVENTS.md §2.3), so the caller gets
+    ``None`` — matching every real write function's actual return value.
     """
 
     def decorator(fn: F) -> F:
@@ -205,7 +221,7 @@ def trace_memory_write(*, store: str = "vector") -> Callable[[F], F]:
                 {"store": store, "key_or_ns": key_or_ns, "value": value},
                 execute,
             )
-            return raw_result_holder["value"]
+            return raw_result_holder.get("value")
 
         return wrapper  # type: ignore[return-value]
 
