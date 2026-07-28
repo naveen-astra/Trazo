@@ -44,12 +44,14 @@ class InstrumentedCrew:
     def __init__(self, crew: Crew, *, recorder: Recorder | None = None) -> None:
         self._crew = crew
         self._recorder_override = recorder
+        self.last_run_id: str | None = None
 
     def kickoff(self, inputs: dict[str, Any] | None = None, **kwargs: Any) -> Any:
         recorder = self._recorder_override or get_recorder()
         capture = CrewEventCapture(recorder)
 
-        with run_scope(get_config().project):
+        with run_scope(get_config().project) as run_ctx:
+            self.last_run_id = run_ctx.run_id
             start_time = time.monotonic()
             recorder.emit(
                 "run.started",

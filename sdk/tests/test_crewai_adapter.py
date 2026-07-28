@@ -170,6 +170,39 @@ def test_instrument__traces_toy_crew_run_with_boundary_coverage() -> None:
     json.dumps(events)
 
 
+def test_instrument__last_run_id_matches_every_emitted_events_run_id() -> None:
+    """TRZ-P3-05 needs a public way to learn which run_id a completed
+    ``.kickoff()`` call used (to archive it to the demo corpus index) —
+    ``run_scope``'s run_id is otherwise only readable *during* the call,
+    via a contextvar that resets the moment ``.kickoff()`` returns."""
+    context_init(project="toy-crew-test")
+    shipper = _FakeShipper()
+    recorder = Recorder(shipper=shipper)
+
+    researcher = Agent(
+        role="Researcher",
+        goal="Find facts",
+        backstory="A careful researcher",
+        llm=_ScriptedLLM(model="fake-model", script=["Final Answer: found some facts"]),
+        allow_delegation=False,
+        verbose=False,
+    )
+    task = Task(
+        description="Research trazo",
+        expected_output="facts about trazo",
+        agent=researcher,
+    )
+    crew = Crew(
+        agents=[researcher], tasks=[task], process=Process.sequential, verbose=False
+    )
+
+    traced = instrument(crew, recorder=recorder)
+    traced.kickoff()
+
+    assert traced.last_run_id is not None
+    assert {e["run_id"] for e in shipper.enqueued} == {traced.last_run_id}
+
+
 def test_instrument__delegation_emits_agent_message_not_tool_call() -> None:
     context_init(project="toy-crew-test")
     shipper = _FakeShipper()
