@@ -20,12 +20,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, TypeVar
+from typing import Any, Protocol, TypeVar
 
 from trazo.core.context import current_agent_id, current_run_context, current_step_id
 from trazo.core.fingerprint import FINGERPRINTED_KINDS, fingerprint_for
 from trazo.core.redactor import Redactor
-from trazo.core.shipper import RECOMMENDED_SHUTDOWN_TIMEOUT_SECONDS, Shipper
+from trazo.core.shipper import RECOMMENDED_SHUTDOWN_TIMEOUT_SECONDS
 from trazo.core.substituter import Substituter
 from trazo.core.ulid import new_event_id
 from trazo.errors import NoActiveRunError, ReplayNotConfiguredError
@@ -38,13 +38,25 @@ class RecorderMode(Enum):
     REPLAY = "replay"
 
 
+class ShipperLike(Protocol):
+    """What Recorder actually needs from a shipper — a Protocol (not the
+    concrete ``Shipper`` class) so a REPLAY-mode recorder can be given a
+    null object that satisfies the same contract without a real Shipper's
+    background thread/HTTP client (``trazo.replay``'s ``_NullShipper``,
+    TRZ-P4-05), and test fakes have a real type to structurally match."""
+
+    def enqueue(self, event: dict[str, Any]) -> None: ...
+
+    def flush_and_stop(self, *, timeout: float = ...) -> None: ...
+
+
 class Recorder:
     """One instance per ``trazo.init()`` call; adapters call its methods."""
 
     def __init__(
         self,
         *,
-        shipper: Shipper,
+        shipper: ShipperLike,
         redactor: Redactor | None = None,
         mode: RecorderMode = RecorderMode.RECORD,
         substituter: Substituter | None = None,
