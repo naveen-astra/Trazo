@@ -1,4 +1,5 @@
-"""Recorder: mode-switched RECORD/REPLAY boundary interception (TRZ-P2-03).
+"""Recorder: mode-switched RECORD/REPLAY boundary interception (TRZ-P2-03,
+REPLAY mode wired in TRZ-P4-02).
 
 Adapters call ``boundary(kind, inputs, execute_fn)`` — the single code
 path that guarantees record/replay symmetry (CODING_STANDARDS.md §4:
@@ -6,10 +7,12 @@ path that guarantees record/replay symmetry (CODING_STANDARDS.md §4:
 deterministic boundary goes through Recorder.boundary... in both record
 and replay mode. A bypassed boundary is a highest-severity bug").
 
-REPLAY mode's substitution logic is Phase 4 scope (REPLAY_ENGINE.md) — the
-mode enum exists now so that work extends this class instead of reshaping
-it, but calling ``boundary`` in REPLAY mode today raises NotImplementedError
-rather than silently doing the wrong thing.
+In REPLAY mode, ``execute_fn`` is *never called* — the whole point is
+that the outside world does not run again (REPLAY_ENGINE.md §1). The
+Substituter answers the call from the loaded bundle instead, and the
+match/divergence is recorded into the local ``ReplayReport`` — never
+shipped as a new event; replays are read-only over history
+(REPLAY_ENGINE.md §2 point 3).
 """
 
 from __future__ import annotations
@@ -23,8 +26,9 @@ from trazo.core.context import current_agent_id, current_run_context, current_st
 from trazo.core.fingerprint import FINGERPRINTED_KINDS, fingerprint_for
 from trazo.core.redactor import Redactor
 from trazo.core.shipper import RECOMMENDED_SHUTDOWN_TIMEOUT_SECONDS, Shipper
+from trazo.core.substituter import Substituter
 from trazo.core.ulid import new_event_id
-from trazo.errors import NoActiveRunError
+from trazo.errors import NoActiveRunError, ReplayNotConfiguredError
 
 T = TypeVar("T", bound=dict[str, Any])
 
@@ -43,10 +47,12 @@ class Recorder:
         shipper: Shipper,
         redactor: Redactor | None = None,
         mode: RecorderMode = RecorderMode.RECORD,
+        substituter: Substituter | None = None,
     ) -> None:
         self._shipper = shipper
         self._redactor = redactor or Redactor()
         self.mode = mode
+        self.substituter = substituter
 
     def emit(self, kind: str, payload: dict[str, Any]) -> None:
         """Record a non-boundary event (run.started, step.started, ...) —
@@ -69,12 +75,18 @@ class Recorder:
         llm.call). An adapter that wants an error event should catch the
         exception itself and call ``emit``/``boundary`` again with a
         payload it knows is complete for that kind.
+
+        In REPLAY mode, ``execute_fn`` is never called: the Substituter
+        answers from the loaded bundle (or raises ``ReplayDivergence`` in
+        strict mode) instead.
         """
         if self.mode is RecorderMode.REPLAY:
-            raise NotImplementedError(
-                "Recorder REPLAY-mode substitution lands in Phase 4 "
-                "(REPLAY_ENGINE.md); RECORD mode is TRZ-P2-03's scope."
-            )
+            if self.substituter is None:
+                raise ReplayNotConfiguredError(
+                    "Recorder is in REPLAY mode but has no Substituter — "
+                    "construct it with substituter=Substituter(bundle, ...)"
+                )
+            return self.substituter.substitute(kind, inputs)  # type: ignore[return-value]
         result = execute_fn()
         payload: dict[str, Any] = {**inputs, **result}
         fingerprint = (
