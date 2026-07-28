@@ -9,6 +9,8 @@ need to spin one up.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
@@ -47,6 +49,22 @@ def get_recorder() -> Recorder:
 
 def is_initialized() -> bool:
     return _recorder is not None
+
+
+@contextmanager
+def replay_recorder_scope(recorder: Recorder) -> Iterator[None]:
+    """Temporarily install ``recorder`` as the process-wide recorder,
+    restoring whatever was installed before on exit (TRZ-P4-05) — used by
+    ``trazo.replay`` so running a replay session never permanently
+    clobbers a real ``trazo.init()``'d RECORD-mode recorder, if one
+    exists in this process."""
+    global _recorder
+    previous = _recorder
+    _recorder = recorder
+    try:
+        yield
+    finally:
+        _recorder = previous
 
 
 def _reset_runtime_for_tests() -> None:
