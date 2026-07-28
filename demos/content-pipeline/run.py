@@ -2,7 +2,13 @@
 """Run the content-pipeline demo end-to-end (TRZ-P3-03).
 
     uv run --project sdk --extra crewai python demos/content-pipeline/run.py \\
-        [--endpoint http://localhost:8420]
+        [--endpoint http://localhost:8420] [--live]
+
+``--live`` calls a real model (needs ``TRAZO_DEMO_API_KEY`` or
+``OPENAI_API_KEY``) instead of the deterministic fixture script, and
+records the exchange to ``cassette.json`` for fixture mode to replay
+later (TRZ-P3-04) — used by the nightly corpus job (TRZ-P3-05), not by
+CI, which stays zero-cost on the default fixture path.
 
 Only the SDK's public API is used here (``trazo.init``,
 ``trazo.integrations.crewai.instrument``, ``trazo.shutdown``) —
@@ -20,6 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import llm
 from crew import build_crew
 
 import trazo
@@ -31,7 +38,15 @@ def main() -> int:
     parser.add_argument(
         "--endpoint", default=os.environ.get("TRAZO_ENDPOINT", "http://localhost:8420")
     )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="call a real model and record it to cassette.json, instead of "
+        "the deterministic fixture script",
+    )
     args = parser.parse_args()
+
+    llm.set_live_mode(args.live)
 
     trazo.init(
         project="content-pipeline",
@@ -44,6 +59,7 @@ def main() -> int:
     try:
         result = traced.kickoff()
         print(result.raw)
+        print(f"TRAZO_RUN_ID={traced.last_run_id}")
     finally:
         # Default timeout, not a short explicit one: this demo is what
         # found the reliability gap that set the default (see
