@@ -1,7 +1,8 @@
-"""The content-pipeline demo's LLM calls (TRZ-P3-03): deterministic by
-default, same rationale as the research-assistant demo's ``llm.py`` —
-TRZ-P3-02's "deterministic-ish fixture inputs" DoD and TRZ-P3-04's "zero
-API cost" constraint apply to every demo, not just the first one.
+"""The content-pipeline demo's LLM calls (TRZ-P3-03, live mode TRZ-P3-04):
+deterministic by default, same rationale as the research-assistant demo's
+``llm.py`` — TRZ-P3-02's "deterministic-ish fixture inputs" DoD and
+TRZ-P3-04's "zero API cost" constraint apply to every demo, not just the
+first one.
 
 Unlike the LangGraph demo (one ``@trace_llm``-wrapped function per node),
 CrewAI's ``Agent`` takes a single ``llm`` object whose ``call()`` method
@@ -14,14 +15,47 @@ per-instance step counter the way the LangGraph demo's toy fixture did.
 Each entry in ``SCRIPTS`` is one task's list of ReAct-format responses
 (``crewai.agents.parser``'s documented format) — one entry for a plain
 answer, two for a task that calls a tool (or delegates) before answering.
+
+Live mode (``set_live_mode(True)``, called from ``run.py``'s ``--live``)
+forwards the *entire* ReAct-format ``messages`` CrewAI built (system
+prompt + task + history-so-far) to a real model and records the exchange
+to ``cassette.json``, keyed by that exact message content — not by tag —
+because live mode's whole point is CrewAI driving the conversation
+itself (thought/action/observation loop) rather than replaying a fixed
+per-tag script. Fixture-mode replay works turn by turn for the same
+reason a VCR cassette always does: as long as it keeps replaying the
+recorded responses verbatim, each next turn's prompt prefix is
+byte-identical to what was recorded, so the next cassette lookup keeps
+hitting.
 """
 
 from __future__ import annotations
 
 import re
+import sys
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_shared"))
+
+from cassette import Cassette, request_key
 from crewai.llms.base_llm import BaseLLM, LLMCallType, llm_call_context
+from live_llm import complete as live_complete
 from pydantic import PrivateAttr
+
+LIVE_MODEL = "gpt-4o-mini"
+
+_CASSETTE_PATH = Path(__file__).resolve().parent / "cassette.json"
+_cassette = Cassette(_CASSETTE_PATH)
+_live_mode = False
+
+
+def set_live_mode(live: bool) -> None:
+    """Switch ``ScriptedLLM.call()`` between fixture and live mode.
+    Called once by ``run.py`` before the crew runs — never toggled
+    mid-run."""
+    global _live_mode
+    _live_mode = live
+
 
 _TAG_PATTERN = re.compile(r"\[(\w+)\]")
 
@@ -137,19 +171,39 @@ class ScriptedLLM(BaseLLM):
                 from_task=from_task,  # type: ignore[arg-type]
                 from_agent=from_agent,  # type: ignore[arg-type]
             )
-            tag = _extract_tag(messages)
-            if tag is None:
-                reply = _DELEGATED_TASK_FALLBACK
+            key = request_key("crewai_call", {"messages": str(messages)})
+            if _live_mode:
+                result = live_complete(str(messages), model=LIVE_MODEL)
+                reply = str(result["response"])
+                usage = {
+                    "prompt_tokens": result["tokens_in"],
+                    "completion_tokens": result["tokens_out"],
+                }
+                _cassette.put(key, result)
+                _cassette.save()
             else:
-                step = self._progress.get(tag, 0)
-                reply = SCRIPTS[tag][step]
-                self._progress[tag] = step + 1
+                cached = _cassette.get(key)
+                if cached is not None:
+                    reply = str(cached["response"])
+                    usage = {
+                        "prompt_tokens": cached["tokens_in"],
+                        "completion_tokens": cached["tokens_out"],
+                    }
+                else:
+                    tag = _extract_tag(messages)
+                    if tag is None:
+                        reply = _DELEGATED_TASK_FALLBACK
+                    else:
+                        step = self._progress.get(tag, 0)
+                        reply = SCRIPTS[tag][step]
+                        self._progress[tag] = step + 1
+                    usage = {"prompt_tokens": 10, "completion_tokens": 5}
             self._emit_call_completed_event(
                 response=reply,
                 call_type=LLMCallType.LLM_CALL,
                 from_task=from_task,  # type: ignore[arg-type]
                 from_agent=from_agent,  # type: ignore[arg-type]
                 messages=messages,  # type: ignore[arg-type]
-                usage={"prompt_tokens": 10, "completion_tokens": 5},
+                usage=usage,
             )
             return reply
