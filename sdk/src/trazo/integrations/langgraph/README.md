@@ -3,8 +3,13 @@
 `instrument(compiled_graph)` wraps a compiled LangGraph graph so its
 run/step lifecycle and LLM/tool boundaries are captured through
 `Recorder`. Install with the `langgraph` extra: `pip install
-trazo[langgraph]`. Verified against `langgraph==0.2.76` /
-`langchain-core==0.3.86` (the pinned range in `pyproject.toml`).
+trazo[langgraph]`. Verified across the full pinned range in
+`pyproject.toml` (`langgraph>=0.2.17,<0.3`), min (`0.2.17`) and max
+(`0.2.76`) both tested nightly (TRZ-P3-06). `langchain-core>=0.3` is
+pinned explicitly alongside `langgraph` — versions below 0.2.17 permit a
+`langchain-core` old enough to predate `model_dump()` on message classes,
+which `trazo.core.serialization` depends on; see `pyproject.toml`'s
+comment on the `langgraph` extra for the full story.
 
 ## How it hooks (why, not just what)
 

@@ -3,7 +3,8 @@
 `instrument(crew)` wraps a CrewAI `Crew` so its run/step lifecycle and
 LLM/tool/memory/delegation boundaries are captured through `Recorder`.
 Install with the `crewai` extra: `pip install trazo[crewai]`. Verified
-against `crewai==1.15.6` (the pinned range in `pyproject.toml`).
+across the full pinned range in `pyproject.toml` (`>=1.15,<2`), min
+(`1.15.0`) and max (`1.15.8`) both tested nightly (TRZ-P3-06).
 
 ## How it hooks (why, not just what)
 
