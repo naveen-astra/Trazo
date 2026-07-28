@@ -20,9 +20,9 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "sdk" / "tests"))
 
-import trazo  # noqa: E402
 from agents.research_assistant import build_toy_graph, initial_state  # noqa: E402
 
+import trazo  # noqa: E402
 from trazo.core.runtime import get_recorder  # noqa: E402
 from trazo.integrations.langgraph import instrument  # noqa: E402
 
