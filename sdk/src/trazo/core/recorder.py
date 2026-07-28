@@ -56,7 +56,15 @@ class Recorder:
 
     def emit(self, kind: str, payload: dict[str, Any]) -> None:
         """Record a non-boundary event (run.started, step.started, ...) —
-        no execute_fn, no fingerprint."""
+        no execute_fn, no fingerprint.
+
+        A no-op in REPLAY mode: adapters call ``emit`` for run/step
+        lifecycle events regardless of mode (they have no execute_fn to
+        substitute), but replays never ship anything new — read-only over
+        history (REPLAY_ENGINE.md §2 point 3), same as ``boundary``.
+        """
+        if self.mode is RecorderMode.REPLAY:
+            return
         self._ship_event(kind, payload)
 
     def boundary(
