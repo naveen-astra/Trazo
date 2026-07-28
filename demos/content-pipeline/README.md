@@ -22,18 +22,26 @@ Needs a live control plane at `--endpoint` (default `http://localhost:8420`,
 env `TRAZO_ENDPOINT`) to actually ingest the trace; without one the SDK
 spools events to `.trazo/spool/*.ndjson` instead of failing.
 
-## Why it's deterministic (no LLM API key needed)
+## Why it's deterministic by default (no LLM API key needed)
 
 `llm.py`'s `ScriptedLLM` is rule-based, not a real model — same rationale
-as the research-assistant demo: zero API cost in CI (TRZ-P3-04), and every
-call still goes through CrewAI's real event-emission path, so it's
-recorded as a genuine `llm.call`/`tool.call` with a real fingerprint.
-Since one CrewAI `Agent` reuses the same `llm` across every task it
-executes (unlike the LangGraph demo's one-function-per-node design),
-`ScriptedLLM` looks up its canned response by a `[tag]` embedded in each
-task's own `description` — CrewAI's prompt template includes it verbatim
-as `"Current Task: {description}"` (confirmed empirically) — rather than
+as the research-assistant demo: zero API cost in CI, and every call still
+goes through CrewAI's real event-emission path, so it's recorded as a
+genuine `llm.call`/`tool.call` with a real fingerprint. Since one CrewAI
+`Agent` reuses the same `llm` across every task it executes (unlike the
+LangGraph demo's one-function-per-node design), the fixture path looks up
+its canned response by a `[tag]` embedded in each task's own
+`description` — CrewAI's prompt template includes it verbatim as
+`"Current Task: {description}"` (confirmed empirically) — rather than
 tracking one linear step counter.
+
+`--live` (TRZ-P3-04) forwards the entire ReAct-format prompt CrewAI built
+to a real model instead — needs `TRAZO_DEMO_API_KEY` or
+`OPENAI_API_KEY` — and records each exchange to `cassette.json`, keyed by
+the exact prompt content rather than by tag (live mode lets CrewAI drive
+its own thought/action/observation loop, so there's no fixed per-tag
+script to key against). See `demos/_shared/README.md` for the shared
+cassette mechanics.
 
 ## Realism bar (Phase 3 checkpoint)
 
