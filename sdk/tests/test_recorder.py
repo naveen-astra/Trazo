@@ -13,8 +13,12 @@ from typing import Any
 import pytest
 
 from trazo.core.context import agent_scope, run_scope, step_scope
+from trazo.core.fingerprint import fingerprint_for
 from trazo.core.recorder import Recorder, RecorderMode
-from trazo.errors import NoActiveRunError
+from trazo.core.replay_bundle import RecordedEvent, ReplayBundle
+from trazo.core.replay_report import ReplayDivergence
+from trazo.core.substituter import Substituter
+from trazo.errors import NoActiveRunError, ReplayNotConfiguredError
 
 
 class _FakeShipper:
@@ -154,8 +158,120 @@ def test_boundary__exception_propagates_and_nothing_is_recorded() -> None:
     assert shipper.enqueued == []
 
 
-def test_boundary__replay_mode_raises_not_implemented() -> None:
+def test_boundary__replay_mode_without_a_substituter_raises() -> None:
     recorder = Recorder(shipper=_FakeShipper(), mode=RecorderMode.REPLAY)
 
-    with run_scope("proj"), pytest.raises(NotImplementedError, match="Phase 4"):
+    with run_scope("proj"), pytest.raises(ReplayNotConfiguredError):
         recorder.boundary("tool.call", {"tool_name": "x", "args": {}}, lambda: {})
+
+
+def _bundle_with_one_tool_call() -> ReplayBundle:
+    payload = {
+        "tool_name": "web_search",
+        "args": {"q": "hi"},
+        "side_effect_class": "external",
+        "result": {"hits": []},
+        "status": "ok",
+        "latency_ms": 12,
+    }
+    event = RecordedEvent(
+        run_id="run_1",
+        seq=0,
+        event_id="evt_1",
+        kind="tool.call",
+        ts="2026-01-01T00:00:00Z",
+        step_id=None,
+        agent_id=None,
+        fingerprint=fingerprint_for("tool.call", payload),
+        payload=payload,
+        blobs=[],
+    )
+    return ReplayBundle(
+        run_id="run_1",
+        project_id="proj",
+        framework="langgraph",
+        status="ok",
+        started_at="2026-01-01T00:00:00Z",
+        finished_at="2026-01-01T00:00:05Z",
+        tags={},
+        totals={},
+        event_count=1,
+        blob_manifest=[],
+        events=[event],
+        _events_by_kind={"tool.call": [event]},
+    )
+
+
+def test_boundary__replay_mode_never_calls_execute_fn() -> None:
+    """REPLAY_ENGINE.md §1: "the outside world does not run again" —
+    execute_fn is the live call; it must never run in REPLAY mode."""
+    bundle = _bundle_with_one_tool_call()
+    substituter = Substituter(bundle)
+    recorder = Recorder(
+        shipper=_FakeShipper(), mode=RecorderMode.REPLAY, substituter=substituter
+    )
+    live_call_happened = False
+
+    def _live_call() -> dict[str, Any]:
+        nonlocal live_call_happened
+        live_call_happened = True
+        return {"result": "should never happen", "status": "ok", "latency_ms": 0}
+
+    with run_scope("proj"):
+        result = recorder.boundary(
+            "tool.call",
+            {
+                "tool_name": "web_search",
+                "args": {"q": "hi"},
+                "side_effect_class": "external",
+            },
+            _live_call,
+        )
+
+    assert live_call_happened is False
+    assert result["result"] == {"hits": []}
+
+
+def test_boundary__replay_mode_ships_no_new_events() -> None:
+    """Replays are read-only over history (REPLAY_ENGINE.md §2 point 3):
+    a substituted boundary call must never enqueue anything onto the
+    Shipper."""
+    bundle = _bundle_with_one_tool_call()
+    substituter = Substituter(bundle)
+    shipper = _FakeShipper()
+    recorder = Recorder(
+        shipper=shipper, mode=RecorderMode.REPLAY, substituter=substituter
+    )
+
+    with run_scope("proj"):
+        recorder.boundary(
+            "tool.call",
+            {
+                "tool_name": "web_search",
+                "args": {"q": "hi"},
+                "side_effect_class": "external",
+            },
+            lambda: {},
+        )
+
+    assert shipper.enqueued == []
+    assert len(substituter.report.steps) == 1
+
+
+def test_boundary__replay_mode_propagates_divergence_in_strict_mode() -> None:
+    bundle = _bundle_with_one_tool_call()
+    substituter = Substituter(bundle, mode="strict")
+    recorder = Recorder(
+        shipper=_FakeShipper(), mode=RecorderMode.REPLAY, substituter=substituter
+    )
+
+    with run_scope("proj"), pytest.raises(ReplayDivergence):
+        recorder.boundary(
+            "tool.call",
+            {
+                "tool_name": "web_search",
+                "args": {"q": "a completely different query"},
+                "side_effect_class": "external",
+            },
+            lambda: {},
+        )
