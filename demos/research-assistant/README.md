@@ -20,16 +20,22 @@ env `TRAZO_ENDPOINT`) to actually ingest the trace; without one the SDK
 spools events to `.trazo/spool/*.ndjson` instead of failing (Shipper's
 documented failure mode) — useful for inspecting a run's shape offline.
 
-## Why it's deterministic (no LLM API key needed)
+## Why it's deterministic by default (no LLM API key needed)
 
 `llm.py`'s `ask_*` functions are rule-based, not calls to a real model —
 TRZ-P3-02's own DoD wants "deterministic-ish fixture inputs", and every
-demo must run in CI with zero API cost (TRZ-P3-04). Each `ask_*` call
-still goes through the real `@trace_llm` decorator, so it's recorded as a
-genuine `llm.call` event with a real fingerprint — `trace_llm` doesn't
-know or care how the wrapped function produced its answer. Swapping in a
-real provider later (TRZ-P3-04's live-mode flag) means changing `llm.py`
-only; no node code changes.
+demo must run in CI with zero API cost. Each `ask_*` call still goes
+through the real `@trace_llm` decorator, so it's recorded as a genuine
+`llm.call` event with a real fingerprint — `trace_llm` doesn't know or
+care how the wrapped function produced its answer.
+
+`--live` (TRZ-P3-04) calls a real model instead — needs
+`TRAZO_DEMO_API_KEY` or `OPENAI_API_KEY` — and records the exchange to
+`cassette.json`, which fixture mode then replays on later runs before
+ever falling back to the rule-based stub. See `demos/_shared/README.md`
+for the cassette mechanics; this is what the nightly corpus job
+(TRZ-P3-05) uses to generate fresh traces without paying for every CI
+run too.
 
 ## Vector memory
 
