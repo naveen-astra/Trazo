@@ -23,14 +23,29 @@ dependencies = [
 
 [project.optional-dependencies]
 langgraph = [
-    "langgraph>=0.2,<0.3",
+    # >=0.2.17, not bare >=0.2: langgraph<0.2.17 pins langchain-core<0.3
+    # exclusively, which is incompatible with the langchain-core>=0.3
+    # constraint below (verified against PyPI metadata, TRZ-P3-06).
+    "langgraph>=0.2.17,<0.3",
+    # langgraph's own declared range otherwise permits langchain-core as
+    # low as 0.2.4x even at its newest 0.2.x release — that's still
+    # pydantic-v1-style message classes with no `model_dump`, which
+    # `trazo.core.serialization` depends on (confirmed by actually
+    # installing langgraph==0.2.0 and running the adapter's tests against
+    # it: state hashing silently degrades every LangChain message to
+    # `$unrepresentable`). Pin the transitive dependency directly rather
+    # than trust langgraph's range.
+    "langchain-core>=0.3",
 ]
 crewai = [
     "crewai>=1.15,<2",
 ]
 # Framework adapters are optional extras; each range is pinned to the
 # major version verified against when its adapter task landed
-# (TRZ-P2-04: langgraph 0.2.76; TRZ-P3-01: crewai 1.15.6).
+# (TRZ-P2-04: langgraph 0.2.76; TRZ-P3-01: crewai 1.15.6). TRZ-P3-06's
+# nightly `adapter-matrix` job (.github/workflows/nightly.yml) verifies
+# both ranges' min and max install and pass on every run, so this comment
+# doesn't need hand-updating as new patch releases land within the range.
 demos = [
     # demos/research-assistant's vector memory (TRZ-P3-02). A dedicated
     # extra, not folded into `langgraph` — chromadb isn't LangGraph-
