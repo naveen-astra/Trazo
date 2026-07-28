@@ -38,6 +38,20 @@ def test_emit__requires_an_active_run() -> None:
         recorder.emit("sdk.diagnostic", {"level": "info", "message": "hi"})
 
 
+def test_emit__replay_mode_ships_nothing_even_with_an_active_run() -> None:
+    """Adapters call emit() for run/step lifecycle events regardless of
+    mode (no execute_fn to substitute there) — REPLAY mode must still
+    ship nothing, same guarantee boundary() gives (TRZ-P4-02)."""
+    shipper = _FakeShipper()
+    recorder = Recorder(shipper=shipper, mode=RecorderMode.REPLAY)
+
+    with run_scope("proj"):
+        recorder.emit("run.started", {"framework": "langgraph"})
+        recorder.emit("step.started", {"name": "plan"})
+
+    assert shipper.enqueued == []
+
+
 def test_emit__builds_a_schema_valid_envelope() -> None:
     shipper = _FakeShipper()
     recorder = Recorder(shipper=shipper)
