@@ -44,14 +44,17 @@ def _event(
 
 
 def _bundle(
-    events: list[RecordedEvent], *, framework: str = "langgraph"
+    events: list[RecordedEvent],
+    *,
+    framework: str = "langgraph",
+    project_id: str = "proj_1",
 ) -> ReplayBundle:
     by_kind: dict[str, list[RecordedEvent]] = defaultdict(list)
     for event in events:
         by_kind[event.kind].append(event)
     return ReplayBundle(
         run_id="run_1",
-        project_id="proj_1",
+        project_id=project_id,
         framework=framework,
         status="ok",
         started_at="2026-01-01T00:00:00Z",
@@ -287,4 +290,28 @@ def test_run_to__does_not_permanently_install_the_replay_recorder() -> None:
 
     session.run_to()
 
-    assert runtime.is_initialized() is False
+
+def test_run_to__makes_get_config_project_available_to_the_entrypoint() -> None:
+    """Real bug found running this against an actual demo (TRZ-P4-07):
+    LangGraph/CrewAI adapters call get_config().project just like a live
+    run does — run_to() must make that work without a real trazo.init()
+    ever having been called, using the bundle's own project_id."""
+    from trazo.core.context import get_config, is_initialized
+
+    assert is_initialized() is False
+
+    bundle = _bundle(
+        [_event(0, "run.started", {"entry_input": None})],
+        project_id="the-bundles-project",
+    )
+    session = replay.Session(bundle)
+    seen_project = {}
+
+    @replay.entrypoint(framework="langgraph")
+    def run(entry_input: object) -> None:
+        seen_project["value"] = get_config().project
+
+    session.run_to()
+
+    assert seen_project["value"] == "the-bundles-project"
+    assert is_initialized() is False
