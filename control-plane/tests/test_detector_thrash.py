@@ -1,4 +1,9 @@
-"""Unit tests for ThrashDetector (TRZ-P5-04), from synthetic streams."""
+"""Unit tests for ThrashDetector (TRZ-P5-04), from synthetic streams.
+
+Ground-truth signature under test: cycling through a handful of distinct
+tool-call fingerprints without ever turning up anything new — *not*
+state-hash stagnation (see thrash.py's own docstring for why that
+literal AI_DEBUGGER.md §1 wording was dropped)."""
 
 from __future__ import annotations
 
@@ -11,7 +16,7 @@ from trazo_server.events import Event, EventAdapter
 _RUN_ID = "run_1"
 
 
-def _tool_call(*, seq: int, tool_name: str) -> Event:
+def _tool_call(*, seq: int, fingerprint: str, tool_name: str = "web_search") -> Event:
     base: dict[str, Any] = {
         "schema": "trazo.v1",
         "event_id": f"evt_tool_{seq}",
@@ -20,7 +25,7 @@ def _tool_call(*, seq: int, tool_name: str) -> Event:
         "seq": seq,
         "ts": "2026-07-18T09:30:00.000Z",
         "kind": "tool.call",
-        "fingerprint": f"sha256:{'a' * 64}",
+        "fingerprint": fingerprint,
         "payload": {
             "tool_name": tool_name,
             "args": {},
@@ -28,25 +33,6 @@ def _tool_call(*, seq: int, tool_name: str) -> Event:
             "status": "ok",
             "latency_ms": 1.0,
             "side_effect_class": "external",
-        },
-    }
-    return EventAdapter.validate_python(base)
-
-
-def _step_finished(*, seq: int, state_after_hash: str) -> Event:
-    base: dict[str, Any] = {
-        "schema": "trazo.v1",
-        "event_id": f"evt_step_{seq}",
-        "run_id": _RUN_ID,
-        "project": "proj",
-        "seq": seq,
-        "ts": "2026-07-18T09:30:00.000Z",
-        "kind": "step.finished",
-        "payload": {
-            "status": "ok",
-            "state_after_hash": state_after_hash,
-            "state_after": {},
-            "duration_ms": 1.0,
         },
     }
     return EventAdapter.validate_python(base)
@@ -64,44 +50,40 @@ def _feed(
     return detections
 
 
-_STUCK_HASH = f"sha256:{'1' * 64}"
+_FP_A = f"sha256:{'a' * 64}"
+_FP_B = f"sha256:{'b' * 64}"
+_FP_C = f"sha256:{'c' * 64}"
 
 
-def test_thrash__fires_with_diverse_tools_and_unchanged_state() -> None:
-    """The detector only evaluates *on* tool.call events, so the stream
-    needs one more tool.call after the step_window's worth of
-    step.finished events has actually accumulated."""
-    detector = ThrashDetector(min_distinct_tools=2, step_window=3)
+def test_thrash__fires_when_cycling_through_a_fixed_set_of_fingerprints() -> None:
+    """3 distinct fingerprints (queries), all seen once already, then
+    the window's second half repeats only fingerprints from the first
+    half -- nothing new discovered."""
+    detector = ThrashDetector(min_distinct_calls=2, window_calls=6)
     window = RunWindow(_RUN_ID)
     events = [
-        _step_finished(seq=0, state_after_hash=_STUCK_HASH),
-        _tool_call(seq=1, tool_name="web_search"),
-        _step_finished(seq=2, state_after_hash=_STUCK_HASH),
-        _tool_call(seq=3, tool_name="fetch_document"),
-        _step_finished(seq=4, state_after_hash=_STUCK_HASH),
-        _tool_call(seq=5, tool_name="web_search"),
+        _tool_call(seq=0, fingerprint=_FP_A),
+        _tool_call(seq=1, fingerprint=_FP_B),
+        _tool_call(seq=2, fingerprint=_FP_C),
+        _tool_call(seq=3, fingerprint=_FP_A),
+        _tool_call(seq=4, fingerprint=_FP_B),
+        _tool_call(seq=5, fingerprint=_FP_C),
     ]
 
     detections = _feed(detector, window, events)
 
-    assert len(detections) >= 1
+    assert len(detections) == 1
     assert detections[0].detector == "thrash"
-    assert set(detections[0].details["distinct_tools"]) == {
-        "web_search",
-        "fetch_document",
-    }
+    assert detections[0].details["distinct_fingerprint_count"] == 3
 
 
-def test_thrash__does_not_fire_when_state_actually_changes() -> None:
-    detector = ThrashDetector(min_distinct_tools=2, step_window=3)
+def test_thrash__does_not_fire_when_a_new_fingerprint_keeps_appearing() -> None:
+    """Every call turns up something the window hasn't seen before --
+    real progress, not thrash."""
+    detector = ThrashDetector(min_distinct_calls=2, window_calls=6)
     window = RunWindow(_RUN_ID)
     events = [
-        _step_finished(seq=0, state_after_hash=f"sha256:{'1' * 64}"),
-        _tool_call(seq=1, tool_name="web_search"),
-        _step_finished(seq=2, state_after_hash=f"sha256:{'2' * 64}"),  # progress!
-        _tool_call(seq=3, tool_name="fetch_document"),
-        _step_finished(seq=4, state_after_hash=f"sha256:{'3' * 64}"),  # still changing
-        _tool_call(seq=5, tool_name="web_search"),
+        _tool_call(seq=i, fingerprint=f"sha256:{chr(97 + i) * 64}") for i in range(6)
     ]
 
     detections = _feed(detector, window, events)
@@ -109,15 +91,19 @@ def test_thrash__does_not_fire_when_state_actually_changes() -> None:
     assert detections == []
 
 
-def test_thrash__does_not_fire_below_min_distinct_tools() -> None:
-    detector = ThrashDetector(min_distinct_tools=3, step_window=2)
+def test_thrash__does_not_fire_when_one_fingerprint_dominates() -> None:
+    """A single stale one-off plus five repeats of the same exact call is
+    an exact-repeat loop wearing a Thrash costume -- LoopDetector's
+    signature, not this one's."""
+    detector = ThrashDetector(min_distinct_calls=2, window_calls=6)
     window = RunWindow(_RUN_ID)
     events = [
-        _step_finished(seq=0, state_after_hash=_STUCK_HASH),
-        _tool_call(seq=1, tool_name="web_search"),
-        _step_finished(seq=2, state_after_hash=_STUCK_HASH),
-        _tool_call(seq=3, tool_name="web_search"),  # same tool every time
-        _step_finished(seq=4, state_after_hash=_STUCK_HASH),
+        _tool_call(seq=0, fingerprint=_FP_B, tool_name="fetch_document"),
+        _tool_call(seq=1, fingerprint=_FP_A),
+        _tool_call(seq=2, fingerprint=_FP_A),
+        _tool_call(seq=3, fingerprint=_FP_A),
+        _tool_call(seq=4, fingerprint=_FP_A),
+        _tool_call(seq=5, fingerprint=_FP_A),
     ]
 
     detections = _feed(detector, window, events)
@@ -125,15 +111,27 @@ def test_thrash__does_not_fire_below_min_distinct_tools() -> None:
     assert detections == []
 
 
-def test_thrash__needs_the_full_step_window_before_judging() -> None:
-    detector = ThrashDetector(min_distinct_tools=2, step_window=10)
+def test_thrash__does_not_fire_below_min_distinct_calls() -> None:
+    """Only one fingerprint ever appears -- that's LoopDetector's exact-
+    repeat territory, not Thrash's cycling-repertoire signature."""
+    detector = ThrashDetector(min_distinct_calls=2, window_calls=6)
+    window = RunWindow(_RUN_ID)
+    events = [_tool_call(seq=i, fingerprint=_FP_A) for i in range(6)]
+
+    detections = _feed(detector, window, events)
+
+    assert detections == []
+
+
+def test_thrash__needs_the_full_window_before_judging() -> None:
+    detector = ThrashDetector(min_distinct_calls=2, window_calls=10)
     window = RunWindow(_RUN_ID)
     events = [
-        _step_finished(seq=0, state_after_hash=_STUCK_HASH),
-        _tool_call(seq=1, tool_name="web_search"),
-        _step_finished(seq=2, state_after_hash=_STUCK_HASH),
-        _tool_call(seq=3, tool_name="fetch_document"),
-    ]  # only 2 step.finished events, step_window=10 needs 10
+        _tool_call(seq=0, fingerprint=_FP_A),
+        _tool_call(seq=1, fingerprint=_FP_B),
+        _tool_call(seq=2, fingerprint=_FP_A),
+        _tool_call(seq=3, fingerprint=_FP_B),
+    ]  # only 4 calls, window_calls=10 needs 10
 
     detections = _feed(detector, window, events)
 
@@ -141,11 +139,25 @@ def test_thrash__needs_the_full_step_window_before_judging() -> None:
 
 
 def test_thrash__non_tool_call_events_never_trigger_the_check() -> None:
-    detector = ThrashDetector(min_distinct_tools=1, step_window=1)
+    detector = ThrashDetector(min_distinct_calls=1, window_calls=1)
     window = RunWindow(_RUN_ID)
 
-    detection = None
-    event = _step_finished(seq=0, state_after_hash=_STUCK_HASH)
+    base: dict[str, Any] = {
+        "schema": "trazo.v1",
+        "event_id": "evt_step_0",
+        "run_id": _RUN_ID,
+        "project": "proj",
+        "seq": 0,
+        "ts": "2026-07-18T09:30:00.000Z",
+        "kind": "step.finished",
+        "payload": {
+            "status": "ok",
+            "state_after_hash": f"sha256:{'1' * 64}",
+            "state_after": {},
+            "duration_ms": 1.0,
+        },
+    }
+    event = EventAdapter.validate_python(base)
     window.record(event)
     detection = detector.on_event(event, window)
 
