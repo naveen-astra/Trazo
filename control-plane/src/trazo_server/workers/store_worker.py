@@ -26,7 +26,7 @@ from trazo_server.bus.protocol import BusMessage, EventBus
 from trazo_server.events import Event, EventAdapter
 from trazo_server.metrics import BUS_DLQ_DEPTH_MESSAGES, BUS_LAG_MESSAGES
 from trazo_server.store.blob_store import BlobStore
-from trazo_server.store.rows import DetectionRow, EventRow, RunRow
+from trazo_server.store.rows import DetectionRow, EventRow, PolicyDecisionRow, RunRow
 from trazo_server.store.trace_store import TraceStore
 from trazo_server.topics import EVENTS_STREAM, STORE_WORKER_GROUP
 
@@ -69,6 +69,13 @@ def _detection_id_from_event(event_id: str) -> str:
     the detections projection to invent its own identity scheme."""
     _, _, ulid = event_id.partition("_")
     return f"det_{ulid}"
+
+
+def _policy_decision_id_from_event(event_id: str) -> str:
+    """Same derivation as ``_detection_id_from_event``, for
+    policy_decisions' own identity (TRZ-P6-05)."""
+    _, _, ulid = event_id.partition("_")
+    return f"dec_{ulid}"
 
 
 class StoreWorker:
@@ -287,5 +294,20 @@ class StoreWorker:
                         {"event_id": eid} for eid in event.payload.evidence_event_ids
                     ],
                     details=event.payload.details,
+                )
+            )
+        elif event.kind == "policy.decision":
+            await self._trace_store.insert_policy_decision(
+                PolicyDecisionRow(
+                    decision_id=_policy_decision_id_from_event(event.event_id),
+                    run_id=event.run_id,
+                    policy_id=event.payload.policy_id,
+                    action_kind=event.payload.action_ref.kind,
+                    action_fp=event.payload.action_ref.fingerprint,
+                    decision=event.payload.decision,
+                    mode=event.payload.mode,
+                    reasons=event.payload.reasons,
+                    decided_at=event.ts,
+                    eval_ms=event.payload.eval_latency_ms,
                 )
             )
