@@ -231,8 +231,7 @@ def render_report(
     lines = [
         "# RQ2 — Detector precision/recall (TRZ-P5-05)",
         "",
-        "Regenerate with `uv run --project control-plane python "
-        "benchmark/detection/runner.py`.",
+        "Regenerate with `uv run --project sdk python benchmark/detection/runner.py`.",
         "",
         "| Class | Corpus | TP | FN | FP | Precision | Recall | FPR (clean) "
         "| Median latency (events) |",
