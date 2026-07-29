@@ -203,6 +203,39 @@ def test_instrument__last_run_id_matches_every_emitted_events_run_id() -> None:
     assert {e["run_id"] for e in shipper.enqueued} == {traced.last_run_id}
 
 
+def test_instrument__tags_are_recorded_on_run_started() -> None:
+    """TRZ-P5-01: the chaos harness tags ground truth (injected_failure)
+    on the run — instrument() must pass it through verbatim."""
+    context_init(project="toy-crew-test")
+    shipper = _FakeShipper()
+    recorder = Recorder(shipper=shipper)
+
+    researcher = Agent(
+        role="Researcher",
+        goal="Find facts",
+        backstory="A careful researcher",
+        llm=_ScriptedLLM(model="fake-model", script=["Final Answer: found some facts"]),
+        allow_delegation=False,
+        verbose=False,
+    )
+    task = Task(
+        description="Research trazo",
+        expected_output="facts about trazo",
+        agent=researcher,
+    )
+    crew = Crew(
+        agents=[researcher], tasks=[task], process=Process.sequential, verbose=False
+    )
+
+    traced = instrument(
+        crew, recorder=recorder, tags={"injected_failure": {"class": "budget"}}
+    )
+    traced.kickoff()
+
+    [run_started] = _events_by_kind(shipper.enqueued, "run.started")
+    assert run_started["payload"]["tags"] == {"injected_failure": {"class": "budget"}}
+
+
 def test_instrument__delegation_emits_agent_message_not_tool_call() -> None:
     context_init(project="toy-crew-test")
     shipper = _FakeShipper()
