@@ -12,9 +12,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
-from trazo_server.store.rows import EventRow, RunRow
+from trazo_server.store.rows import DetectionRow, EventRow, RunRow
 
 
 class TraceStore(Protocol):
@@ -87,4 +87,39 @@ class TraceStore(Protocol):
         live firehose (TRZ-P2-06), where ``after_event_id`` is the resume
         cursor.
         """
+        ...
+
+    async def append_event(
+        self,
+        *,
+        run_id: str,
+        event_id: str,
+        kind: str,
+        ts: datetime,
+        fingerprint: str | None,
+        payload: dict[str, Any],
+    ) -> int:
+        """Atomically reserve the next seq for ``run_id`` and insert the
+        resulting row; returns the assigned seq.
+
+        The *only* legitimate way to mint a seq for an event discovered
+        server-side (``detection.raised``, TRZ-P5-06) — every SDK-recorded
+        event already carries its own seq, assigned client-side by the
+        Recorder's own per-run counter (ARCHITECTURE.md's Policy-path
+        note). A server-side discoverer has no access to that counter, so
+        it must ask the store for the next one and insert atomically in
+        the same transaction — reserving one without immediately writing
+        it would leave a race window for a second concurrent detection on
+        the same run to reserve the identical number.
+        """
+        ...
+
+    async def insert_detection(self, detection: DetectionRow) -> None:
+        """Insert one row into the ``detections`` projection table,
+        idempotent on ``detection_id`` (a bus redelivery after a crash
+        before ack must not duplicate the row)."""
+        ...
+
+    async def list_detections(self, run_id: str) -> list[DetectionRow]:
+        """List one run's detections, most recently raised first."""
         ...

@@ -9,8 +9,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import datetime
+from typing import Any
 
-from trazo_server.store.rows import EventRow, RunRow
+from trazo_server.store.rows import DetectionRow, EventRow, RunRow
 
 
 class InMemoryTraceStore:
@@ -22,6 +23,7 @@ class InMemoryTraceStore:
         # (run_id, seq) -> EventRow, keyed for the same idempotent-upsert
         # semantics as the real `events` table's PRIMARY KEY (run_id, seq).
         self._events: dict[tuple[str, int], EventRow] = {}
+        self._detections: dict[str, DetectionRow] = {}
 
     async def ensure_project(self, project_id: str, name: str) -> None:
         self._projects.setdefault(project_id, name)
@@ -104,3 +106,40 @@ class InMemoryTraceStore:
         ]
         rows.sort(key=lambda event: event.event_id)
         return rows[:limit]
+
+    async def append_event(
+        self,
+        *,
+        run_id: str,
+        event_id: str,
+        kind: str,
+        ts: datetime,
+        fingerprint: str | None,
+        payload: dict[str, Any],
+    ) -> int:
+        # No real concurrency in a single-threaded event loop test fake:
+        # this "reservation" is just the current max + 1, computed and
+        # applied in one uninterrupted (no `await` in between) step.
+        existing_seqs = [seq for (rid, seq) in self._events if rid == run_id]
+        next_seq = max(existing_seqs, default=-1) + 1
+        self._events[(run_id, next_seq)] = EventRow(
+            run_id=run_id,
+            seq=next_seq,
+            event_id=event_id,
+            kind=kind,
+            ts=ts,
+            step_id=None,
+            agent_id=None,
+            fingerprint=fingerprint,
+            payload=payload,
+            blobs=[],
+        )
+        return next_seq
+
+    async def insert_detection(self, detection: DetectionRow) -> None:
+        self._detections.setdefault(detection.detection_id, detection)
+
+    async def list_detections(self, run_id: str) -> list[DetectionRow]:
+        rows = [d for d in self._detections.values() if d.run_id == run_id]
+        rows.sort(key=lambda d: d.raised_at, reverse=True)
+        return rows

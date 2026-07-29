@@ -35,3 +35,18 @@ class EventRow:
     fingerprint: str | None
     payload: dict[str, Any]
     blobs: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class DetectionRow:
+    """One row of ``detections`` (DATABASE.md §2) — the query-optimized
+    projection of a ``detection.raised`` event, maintained by the store
+    worker (TRZ-P5-06)."""
+
+    detection_id: str
+    run_id: str
+    detector: str
+    severity: str
+    raised_at: datetime
+    evidence: list[dict[str, Any]]
+    details: dict[str, Any]

@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from trazo_server.store.models import events, projects, runs
-from trazo_server.store.rows import EventRow, RunRow
+from trazo_server.store.models import detections, events, projects, runs
+from trazo_server.store.rows import DetectionRow, EventRow, RunRow
 
 
 class PostgresTraceStore:
@@ -172,6 +172,77 @@ class PostgresTraceStore:
             fetched = result.mappings().all()
         return [_event_row_from_mapping(row) for row in fetched]
 
+    async def append_event(
+        self,
+        *,
+        run_id: str,
+        event_id: str,
+        kind: str,
+        ts: datetime,
+        fingerprint: str | None,
+        payload: dict[str, Any],
+    ) -> int:
+        async with self._engine.begin() as conn:
+            # Locks just the run's own last-seq row (or nothing, on a
+            # run's very first server-minted event) so a second
+            # concurrent reservation for the same run_id blocks until
+            # this transaction commits, then re-reads the now-committed
+            # max — the standard Postgres gapless-sequence pattern.
+            # Aggregates can't carry FOR UPDATE directly, hence the
+            # ORDER BY/LIMIT 1 instead of a bare MAX(seq).
+            result = await conn.execute(
+                sa.select(events.c.seq)
+                .where(events.c.run_id == run_id)
+                .order_by(events.c.seq.desc())
+                .limit(1)
+                .with_for_update()
+            )
+            last_seq = result.scalar_one_or_none()
+            next_seq = 0 if last_seq is None else last_seq + 1
+            await conn.execute(
+                events.insert().values(
+                    run_id=run_id,
+                    seq=next_seq,
+                    event_id=event_id,
+                    kind=kind,
+                    ts=ts,
+                    step_id=None,
+                    agent_id=None,
+                    fingerprint=fingerprint,
+                    payload=payload,
+                    blobs=[],
+                )
+            )
+        return next_seq
+
+    async def insert_detection(self, detection: DetectionRow) -> None:
+        stmt = (
+            pg_insert(detections)
+            .values(
+                detection_id=detection.detection_id,
+                run_id=detection.run_id,
+                detector=detection.detector,
+                severity=detection.severity,
+                raised_at=detection.raised_at,
+                evidence=detection.evidence,
+                details=detection.details,
+            )
+            .on_conflict_do_nothing(index_elements=[detections.c.detection_id])
+        )
+        async with self._engine.begin() as conn:
+            await conn.execute(stmt)
+
+    async def list_detections(self, run_id: str) -> list[DetectionRow]:
+        stmt = (
+            sa.select(detections)
+            .where(detections.c.run_id == run_id)
+            .order_by(detections.c.raised_at.desc())
+        )
+        async with self._engine.connect() as conn:
+            result = await conn.execute(stmt)
+            fetched = result.mappings().all()
+        return [_detection_row_from_mapping(row) for row in fetched]
+
 
 def _run_row_from_mapping(row: sa.RowMapping) -> RunRow:
     return RunRow(
@@ -198,4 +269,16 @@ def _event_row_from_mapping(row: sa.RowMapping) -> EventRow:
         fingerprint=row["fingerprint"],
         payload=row["payload"],
         blobs=row["blobs"],
+    )
+
+
+def _detection_row_from_mapping(row: sa.RowMapping) -> DetectionRow:
+    return DetectionRow(
+        detection_id=row["detection_id"],
+        run_id=row["run_id"],
+        detector=row["detector"],
+        severity=row["severity"],
+        raised_at=row["raised_at"],
+        evidence=row["evidence"],
+        details=row["details"],
     )
