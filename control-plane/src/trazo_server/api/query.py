@@ -22,7 +22,7 @@ from trazo_server.api.deps import get_blob_store, get_trace_store
 from trazo_server.api.problem_details import ProblemDetailsError
 from trazo_server.errors import BlobNotFoundError
 from trazo_server.store.blob_store import BlobStore
-from trazo_server.store.rows import DetectionRow, EventRow, RunRow
+from trazo_server.store.rows import DetectionRow, EventRow, PolicyDecisionRow, RunRow
 from trazo_server.store.trace_store import TraceStore
 
 router = APIRouter(prefix="/v1")
@@ -79,6 +79,23 @@ class DetectionsPage(BaseModel):
     detections: list[DetectionOut]
 
 
+class PolicyDecisionOut(BaseModel):
+    decision_id: str
+    run_id: str
+    policy_id: str
+    action_kind: str
+    action_fp: str
+    decision: str
+    mode: str
+    reasons: list[str]
+    decided_at: str
+    eval_ms: float
+
+
+class PolicyDecisionsPage(BaseModel):
+    decisions: list[PolicyDecisionOut]
+
+
 def _clamp_limit(limit: int) -> int:
     if not (1 <= limit <= _MAX_LIMIT):
         raise ProblemDetailsError(
@@ -111,6 +128,21 @@ def _detection_out(detection: DetectionRow) -> DetectionOut:
         raised_at=detection.raised_at.isoformat(),
         evidence=detection.evidence,
         details=detection.details,
+    )
+
+
+def _policy_decision_out(decision: PolicyDecisionRow) -> PolicyDecisionOut:
+    return PolicyDecisionOut(
+        decision_id=decision.decision_id,
+        run_id=decision.run_id,
+        policy_id=decision.policy_id,
+        action_kind=decision.action_kind,
+        action_fp=decision.action_fp,
+        decision=decision.decision,
+        mode=decision.mode,
+        reasons=decision.reasons,
+        decided_at=decision.decided_at.isoformat(),
+        eval_ms=decision.eval_ms,
     )
 
 
@@ -235,6 +267,22 @@ async def list_detections(
         )
     detections = await store.list_detections(run_id)
     return DetectionsPage(detections=[_detection_out(d) for d in detections])
+
+
+@router.get("/runs/{run_id}/policy-decisions", response_model=PolicyDecisionsPage)
+async def list_policy_decisions(
+    run_id: str, store: Annotated[TraceStore, Depends(get_trace_store)]
+) -> PolicyDecisionsPage:
+    """Most-recently-decided first (TRZ-P6-05) — same "small enough to
+    just return it all" reasoning as ``list_detections`` above: policy
+    decisions accrue only on governed actions, not every event."""
+    run = await store.get_run(run_id)
+    if run is None:
+        raise ProblemDetailsError(
+            status=404, title="Not Found", detail=f"no run {run_id}"
+        )
+    decisions = await store.list_policy_decisions(run_id)
+    return PolicyDecisionsPage(decisions=[_policy_decision_out(d) for d in decisions])
 
 
 _BUNDLE_PAGE_SIZE = 1000
