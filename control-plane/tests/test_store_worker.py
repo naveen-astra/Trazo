@@ -150,6 +150,58 @@ async def test_store_worker__projects_detection_raised_into_detections_table(
     assert detection.evidence == [{"event_id": "evt_a"}, {"event_id": "evt_b"}]
 
 
+async def test_store_worker__projects_policy_decision_into_policy_decisions_table(
+    tmp_path: Path,
+) -> None:
+    """TRZ-P6-05: same generic-consumption projection pattern as
+    detection.raised, for policy.decision."""
+    bus = InMemoryEventBus()
+    trace_store = InMemoryTraceStore()
+    blob_store = FilesystemBlobStore(tmp_path)
+    await _publish(
+        bus,
+        _event(
+            event_id="evt_run_started",
+            run_id="run_y",
+            project="proj_y",
+            seq=0,
+            kind="run.started",
+        ),
+        _event(
+            event_id="evt_decision_1",
+            run_id="run_y",
+            project="proj_y",
+            seq=1,
+            kind="policy.decision",
+            payload={
+                "policy_id": "cost_cap",
+                "action_ref": {
+                    "fingerprint": "sha256:" + "a" * 64,
+                    "kind": "tool.call",
+                },
+                "decision": "deny",
+                "reasons": ["over cap"],
+                "eval_latency_ms": 12.5,
+                "mode": "enforce",
+            },
+        ),
+    )
+
+    worker = _make_worker(bus, trace_store, blob_store)
+    await worker.ensure_group()
+    await worker.poll_once(count=20, block_ms=0)
+
+    [decision] = await trace_store.list_policy_decisions("run_y")
+    assert decision.decision_id == "dec_decision_1"
+    assert decision.policy_id == "cost_cap"
+    assert decision.action_kind == "tool.call"
+    assert decision.action_fp == "sha256:" + "a" * 64
+    assert decision.decision == "deny"
+    assert decision.mode == "enforce"
+    assert decision.reasons == ["over cap"]
+    assert decision.eval_ms == 12.5
+
+
 async def test_store_worker__offloads_oversized_field_to_blob_store(
     tmp_path: Path,
 ) -> None:
