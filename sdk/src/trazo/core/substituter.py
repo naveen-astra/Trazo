@@ -66,11 +66,35 @@ class Substituter:
         self._mode = mode
         self.report = report if report is not None else ReplayReport()
         self._pending: dict[str, list[int]] = {}
+        self._step_cursor: dict[str, int] = {"step.started": 0, "step.finished": 0}
 
     def _pending_indices(self, kind: str) -> list[int]:
         if kind not in self._pending:
             self._pending[kind] = list(range(len(self._bundle.events_by_kind(kind))))
         return self._pending[kind]
+
+    def check_step(self, kind: str, payload: dict[str, Any]) -> None:
+        """Compare a live step.started/step.finished's state hash against
+        the bundle's recorded value at the same ordinal position, feeding
+        ``report.state_fidelity`` (REPLAY_ENGINE.md §5) — separate from
+        boundary fidelity, and not fingerprint-matched at all (steps
+        aren't in ``FINGERPRINTED_KINDS``). A no-op for any other kind."""
+        if kind not in self._step_cursor:
+            return
+        hash_field = (
+            "state_before_hash" if kind == "step.started" else "state_after_hash"
+        )
+        events = self._bundle.events_by_kind(kind)
+        cursor = self._step_cursor[kind]
+        recorded = events[cursor] if cursor < len(events) else None
+        self._step_cursor[kind] = cursor + 1
+
+        self.report.record_step_result(
+            kind=kind,
+            step_index=cursor,
+            recorded_hash=recorded.payload.get(hash_field) if recorded else None,
+            recomputed_hash=payload.get(hash_field),
+        )
 
     def substitute(self, kind: str, inputs: dict[str, Any]) -> dict[str, Any]:
         live_fp = fingerprint_for(kind, inputs)
