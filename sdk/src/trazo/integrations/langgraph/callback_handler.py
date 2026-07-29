@@ -78,10 +78,6 @@ class TrazoCallbackHandler(BaseCallbackHandler):
         self._step_index = 0
 
         self.step_count = 0
-        self.llm_call_count = 0
-        self.tool_call_count = 0
-        self.tokens_in_total = 0
-        self.tokens_out_total = 0
 
     # ---- step boundaries: on_chain_start/on_chain_end filtered to nodes ----
 
@@ -224,9 +220,6 @@ class TrazoCallbackHandler(BaseCallbackHandler):
         usage = (response.llm_output or {}).get("token_usage", {}) or {}
         tokens_in = int(usage.get("prompt_tokens", 0) or 0)
         tokens_out = int(usage.get("completion_tokens", 0) or 0)
-        self.tokens_in_total += tokens_in
-        self.tokens_out_total += tokens_out
-        self.llm_call_count += 1
 
         result = {
             "response": to_json_safe(response_message)
@@ -291,7 +284,6 @@ class TrazoCallbackHandler(BaseCallbackHandler):
         if in_flight is None:
             return
         latency_ms = (time.monotonic() - in_flight.started_at) * 1000
-        self.tool_call_count += 1
         result = {
             "result": to_json_safe(output),
             "status": "ok",
