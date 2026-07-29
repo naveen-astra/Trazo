@@ -194,6 +194,8 @@ def test_check__request_body_matches_the_api_contract() -> None:
         )
 
     [body] = seen
+    assert body["run_id"]
+    assert body["project"] == "proj"
     assert body["mode"] == "enforce"
     assert body["action"]["kind"] == "tool.call"
     assert body["action"]["tool_name"] == "send_email"
