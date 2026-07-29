@@ -18,6 +18,8 @@ from __future__ import annotations
 import contextvars
 import os
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 from trazo.core.ulid import new_run_id, new_step_id
@@ -56,6 +58,22 @@ def get_config() -> SdkConfig:
     if _config is None:
         raise NotInitializedError()
     return _config
+
+
+@contextmanager
+def config_scope(config: SdkConfig) -> Iterator[None]:
+    """Temporarily install ``config``, restoring whatever was there before
+    on exit (TRZ-P4-07) — used by ``trazo.replay`` so a replay session's
+    re-driven adapter code (which calls ``get_config().project`` just
+    like a live run does) works without a real ``trazo.init()`` having
+    been called in this process, and without disturbing one that has."""
+    global _config
+    previous = _config
+    _config = config
+    try:
+        yield
+    finally:
+        _config = previous
 
 
 def is_initialized() -> bool:
