@@ -39,6 +39,7 @@ from trazo.core.context import (
     optional_step_scope,
     step_scope,
 )
+from trazo.core.policy import PolicyHook
 from trazo.core.recorder import Recorder
 from trazo.core.serialization import hash_state, to_json_safe
 from trazo.core.ulid import new_step_id
@@ -69,15 +70,39 @@ class _InFlightToolCall:
 class TrazoCallbackHandler(BaseCallbackHandler):
     """One instance per graph invocation; pass via ``config={"callbacks": [...]}``."""
 
-    def __init__(self, recorder: Recorder) -> None:
+    def __init__(
+        self, recorder: Recorder, *, policy_hook: PolicyHook | None = None
+    ) -> None:
         self._recorder = recorder
+        self._policy_hook = policy_hook
         self._parents: dict[UUID, UUID | None] = {}
         self._active_steps: dict[UUID, _StepState] = {}
         self._llm_calls: dict[UUID, _InFlightLlmCall] = {}
         self._tool_calls: dict[UUID, _InFlightToolCall] = {}
         self._step_index = 0
+        self._armed_for_raise = False
 
         self.step_count = 0
+
+    @property
+    def raise_error(self) -> bool:  # type: ignore[override]
+        """LangChain's callback manager (``handle_event``) swallows every
+        callback exception as a logged warning *unless*
+        ``handler.raise_error`` is true, in which case it re-raises —
+        the only mechanism by which a callback can actually abort an
+        action (verified empirically, TRZ-P6-04: a plain raise from
+        ``on_tool_start`` was silently logged and the tool ran anyway).
+
+        Overridden as a *read-only* property (base class default: a
+        plain writable ``False`` attribute, hence the ``type: ignore`` —
+        LangChain only ever reads this attribute, never assigns to it,
+        so narrowing it to read-only here is safe in practice) so it's
+        true *only* for the exact instant ``on_tool_start`` is raising a
+        ``PolicyDenied`` — never for the other eight callback methods,
+        which must keep failing silently per AGENTS.md's hard rule (the
+        SDK must never crash the host agent except for
+        ``PolicyDenied``/``ReplayDivergence``)."""
+        return self._armed_for_raise
 
     # ---- step boundaries: on_chain_start/on_chain_end filtered to nodes ----
 
@@ -262,11 +287,35 @@ class TrazoCallbackHandler(BaseCallbackHandler):
         self._parents[run_id] = parent_run_id
         tool_name = (serialized or {}).get("name", "unknown_tool")
         args: Any = inputs if inputs is not None else {"input": input_str}
+        side_effect_class = "external"  # conservative default; see README
+        json_safe_args = to_json_safe(args)
+
+        # TRZ-P6-04: raising PolicyDenied here, before the tool ever runs,
+        # is what makes "the blocked call never executes" true --
+        # on_tool_start fires before LangChain dispatches to the tool's
+        # own _run/_arun. ``_armed_for_raise`` is deliberately reset only
+        # on the *success* path below, never in a finally: a finally runs
+        # during the raising call's own stack unwinding, i.e. before
+        # LangChain's handle_event gets to check handler.raise_error at
+        # all -- disarming there would reset the flag a moment too early
+        # and the exception would go right back to being silently logged
+        # (this was tried and empirically failed while building this;
+        # see the raise_error property's docstring for the mechanism).
+        if self._policy_hook is not None:
+            self._armed_for_raise = True
+            self._policy_hook.check(
+                kind="tool.call",
+                tool_name=tool_name,
+                args=json_safe_args if isinstance(json_safe_args, dict) else {},
+                side_effect_class=side_effect_class,
+            )
+            self._armed_for_raise = False
+
         self._tool_calls[run_id] = _InFlightToolCall(
             inputs={
                 "tool_name": tool_name,
-                "args": to_json_safe(args),
-                "side_effect_class": "external",  # conservative default; see README
+                "args": json_safe_args,
+                "side_effect_class": side_effect_class,
             },
             step=self._find_enclosing_step(parent_run_id),
             started_at=time.monotonic(),
