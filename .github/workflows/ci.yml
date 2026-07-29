@@ -31,6 +31,8 @@ jobs:
               - 'control-plane/**'
               - 'schema/**'
               - 'demos/**'
+              - 'benchmark/**'
+              - 'scripts/**'
               - 'pyproject.toml'
               - '.github/workflows/ci.yml'
             dashboard:
@@ -93,6 +95,19 @@ jobs:
           uv run pytest ../demos/_shared -q
           uv run python ../demos/research-assistant/run.py --endpoint http://localhost:1
           uv run python ../demos/content-pipeline/run.py --endpoint http://localhost:1
+      - name: Benchmark scripts — corpus/fidelity/replay unit tests
+        # Stdlib-only test subjects (benchmark/corpus, benchmark/fidelity)
+        # but run through the sdk venv's own pytest — a bare `python -m
+        # pytest` here would hit whatever interpreter astral-sh/setup-uv
+        # put on PATH, which has no pytest installed at all.
+        run: uv run --project sdk pytest benchmark/ -q
+      - name: Replay integration check (both demo frameworks, zero live calls)
+        # Runs each demo for real, converts its spool straight into a
+        # replay bundle (no control plane needed), replays it, and
+        # asserts zero divergence + full fidelity (TRZ-P4-08) — the
+        # thing that actually proves the replay engine works against
+        # real LangGraph/CrewAI adapters, not just Substituter unit tests.
+        run: uv run --project sdk python scripts/replay/verify_fidelity.py all
       - name: Control plane — sync, typecheck, test
         working-directory: control-plane
         run: |
