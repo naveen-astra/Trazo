@@ -21,6 +21,7 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from typing import Any
 
 from trazo.core.ulid import new_run_id, new_step_id
 from trazo.errors import NotInitializedError
@@ -99,13 +100,52 @@ class _SeqCounter:
             return self._value
 
 
+class RunTotals:
+    """Thread-safe running tallies for ``run.finished.totals``, fed by
+    *every* event ``Recorder`` ships — not just ones a framework's own
+    native callback/event system happens to observe.
+
+    Real bug this fixes: the LangGraph adapter's ``run.finished.totals``
+    used to come from ``TrazoCallbackHandler``'s own counters, which only
+    increment on genuine LangChain ``on_llm_start``/``on_tool_start``
+    callbacks. The SDK's own escape-hatch decorators
+    (``@trace_llm``/``@trace_tool``) call ``Recorder.boundary()``
+    directly and never touch LangChain's callback system at all — so for
+    the research-assistant demo (which uses exactly that escape hatch),
+    ``llm_calls``/``tool_calls``/``tokens_in``/``tokens_out`` in
+    ``run.finished`` were silently always zero. ``Recorder.boundary()``
+    is the one path every boundary call goes through regardless of
+    mechanism, so tallying here instead is correct for any adapter.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.llm_calls = 0
+        self.tool_calls = 0
+        self.tokens_in = 0
+        self.tokens_out = 0
+        self.cost_usd = 0.0
+
+    def record_event(self, kind: str, payload: dict[str, Any]) -> None:
+        with self._lock:
+            if kind == "llm.call":
+                self.llm_calls += 1
+                self.tokens_in += int(payload.get("tokens_in", 0) or 0)
+                self.tokens_out += int(payload.get("tokens_out", 0) or 0)
+                self.cost_usd += float(payload.get("cost_usd", 0.0) or 0.0)
+            elif kind == "tool.call":
+                self.tool_calls += 1
+
+
 @dataclass
 class RunContext:
-    """One run's identity and seq counter; held by _run_context_var."""
+    """One run's identity, seq counter, and boundary-call totals; held by
+    ``_run_context_var``."""
 
     run_id: str
     project: str
     _seq_counter: _SeqCounter = field(default_factory=_SeqCounter)
+    totals: RunTotals = field(default_factory=RunTotals)
 
     def next_seq(self) -> int:
         return self._seq_counter.next()
