@@ -237,10 +237,6 @@ class CrewEventCapture:
             MemorySaveFailedEvent: self._on_memory_save_failed,
         }
 
-        self.llm_call_count = 0
-        self.tool_call_count = 0
-        self.tokens_in_total = 0
-        self.tokens_out_total = 0
         self.event_count = 0
 
     # ---- collection (runs on crewai_event_bus's worker threads) ----
@@ -367,9 +363,6 @@ class CrewEventCapture:
         usage = event.usage or {}
         tokens_in = int(usage.get("prompt_tokens", 0) or 0)
         tokens_out = int(usage.get("completion_tokens", 0) or 0)
-        self.tokens_in_total += tokens_in
-        self.tokens_out_total += tokens_out
-        self.llm_call_count += 1
 
         result = {
             "response": to_json_safe(event.response),
@@ -415,7 +408,6 @@ class CrewEventCapture:
         if not queue:
             return
         pending = queue.popleft()
-        self.tool_call_count += 1
         result = {
             "result": to_json_safe(event.output),
             "status": "ok",
