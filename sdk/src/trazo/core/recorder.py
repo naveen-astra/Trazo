@@ -70,12 +70,17 @@ class Recorder:
         """Record a non-boundary event (run.started, step.started, ...) —
         no execute_fn, no fingerprint.
 
-        A no-op in REPLAY mode: adapters call ``emit`` for run/step
+        Ships nothing in REPLAY mode: adapters call ``emit`` for run/step
         lifecycle events regardless of mode (they have no execute_fn to
         substitute), but replays never ship anything new — read-only over
-        history (REPLAY_ENGINE.md §2 point 3), same as ``boundary``.
+        history (REPLAY_ENGINE.md §2 point 3), same as ``boundary``. A
+        step.started/step.finished payload's state hash is still fed to
+        the Substituter for state-fidelity tracking (REPLAY_ENGINE.md §5)
+        before returning.
         """
         if self.mode is RecorderMode.REPLAY:
+            if self.substituter is not None:
+                self.substituter.check_step(kind, payload)
             return
         self._ship_event(kind, payload)
 
