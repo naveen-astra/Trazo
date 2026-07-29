@@ -102,6 +102,54 @@ async def test_store_worker__persists_full_sample_run_and_builds_rollup(
     assert run.totals["llm_calls"] == 1
 
 
+async def test_store_worker__projects_detection_raised_into_detections_table(
+    tmp_path: Path,
+) -> None:
+    """TRZ-P5-06: a detection.raised event flowing through the same
+    generic EVENTS_STREAM consumption every other kind uses must also
+    populate the detections query-optimized projection (DATABASE.md §2),
+    mirroring how run.started/run.finished already maintain the runs
+    rollup."""
+    bus = InMemoryEventBus()
+    trace_store = InMemoryTraceStore()
+    blob_store = FilesystemBlobStore(tmp_path)
+    await _publish(
+        bus,
+        _event(
+            event_id="evt_run_started",
+            run_id="run_x",
+            project="proj_x",
+            seq=0,
+            kind="run.started",
+        ),
+        _event(
+            event_id="evt_detection_1",
+            run_id="run_x",
+            project="proj_x",
+            seq=1,
+            kind="detection.raised",
+            payload={
+                "detector": "loop",
+                "severity": "warn",
+                "evidence_event_ids": ["evt_a", "evt_b"],
+                "details": {"repeat_count": 4},
+                "window": {"step_count": 10},
+            },
+        ),
+    )
+
+    worker = _make_worker(bus, trace_store, blob_store)
+    await worker.ensure_group()
+    await worker.poll_once(count=20, block_ms=0)
+
+    [detection] = await trace_store.list_detections("run_x")
+    assert detection.detection_id == "det_detection_1"
+    assert detection.detector == "loop"
+    assert detection.severity == "warn"
+    assert detection.details == {"repeat_count": 4}
+    assert detection.evidence == [{"event_id": "evt_a"}, {"event_id": "evt_b"}]
+
+
 async def test_store_worker__offloads_oversized_field_to_blob_store(
     tmp_path: Path,
 ) -> None:
