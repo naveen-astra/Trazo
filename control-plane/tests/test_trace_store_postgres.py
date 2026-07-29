@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from trazo_server.config import Settings
 from trazo_server.store.engine import create_engine
 from trazo_server.store.postgres_trace_store import PostgresTraceStore
-from trazo_server.store.rows import DetectionRow, EventRow, RunRow
+from trazo_server.store.rows import DetectionRow, EventRow, PolicyDecisionRow, RunRow
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _NOW = datetime(2026, 7, 18, 9, 30, tzinfo=timezone.utc)
@@ -322,3 +322,61 @@ async def test_postgres_store__insert_detection_is_idempotent_on_detection_id(
     await store.insert_detection(detection)  # simulates a bus redelivery
 
     assert len(await store.list_detections(run_id)) == 1
+
+
+async def test_postgres_store__insert_policy_decision_then_list_round_trips(
+    engine: AsyncEngine, ids: tuple[str, str]
+) -> None:
+    project_id, run_id = ids
+    store = PostgresTraceStore(engine)
+    await store.ensure_project(project_id, f"test-{project_id}")
+    await store.upsert_run(_run_row(project_id, run_id))
+    decision = PolicyDecisionRow(
+        decision_id=f"dec_{run_id}",
+        run_id=run_id,
+        policy_id="cost_cap",
+        action_kind="tool.call",
+        action_fp=f"sha256:{'a' * 64}",
+        decision="deny",
+        mode="enforce",
+        reasons=["over cap"],
+        decided_at=_NOW,
+        eval_ms=12.5,
+    )
+
+    await store.insert_policy_decision(decision)
+
+    [fetched] = await store.list_policy_decisions(run_id)
+    assert fetched.decision_id == decision.decision_id
+    assert fetched.policy_id == "cost_cap"
+    assert fetched.decision == "deny"
+    assert fetched.reasons == ["over cap"]
+    assert (
+        fetched.eval_ms == 12
+    )  # rounded to the integer column, see insert_policy_decision
+
+
+async def test_postgres_store__insert_policy_decision_is_idempotent_on_decision_id(
+    engine: AsyncEngine, ids: tuple[str, str]
+) -> None:
+    project_id, run_id = ids
+    store = PostgresTraceStore(engine)
+    await store.ensure_project(project_id, f"test-{project_id}")
+    await store.upsert_run(_run_row(project_id, run_id))
+    decision = PolicyDecisionRow(
+        decision_id=f"dec_{run_id}",
+        run_id=run_id,
+        policy_id="cost_cap",
+        action_kind="tool.call",
+        action_fp=f"sha256:{'a' * 64}",
+        decision="deny",
+        mode="enforce",
+        reasons=[],
+        decided_at=_NOW,
+        eval_ms=1.0,
+    )
+
+    await store.insert_policy_decision(decision)
+    await store.insert_policy_decision(decision)  # simulates a bus redelivery
+
+    assert len(await store.list_policy_decisions(run_id)) == 1

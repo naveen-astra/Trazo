@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from trazo_server.store.memory_trace_store import InMemoryTraceStore
-from trazo_server.store.rows import DetectionRow, EventRow, RunRow
+from trazo_server.store.rows import DetectionRow, EventRow, PolicyDecisionRow, RunRow
 
 _NOW = datetime(2026, 7, 18, 9, 30, tzinfo=timezone.utc)
 
@@ -309,3 +309,56 @@ async def test_trace_store__list_detections_orders_most_recent_first() -> None:
 
     fetched = await store.list_detections("run_1")
     assert [d.detection_id for d in fetched] == ["det_newer", "det_older"]
+
+
+def _policy_decision(**overrides: object) -> PolicyDecisionRow:
+    defaults: dict[str, object] = {
+        "decision_id": "dec_1",
+        "run_id": "run_1",
+        "policy_id": "cost_cap",
+        "action_kind": "tool.call",
+        "action_fp": f"sha256:{'a' * 64}",
+        "decision": "deny",
+        "mode": "enforce",
+        "reasons": ["over cap"],
+        "decided_at": _NOW,
+        "eval_ms": 12.5,
+    }
+    defaults.update(overrides)
+    return PolicyDecisionRow(**defaults)  # type: ignore[arg-type]
+
+
+async def test_trace_store__insert_policy_decision_then_list_round_trips() -> None:
+    store = InMemoryTraceStore()
+    decision = _policy_decision()
+
+    await store.insert_policy_decision(decision)
+
+    [fetched] = await store.list_policy_decisions("run_1")
+    assert fetched == decision
+
+
+async def test_trace_store__insert_policy_decision_is_idempotent_on_decision_id() -> (
+    None
+):
+    store = InMemoryTraceStore()
+    decision = _policy_decision()
+
+    await store.insert_policy_decision(decision)
+    await store.insert_policy_decision(decision)  # simulates a bus redelivery
+
+    assert len(await store.list_policy_decisions("run_1")) == 1
+
+
+async def test_trace_store__list_policy_decisions_orders_most_recent_first() -> None:
+    store = InMemoryTraceStore()
+    older = _policy_decision(decision_id="dec_older", decided_at=_NOW)
+    newer = _policy_decision(
+        decision_id="dec_newer", decided_at=_NOW + timedelta(minutes=1)
+    )
+
+    await store.insert_policy_decision(older)
+    await store.insert_policy_decision(newer)
+
+    fetched = await store.list_policy_decisions("run_1")
+    assert [d.decision_id for d in fetched] == ["dec_newer", "dec_older"]
