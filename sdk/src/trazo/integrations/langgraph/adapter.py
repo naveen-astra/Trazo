@@ -18,10 +18,26 @@ import langgraph
 
 from trazo import __version__ as _SDK_VERSION
 from trazo.core.context import get_config, run_scope
+from trazo.core.policy import PolicyHook
 from trazo.core.recorder import Recorder
-from trazo.core.runtime import get_recorder
+from trazo.core.runtime import get_policy_hook, get_recorder
 from trazo.core.serialization import to_json_safe
+from trazo.errors import NotInitializedError
 from trazo.integrations.langgraph.callback_handler import TrazoCallbackHandler
+
+
+def _try_get_policy_hook() -> PolicyHook | None:
+    """``get_policy_hook()``, tolerant of ``trazo.init()`` never having
+    been called — every existing test constructs ``InstrumentedGraph``
+    with an explicit ``recorder=`` override and no ``trazo.init()`` call
+    at all; requiring a policy hook unconditionally would break every one
+    of them for a feature (TRZ-P6-04) that's a no-op by default anyway
+    (``PolicyHook``'s own default mode is ``off``)."""
+    try:
+        return get_policy_hook()
+    except NotInitializedError:
+        return None
+
 
 _LANGGRAPH_VERSION = getattr(langgraph, "__version__", "unknown")
 
@@ -36,10 +52,12 @@ class InstrumentedGraph:
         graph: Any,
         *,
         recorder: Recorder | None = None,
+        policy_hook: PolicyHook | None = None,
         tags: dict[str, Any] | None = None,
     ) -> None:
         self._graph = graph
         self._recorder_override = recorder
+        self._policy_hook_override = policy_hook
         self._tags = tags or {}
         self.last_run_id: str | None = None
 
@@ -47,8 +65,9 @@ class InstrumentedGraph:
         self, input: dict[str, Any], config: dict[str, Any] | None = None
     ) -> Any:
         recorder = self._recorder_override or get_recorder()
+        policy_hook = self._policy_hook_override or _try_get_policy_hook()
         run_config = dict(config or {})
-        handler = TrazoCallbackHandler(recorder)
+        handler = TrazoCallbackHandler(recorder, policy_hook=policy_hook)
         run_config["callbacks"] = [*run_config.get("callbacks", []), handler]
 
         with run_scope(get_config().project) as run_ctx:
@@ -102,14 +121,17 @@ def instrument(
     graph: Any,
     *,
     recorder: Recorder | None = None,
+    policy_hook: PolicyHook | None = None,
     tags: dict[str, Any] | None = None,
 ) -> InstrumentedGraph:
     """SDK.md §1: ``traced_graph = instrument(graph)``.
 
     ``graph`` is a compiled LangGraph graph (``StateGraph(...).compile()``).
-    ``recorder`` is a test-only injection point; production callers rely on
-    the process-wide recorder installed by ``trazo.init()``. ``tags`` is
-    recorded verbatim on ``run.started`` (e.g. the chaos harness's
-    ``injected_failure`` ground truth, TRZ-P5-01).
+    ``recorder``/``policy_hook`` are test-only injection points;
+    production callers rely on the process-wide instances installed by
+    ``trazo.init()``. ``tags`` is recorded verbatim on ``run.started``
+    (e.g. the chaos harness's ``injected_failure`` ground truth, TRZ-P5-01).
     """
-    return InstrumentedGraph(graph, recorder=recorder, tags=tags)
+    return InstrumentedGraph(
+        graph, recorder=recorder, policy_hook=policy_hook, tags=tags
+    )
