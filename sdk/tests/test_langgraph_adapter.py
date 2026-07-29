@@ -15,6 +15,7 @@ from langgraph.graph import END, START, StateGraph
 
 from trazo.core.context import init as context_init
 from trazo.core.recorder import Recorder
+from trazo.decorators import trace_llm, trace_tool
 from trazo.integrations.langgraph import instrument
 
 
@@ -152,6 +153,59 @@ def test_instrument__tags_default_to_empty_dict() -> None:
 
     [run_started] = _events_by_kind(shipper.enqueued, "run.started")
     assert run_started["payload"]["tags"] == {}
+
+
+def test_instrument__totals_count_escape_hatch_calls_not_just_langchain_callbacks() -> (
+    None
+):
+    """Real bug found running the research-assistant demo for real
+    (TRZ-P5-01): its nodes call @trace_llm/@trace_tool-wrapped functions
+    directly — Recorder.boundary(), never a genuine LangChain
+    on_llm_start/on_tool_start callback — so run.finished.totals'
+    llm_calls/tool_calls/tokens were silently always zero for exactly
+    this style of node. Totals must come from every boundary call
+    Recorder actually shipped, not just ones a real LangChain object's
+    callbacks happened to fire for."""
+    from trazo.core.runtime import _install_recorder_for_tests
+
+    context_init(project="toy-agent-test")
+    shipper = _FakeShipper()
+    recorder = Recorder(shipper=shipper)
+    _install_recorder_for_tests(recorder)  # trace_llm/trace_tool use get_recorder()
+
+    @trace_llm(provider="fixture", model="fixture-v1")
+    def call_llm(prompt: str) -> dict[str, Any]:
+        return {"response": "an answer", "tokens_in": 7, "tokens_out": 3}
+
+    @trace_tool(side_effect_class="external")
+    def call_tool(query: str) -> str:
+        return f"results for {query}"
+
+    def plan(state: ToyState, config: dict[str, Any]) -> dict[str, Any]:
+        call_llm("hello")
+        return {}
+
+    def search(state: ToyState, config: dict[str, Any]) -> dict[str, Any]:
+        call_tool("trazo")
+        return {}
+
+    graph = StateGraph(ToyState)
+    graph.add_node("plan", plan)
+    graph.add_node("search", search)
+    graph.add_edge(START, "plan")
+    graph.add_edge("plan", "search")
+    graph.add_edge("search", END)
+    compiled = graph.compile()
+
+    traced = instrument(compiled, recorder=recorder)
+    traced.invoke({"messages": [], "search_result": ""})
+
+    [run_finished] = _events_by_kind(shipper.enqueued, "run.finished")
+    totals = run_finished["payload"]["totals"]
+    assert totals["llm_calls"] == 1
+    assert totals["tool_calls"] == 1
+    assert totals["tokens_in"] == 7
+    assert totals["tokens_out"] == 3
 
 
 def test_instrument__run_error_still_emits_run_finished_with_error_status() -> None:
