@@ -33,3 +33,18 @@ class NoActiveRunError(TrazoError):
 class ReplayNotConfiguredError(TrazoError):
     """Raised when a Recorder in REPLAY mode has no Substituter attached —
     a setup-time contract violation (TRZ-P4-02), not a replay divergence."""
+
+
+class PolicyDenied(TrazoError):
+    """Raised by ``PolicyHook.check()`` (TRZ-P6-04, ADR-006) on a deny or
+    escalate decision while in ``enforce`` mode. Callers must let this
+    propagate uncaught — the governed action has not executed yet, and
+    swallowing this exception is exactly how a blocked call would end up
+    running anyway."""
+
+    def __init__(self, *, decision: str, policy_id: str, reasons: list[str]) -> None:
+        reason_text = "; ".join(reasons) if reasons else "no reason given"
+        super().__init__(f"policy {policy_id!r} {decision}: {reason_text}")
+        self.decision = decision
+        self.policy_id = policy_id
+        self.reasons = reasons
