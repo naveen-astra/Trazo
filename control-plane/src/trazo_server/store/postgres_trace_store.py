@@ -10,8 +10,14 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from trazo_server.store.models import detections, events, projects, runs
-from trazo_server.store.rows import DetectionRow, EventRow, RunRow
+from trazo_server.store.models import (
+    detections,
+    events,
+    policy_decisions,
+    projects,
+    runs,
+)
+from trazo_server.store.rows import DetectionRow, EventRow, PolicyDecisionRow, RunRow
 
 
 class PostgresTraceStore:
@@ -243,6 +249,41 @@ class PostgresTraceStore:
             fetched = result.mappings().all()
         return [_detection_row_from_mapping(row) for row in fetched]
 
+    async def insert_policy_decision(self, decision: PolicyDecisionRow) -> None:
+        stmt = (
+            pg_insert(policy_decisions)
+            .values(
+                decision_id=decision.decision_id,
+                run_id=decision.run_id,
+                policy_id=decision.policy_id,
+                action_kind=decision.action_kind,
+                action_fp=decision.action_fp,
+                decision=decision.decision,
+                mode=decision.mode,
+                reasons=decision.reasons,
+                decided_at=decision.decided_at,
+                # policy_decisions.eval_ms is an integer column
+                # (DATABASE.md §2) -- rounded here; PolicyDecisionRow
+                # itself keeps the float the policy.decision event
+                # payload actually carries (eval_latency_ms).
+                eval_ms=round(decision.eval_ms),
+            )
+            .on_conflict_do_nothing(index_elements=[policy_decisions.c.decision_id])
+        )
+        async with self._engine.begin() as conn:
+            await conn.execute(stmt)
+
+    async def list_policy_decisions(self, run_id: str) -> list[PolicyDecisionRow]:
+        stmt = (
+            sa.select(policy_decisions)
+            .where(policy_decisions.c.run_id == run_id)
+            .order_by(policy_decisions.c.decided_at.desc())
+        )
+        async with self._engine.connect() as conn:
+            result = await conn.execute(stmt)
+            fetched = result.mappings().all()
+        return [_policy_decision_row_from_mapping(row) for row in fetched]
+
 
 def _run_row_from_mapping(row: sa.RowMapping) -> RunRow:
     return RunRow(
@@ -281,4 +322,19 @@ def _detection_row_from_mapping(row: sa.RowMapping) -> DetectionRow:
         raised_at=row["raised_at"],
         evidence=row["evidence"],
         details=row["details"],
+    )
+
+
+def _policy_decision_row_from_mapping(row: sa.RowMapping) -> PolicyDecisionRow:
+    return PolicyDecisionRow(
+        decision_id=row["decision_id"],
+        run_id=row["run_id"],
+        policy_id=row["policy_id"],
+        action_kind=row["action_kind"],
+        action_fp=row["action_fp"],
+        decision=row["decision"],
+        mode=row["mode"],
+        reasons=row["reasons"],
+        decided_at=row["decided_at"],
+        eval_ms=float(row["eval_ms"]),
     )

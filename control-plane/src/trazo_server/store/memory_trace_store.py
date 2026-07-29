@@ -11,7 +11,7 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
-from trazo_server.store.rows import DetectionRow, EventRow, RunRow
+from trazo_server.store.rows import DetectionRow, EventRow, PolicyDecisionRow, RunRow
 
 
 class InMemoryTraceStore:
@@ -24,6 +24,7 @@ class InMemoryTraceStore:
         # semantics as the real `events` table's PRIMARY KEY (run_id, seq).
         self._events: dict[tuple[str, int], EventRow] = {}
         self._detections: dict[str, DetectionRow] = {}
+        self._policy_decisions: dict[str, PolicyDecisionRow] = {}
 
     async def ensure_project(self, project_id: str, name: str) -> None:
         self._projects.setdefault(project_id, name)
@@ -142,4 +143,12 @@ class InMemoryTraceStore:
     async def list_detections(self, run_id: str) -> list[DetectionRow]:
         rows = [d for d in self._detections.values() if d.run_id == run_id]
         rows.sort(key=lambda d: d.raised_at, reverse=True)
+        return rows
+
+    async def insert_policy_decision(self, decision: PolicyDecisionRow) -> None:
+        self._policy_decisions.setdefault(decision.decision_id, decision)
+
+    async def list_policy_decisions(self, run_id: str) -> list[PolicyDecisionRow]:
+        rows = [d for d in self._policy_decisions.values() if d.run_id == run_id]
+        rows.sort(key=lambda d: d.decided_at, reverse=True)
         return rows

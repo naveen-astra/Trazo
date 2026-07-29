@@ -14,7 +14,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, Protocol
 
-from trazo_server.store.rows import DetectionRow, EventRow, RunRow
+from trazo_server.store.rows import DetectionRow, EventRow, PolicyDecisionRow, RunRow
 
 
 class TraceStore(Protocol):
@@ -122,4 +122,14 @@ class TraceStore(Protocol):
 
     async def list_detections(self, run_id: str) -> list[DetectionRow]:
         """List one run's detections, most recently raised first."""
+        ...
+
+    async def insert_policy_decision(self, decision: PolicyDecisionRow) -> None:
+        """Insert one row into the ``policy_decisions`` projection table,
+        idempotent on ``decision_id`` (a bus redelivery after a crash
+        before ack must not duplicate the row)."""
+        ...
+
+    async def list_policy_decisions(self, run_id: str) -> list[PolicyDecisionRow]:
+        """List one run's policy decisions, most recently decided first."""
         ...

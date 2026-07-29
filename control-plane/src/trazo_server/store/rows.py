@@ -50,3 +50,21 @@ class DetectionRow:
     raised_at: datetime
     evidence: list[dict[str, Any]]
     details: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class PolicyDecisionRow:
+    """One row of ``policy_decisions`` (DATABASE.md §2) — the query-
+    optimized projection of a ``policy.decision`` event, maintained by
+    the store worker (TRZ-P6-05)."""
+
+    decision_id: str
+    run_id: str
+    policy_id: str
+    action_kind: str
+    action_fp: str
+    decision: str
+    mode: str
+    reasons: list[str]
+    decided_at: datetime
+    eval_ms: float
