@@ -31,9 +31,16 @@ class InstrumentedGraph:
     the original. Any other attribute (``get_graph``, ``name``, ...) passes
     straight through to the wrapped graph, uninstrumented."""
 
-    def __init__(self, graph: Any, *, recorder: Recorder | None = None) -> None:
+    def __init__(
+        self,
+        graph: Any,
+        *,
+        recorder: Recorder | None = None,
+        tags: dict[str, Any] | None = None,
+    ) -> None:
         self._graph = graph
         self._recorder_override = recorder
+        self._tags = tags or {}
         self.last_run_id: str | None = None
 
     def invoke(
@@ -54,7 +61,7 @@ class InstrumentedGraph:
                     "framework_version": _LANGGRAPH_VERSION,
                     "sdk_version": _SDK_VERSION,
                     "entry_input": to_json_safe(input),
-                    "tags": {},
+                    "tags": self._tags,
                 },
             )
             status = "ok"
@@ -90,11 +97,18 @@ class InstrumentedGraph:
         return getattr(self._graph, name)
 
 
-def instrument(graph: Any, *, recorder: Recorder | None = None) -> InstrumentedGraph:
+def instrument(
+    graph: Any,
+    *,
+    recorder: Recorder | None = None,
+    tags: dict[str, Any] | None = None,
+) -> InstrumentedGraph:
     """SDK.md §1: ``traced_graph = instrument(graph)``.
 
     ``graph`` is a compiled LangGraph graph (``StateGraph(...).compile()``).
     ``recorder`` is a test-only injection point; production callers rely on
-    the process-wide recorder installed by ``trazo.init()``.
+    the process-wide recorder installed by ``trazo.init()``. ``tags`` is
+    recorded verbatim on ``run.started`` (e.g. the chaos harness's
+    ``injected_failure`` ground truth, TRZ-P5-01).
     """
-    return InstrumentedGraph(graph, recorder=recorder)
+    return InstrumentedGraph(graph, recorder=recorder, tags=tags)
