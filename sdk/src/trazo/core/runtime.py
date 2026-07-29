@@ -15,12 +15,14 @@ from pathlib import Path
 
 import httpx
 
+from trazo.core.policy import PolicyHook
 from trazo.core.recorder import Recorder
 from trazo.core.shipper import Shipper
 from trazo.core.spool import DiskSpool, max_bytes_from_env
 from trazo.errors import NotInitializedError
 
 _recorder: Recorder | None = None
+_policy_hook: PolicyHook | None = None
 
 
 def init_recorder(
@@ -47,6 +49,22 @@ def get_recorder() -> Recorder:
     return _recorder
 
 
+def init_policy_hook(
+    *, endpoint: str, api_key: str, client: httpx.Client | None = None
+) -> PolicyHook:
+    """Build and install the process-wide PolicyHook (TRZ-P6-04). ``client``
+    is a test-only injection point; production callers never set it."""
+    global _policy_hook
+    _policy_hook = PolicyHook(endpoint=endpoint, api_key=api_key, client=client)
+    return _policy_hook
+
+
+def get_policy_hook() -> PolicyHook:
+    if _policy_hook is None:
+        raise NotInitializedError()
+    return _policy_hook
+
+
 def is_initialized() -> bool:
     return _recorder is not None
 
@@ -68,11 +86,15 @@ def replay_recorder_scope(recorder: Recorder) -> Iterator[None]:
 
 
 def _reset_runtime_for_tests() -> None:
-    """Test-only: shut down and clear the global recorder between tests."""
-    global _recorder
+    """Test-only: shut down and clear the global recorder/policy hook
+    between tests."""
+    global _recorder, _policy_hook
     if _recorder is not None:
         _recorder.shutdown(timeout=1.0)
     _recorder = None
+    if _policy_hook is not None:
+        _policy_hook.close()
+    _policy_hook = None
 
 
 def _install_recorder_for_tests(recorder: Recorder) -> None:

@@ -13,6 +13,7 @@ from trazo.decorators import (
     trace_memory_write,
     trace_tool,
 )
+from trazo.errors import PolicyDenied
 
 __version__ = "0.1.0.dev0"
 
@@ -30,6 +31,7 @@ def init(
     _context.init(project=project, endpoint=endpoint, api_key=api_key)
     config = _context.get_config()
     _runtime.init_recorder(endpoint=config.endpoint, api_key=config.api_key)
+    _runtime.init_policy_hook(endpoint=config.endpoint, api_key=config.api_key)
 
 
 def shutdown(*, timeout: float = _SHUTDOWN_TIMEOUT) -> None:
@@ -51,9 +53,11 @@ def shutdown(*, timeout: float = _SHUTDOWN_TIMEOUT) -> None:
     demo's largest batch when the process exited mid-POST.
     """
     _runtime.get_recorder().shutdown(timeout=timeout)
+    _runtime.get_policy_hook().close()
 
 
 __all__ = [
+    "PolicyDenied",
     "__version__",
     "init",
     "shutdown",
