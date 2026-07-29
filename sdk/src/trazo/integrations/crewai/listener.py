@@ -48,6 +48,30 @@ Design notes (verified empirically against crewai 1.15.6, not assumed):
   coverage audit). ``Process.hierarchical`` isn't specifically exercised
   yet — later work, same spirit as the LangGraph adapter's ``.invoke()``-
   only Phase 2 scope note.
+- **PolicyHook (TRZ-P6-04) is not wired into this adapter** — and can't
+  be, through this same event-bus mechanism, without a real fix first.
+  The point above (fire-and-forget onto a thread pool, CrewAI's own
+  emitters never awaiting the returned Future) means a
+  ``PolicyHook.check()`` call raising ``PolicyDenied`` from
+  ``_on_tool_started`` would run on a background worker thread, after
+  ``ToolUsageStartedEvent`` was already emitted, and the raised exception
+  would just be an orphaned ``Future`` exception nobody ever retrieves —
+  never reaching the agent's call stack, and the tool would run
+  regardless (confirmed by reading ``CrewAIEventsBus.emit()`` directly:
+  sync handlers go through ``self._sync_executor.submit(...)``, and
+  nothing in CrewAI's own tool-execution path calls ``.result()`` on
+  that future). The LangGraph adapter's callback-based approach genuinely
+  works because LangChain's callback dispatch is synchronous and runs on
+  the same thread as the tool call itself — CrewAI's event bus is a
+  fundamentally different (async, decoupled) mechanism. Real pre-
+  execution blocking here would need a different hook point entirely:
+  ``crewai.tools.tool_usage.ToolUsage.use()``/``._use()`` is the actual
+  synchronous call path CrewAI's agent executor uses to invoke a tool,
+  and is the point SDK.md §3's "tool wrapping via CrewAI's tool registry"
+  phrase was gesturing at — wrapping that (or the ``BaseTool``/
+  ``CrewStructuredTool`` objects themselves before they're bound to an
+  agent) is the right shape for a follow-on task, not a small addition to
+  this file.
 """
 
 from __future__ import annotations
