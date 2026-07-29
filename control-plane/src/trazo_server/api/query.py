@@ -22,7 +22,7 @@ from trazo_server.api.deps import get_blob_store, get_trace_store
 from trazo_server.api.problem_details import ProblemDetailsError
 from trazo_server.errors import BlobNotFoundError
 from trazo_server.store.blob_store import BlobStore
-from trazo_server.store.rows import EventRow, RunRow
+from trazo_server.store.rows import DetectionRow, EventRow, RunRow
 from trazo_server.store.trace_store import TraceStore
 
 router = APIRouter(prefix="/v1")
@@ -65,6 +65,20 @@ class EventsPage(BaseModel):
     next_cursor: str | None
 
 
+class DetectionOut(BaseModel):
+    detection_id: str
+    run_id: str
+    detector: str
+    severity: str
+    raised_at: str
+    evidence: list[dict[str, Any]]
+    details: dict[str, Any]
+
+
+class DetectionsPage(BaseModel):
+    detections: list[DetectionOut]
+
+
 def _clamp_limit(limit: int) -> int:
     if not (1 <= limit <= _MAX_LIMIT):
         raise ProblemDetailsError(
@@ -85,6 +99,18 @@ def _run_out(run: RunRow) -> RunOut:
         finished_at=run.finished_at.isoformat() if run.finished_at else None,
         tags=run.tags,
         totals=run.totals,
+    )
+
+
+def _detection_out(detection: DetectionRow) -> DetectionOut:
+    return DetectionOut(
+        detection_id=detection.detection_id,
+        run_id=detection.run_id,
+        detector=detection.detector,
+        severity=detection.severity,
+        raised_at=detection.raised_at.isoformat(),
+        evidence=detection.evidence,
+        details=detection.details,
     )
 
 
@@ -192,6 +218,23 @@ async def list_events(
     next_cursor = encode_cursor({"seq": page[-1].seq}) if has_more and page else None
 
     return EventsPage(events=[_event_out(e) for e in page], next_cursor=next_cursor)
+
+
+@router.get("/runs/{run_id}/detections", response_model=DetectionsPage)
+async def list_detections(
+    run_id: str, store: Annotated[TraceStore, Depends(get_trace_store)]
+) -> DetectionsPage:
+    """Most-recently-raised first (TRZ-P5-06) — small enough per run
+    (rule-detector fires, not every event) that this skips the query
+    API's cursor pagination entirely, matching the replay-bundle
+    endpoint's "small enough to just return it all" reasoning below."""
+    run = await store.get_run(run_id)
+    if run is None:
+        raise ProblemDetailsError(
+            status=404, title="Not Found", detail=f"no run {run_id}"
+        )
+    detections = await store.list_detections(run_id)
+    return DetectionsPage(detections=[_detection_out(d) for d in detections])
 
 
 _BUNDLE_PAGE_SIZE = 1000
