@@ -31,6 +31,7 @@ from typing import Any
 
 from trazo.core.bundle_loader import fetch_blob
 from trazo.core.bundle_loader import load_bundle as _load_bundle
+from trazo.core.context import SdkConfig, config_scope
 from trazo.core.recorder import Recorder, RecorderMode
 from trazo.core.replay_bundle import RecordedEvent, ReplayBundle
 from trazo.core.replay_report import ReplayReport
@@ -226,8 +227,11 @@ class Session:
         replay_recorder = Recorder(
             shipper=_NullShipper(), mode=RecorderMode.REPLAY, substituter=substituter
         )
+        replay_config = SdkConfig(
+            project=self.bundle.project_id, endpoint=self._endpoint, api_key=""
+        )
 
-        with replay_recorder_scope(replay_recorder):
+        with config_scope(replay_config), replay_recorder_scope(replay_recorder):
             entry(entry_input)
 
         return substituter.report
