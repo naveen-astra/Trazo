@@ -90,6 +90,7 @@ class InstrumentedCrew:
                 capture.unregister()
                 capture.process()
                 duration_ms = (time.monotonic() - start_time) * 1000
+                totals = run_ctx.totals
                 recorder.emit(
                     "run.finished",
                     {
@@ -97,11 +98,11 @@ class InstrumentedCrew:
                         "totals": {
                             "events": 2
                             + capture.event_count,  # +2 for run.started/finished
-                            "llm_calls": capture.llm_call_count,
-                            "tool_calls": capture.tool_call_count,
-                            "cost_usd": 0.0,  # needs a pricing table; known gap
-                            "tokens_in": capture.tokens_in_total,
-                            "tokens_out": capture.tokens_out_total,
+                            "llm_calls": totals.llm_calls,
+                            "tool_calls": totals.tool_calls,
+                            "cost_usd": totals.cost_usd,
+                            "tokens_in": totals.tokens_in,
+                            "tokens_out": totals.tokens_out,
                             "duration_ms": duration_ms,
                         },
                     },
