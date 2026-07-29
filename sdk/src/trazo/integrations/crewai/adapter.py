@@ -41,9 +41,16 @@ class InstrumentedCrew:
     original. Any other attribute passes straight through to the wrapped
     crew, uninstrumented."""
 
-    def __init__(self, crew: Crew, *, recorder: Recorder | None = None) -> None:
+    def __init__(
+        self,
+        crew: Crew,
+        *,
+        recorder: Recorder | None = None,
+        tags: dict[str, Any] | None = None,
+    ) -> None:
         self._crew = crew
         self._recorder_override = recorder
+        self._tags = tags or {}
         self.last_run_id: str | None = None
 
     def kickoff(self, inputs: dict[str, Any] | None = None, **kwargs: Any) -> Any:
@@ -60,7 +67,7 @@ class InstrumentedCrew:
                     "framework_version": _CREWAI_VERSION,
                     "sdk_version": _SDK_VERSION,
                     "entry_input": to_json_safe(inputs or {}),
-                    "tags": {},
+                    "tags": self._tags,
                 },
             )
             status = "ok"
@@ -104,11 +111,18 @@ class InstrumentedCrew:
         return getattr(self._crew, name)
 
 
-def instrument(crew: Crew, *, recorder: Recorder | None = None) -> InstrumentedCrew:
+def instrument(
+    crew: Crew,
+    *,
+    recorder: Recorder | None = None,
+    tags: dict[str, Any] | None = None,
+) -> InstrumentedCrew:
     """SDK.md §1: ``traced_crew = instrument(crew)``.
 
     ``crew`` is a CrewAI ``Crew`` instance. ``recorder`` is a test-only
     injection point; production callers rely on the process-wide recorder
-    installed by ``trazo.init()``.
+    installed by ``trazo.init()``. ``tags`` is recorded verbatim on
+    ``run.started`` (e.g. the chaos harness's ``injected_failure`` ground
+    truth, TRZ-P5-01).
     """
-    return InstrumentedCrew(crew, recorder=recorder)
+    return InstrumentedCrew(crew, recorder=recorder, tags=tags)
