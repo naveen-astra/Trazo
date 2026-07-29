@@ -22,7 +22,7 @@ from trazo_server.api.deps import get_trace_store
 from trazo_server.app import create_app
 from trazo_server.config import Settings
 from trazo_server.store.memory_trace_store import InMemoryTraceStore
-from trazo_server.store.rows import EventRow, RunRow
+from trazo_server.store.rows import DetectionRow, EventRow, RunRow
 
 _NOW = datetime(2026, 7, 18, 9, 30, tzinfo=timezone.utc)
 
@@ -71,6 +71,20 @@ def _event(**overrides: object) -> EventRow:
     }
     defaults.update(overrides)
     return EventRow(**defaults)  # type: ignore[arg-type]
+
+
+def _detection(**overrides: object) -> DetectionRow:
+    defaults: dict[str, object] = {
+        "detection_id": "det_1",
+        "run_id": "run_1",
+        "detector": "loop",
+        "severity": "warn",
+        "raised_at": _NOW,
+        "evidence": [{"event_id": "evt_a"}],
+        "details": {"repeat_count": 4},
+    }
+    defaults.update(overrides)
+    return DetectionRow(**defaults)  # type: ignore[arg-type]
 
 
 async def test_list_runs__returns_newest_first_and_respects_limit(
@@ -186,6 +200,48 @@ async def test_list_events__filters_by_kind(
 
     body = response.json()
     assert [e["seq"] for e in body["events"]] == [1]
+
+
+async def test_list_detections__returns_most_recently_raised_first(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    await trace_store.upsert_run(_run())
+    await trace_store.insert_detection(
+        _detection(detection_id="det_older", raised_at=_NOW)
+    )
+    await trace_store.insert_detection(
+        _detection(
+            detection_id="det_newer",
+            detector="budget",
+            raised_at=_NOW + timedelta(minutes=1),
+        )
+    )
+
+    response = client.get("/v1/runs/run_1/detections")
+
+    body = response.json()
+    assert [d["detection_id"] for d in body["detections"]] == [
+        "det_newer",
+        "det_older",
+    ]
+    assert body["detections"][0]["detector"] == "budget"
+
+
+async def test_list_detections__empty_for_a_run_with_no_detections(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    await trace_store.upsert_run(_run())
+
+    response = client.get("/v1/runs/run_1/detections")
+
+    assert response.json() == {"detections": []}
+
+
+def test_list_detections__404_for_unknown_run(client: TestClient) -> None:
+    response = client.get("/v1/runs/run_missing/detections")
+
+    assert response.status_code == 404
+    assert response.headers["content-type"] == "application/problem+json"
 
 
 async def test_get_replay_bundle__manifest_then_events_in_seq_order(
