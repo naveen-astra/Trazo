@@ -6,7 +6,7 @@ from collections import defaultdict
 
 import pytest
 
-from trazo.core.fingerprint import fingerprint_for
+from trazo.core.fingerprint import FINGERPRINTED_KINDS, fingerprint_for
 from trazo.core.replay_bundle import RecordedEvent, ReplayBundle
 from trazo.core.replay_report import ReplayDivergence
 from trazo.core.substituter import Substituter
@@ -21,7 +21,9 @@ def _event(seq: int, kind: str, payload: dict[str, object]) -> RecordedEvent:
         ts="2026-01-01T00:00:00Z",
         step_id=None,
         agent_id=None,
-        fingerprint=fingerprint_for(kind, payload),
+        fingerprint=fingerprint_for(kind, payload)
+        if kind in FINGERPRINTED_KINDS
+        else None,
         payload=payload,
         blobs=[],
     )
@@ -245,6 +247,75 @@ def test_substitute__invalid_mode_raises_value_error() -> None:
 
     with pytest.raises(ValueError, match="mode must be"):
         Substituter(bundle, mode="yolo")
+
+
+def test_check_step__matching_hashes_are_state_fidelity_1_0() -> None:
+    bundle = _bundle(
+        [
+            _event(0, "step.started", {"name": "plan", "state_before_hash": "h0"}),
+            _event(1, "step.finished", {"state_after_hash": "h1"}),
+        ]
+    )
+    sub = Substituter(bundle)
+
+    sub.check_step("step.started", {"state_before_hash": "h0"})
+    sub.check_step("step.finished", {"state_after_hash": "h1"})
+
+    assert sub.report.state_fidelity == 1.0
+    assert len(sub.report.step_fidelity_records) == 2
+
+
+def test_check_step__mismatched_hash_lowers_state_fidelity() -> None:
+    bundle = _bundle(
+        [
+            _event(0, "step.started", {"name": "plan", "state_before_hash": "h0"}),
+            _event(1, "step.finished", {"state_after_hash": "h1"}),
+        ]
+    )
+    sub = Substituter(bundle)
+
+    sub.check_step("step.started", {"state_before_hash": "h0"})
+    sub.check_step("step.finished", {"state_after_hash": "DRIFTED"})
+
+    assert sub.report.state_fidelity == 0.5
+    assert sub.report.step_fidelity_records[1].matched is False
+    assert sub.report.step_fidelity_records[1].recorded_hash == "h1"
+    assert sub.report.step_fidelity_records[1].recomputed_hash == "DRIFTED"
+
+
+def test_check_step__advances_per_kind_cursor_across_repeated_calls() -> None:
+    bundle = _bundle(
+        [
+            _event(0, "step.started", {"name": "plan", "state_before_hash": "h0"}),
+            _event(1, "step.started", {"name": "search", "state_before_hash": "h1"}),
+        ]
+    )
+    sub = Substituter(bundle)
+
+    sub.check_step("step.started", {"state_before_hash": "h0"})
+    sub.check_step("step.started", {"state_before_hash": "h1"})
+
+    assert [r.step_index for r in sub.report.step_fidelity_records] == [0, 1]
+    assert sub.report.state_fidelity == 1.0
+
+
+def test_check_step__ignores_non_step_kinds() -> None:
+    bundle = _bundle([])
+    sub = Substituter(bundle)
+
+    sub.check_step("llm.call", {"response": "x"})
+
+    assert sub.report.step_fidelity_records == []
+
+
+def test_check_step__no_recorded_step_at_that_index_is_a_state_mismatch() -> None:
+    bundle = _bundle([])
+    sub = Substituter(bundle)
+
+    sub.check_step("step.started", {"state_before_hash": "h0"})
+
+    assert sub.report.state_fidelity == 0.0
+    assert sub.report.step_fidelity_records[0].recorded_hash is None
 
 
 def test_substitute__per_kind_cursors_are_independent() -> None:
