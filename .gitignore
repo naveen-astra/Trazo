@@ -27,6 +27,11 @@ deploy/.env
 .trazo/
 blobs/
 
+# Chaos corpus working directory (spool/cache per generated run) — only
+# benchmark/corpus/failure_index.json (run refs) is committed, never the
+# run payloads themselves (TRZ-P5-02).
+benchmark/corpus/_runs/
+
 # Editor / OS noise
 .vscode/
 .idea/
