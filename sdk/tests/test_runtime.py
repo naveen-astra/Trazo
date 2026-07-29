@@ -12,6 +12,7 @@ import pytest
 import trazo
 from trazo.core import context, runtime
 from trazo.core.context import run_scope
+from trazo.core.policy import PolicyHook
 from trazo.core.recorder import Recorder
 from trazo.errors import NotInitializedError
 
@@ -20,6 +21,25 @@ def test_get_recorder__before_init_raises_not_initialized() -> None:
     assert runtime.is_initialized() is False
     with pytest.raises(NotInitializedError):
         runtime.get_recorder()
+
+
+def test_get_policy_hook__before_init_raises_not_initialized() -> None:
+    with pytest.raises(NotInitializedError):
+        runtime.get_policy_hook()
+
+
+def test_init_policy_hook__installs_a_policy_hook_using_the_given_client() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"decision": "allow"})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    hook = runtime.init_policy_hook(
+        endpoint="http://example.test", api_key="k", client=client
+    )
+
+    assert isinstance(hook, PolicyHook)
+    assert runtime.get_policy_hook() is hook
 
 
 def test_init_recorder__installs_a_recorder_using_the_given_client(
@@ -54,6 +74,7 @@ def test_trazo_init__wires_config_and_starts_a_recorder(
 
     assert context.get_config().project == "research-assistant"
     assert runtime.is_initialized() is True
+    assert runtime.get_policy_hook() is not None
 
 
 class _FakeShipper:
@@ -103,6 +124,7 @@ def test_trazo_shutdown__flushes_the_installed_recorder(
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
     runtime.init_recorder(endpoint="http://example.test", api_key="k", client=client)
+    runtime.init_policy_hook(endpoint="http://example.test", api_key="k")
 
     with run_scope("shutdown-test"):
         runtime.get_recorder().emit("run.started", {"framework": "custom", "tags": {}})
