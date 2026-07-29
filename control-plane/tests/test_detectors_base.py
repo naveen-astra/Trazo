@@ -143,6 +143,24 @@ def test_record__ring_buffer_evicts_oldest_past_max_size() -> None:
     ]
 
 
+def test_record__tracks_recent_llm_costs_in_order() -> None:
+    window = RunWindow(_RUN_ID)
+
+    window.record(_llm_call(seq=0, cost_usd=1.0, tokens_in=1, tokens_out=1))
+    window.record(_llm_call(seq=1, cost_usd=2.0, tokens_in=1, tokens_out=1))
+
+    assert list(window.recent_llm_costs) == [1.0, 2.0]
+
+
+def test_record__tracks_recent_tool_names_in_order() -> None:
+    window = RunWindow(_RUN_ID)
+
+    window.record(_tool_call(seq=0, fingerprint=f"sha256:{'a' * 64}"))
+    window.record(_tool_call(seq=1, fingerprint=f"sha256:{'b' * 64}"))
+
+    assert list(window.recent_tool_names) == ["web_search", "web_search"]
+
+
 def test_as_summary__is_json_safe() -> None:
     import json
 
