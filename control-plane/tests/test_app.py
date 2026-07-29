@@ -21,6 +21,16 @@ def test_app__store_worker_enabled_starts_and_stops_cleanly_without_redis() -> N
         assert response.status_code == 200
 
 
+def test_app__detector_worker_enabled_starts_and_stops_cleanly_without_redis() -> None:
+    """Same DoD as the store-worker case above, for the detector worker
+    (TRZ-P5-06): a transient infra hiccup must not take the whole control
+    plane down with it."""
+    settings = Settings(feature_detector_worker=True)
+    with TestClient(create_app(settings)) as test_client:
+        response = test_client.get("/healthz")
+        assert response.status_code == 200
+
+
 def test_healthz__returns_ok_and_version(client: TestClient) -> None:
     response = client.get("/healthz")
     assert response.status_code == 200

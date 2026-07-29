@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # lifespan. On by default for real deployment; tests that don't have a
     # real Redis/Postgres to poll set this False.
     feature_store_worker: bool = True
+    # Feature flag (TRZ-P5-03/06): the detector worker, same in-process
+    # background-task shape as the store worker above. On by default;
+    # tests without a real Redis/Postgres to poll set this False.
+    feature_detector_worker: bool = True
     # structlog output format (ARCHITECTURE.md §8): JSON in prod/containers,
     # human-readable console renderer for local dev.
     log_json: bool = True
