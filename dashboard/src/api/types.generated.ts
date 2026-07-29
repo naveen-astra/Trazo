@@ -89,6 +89,54 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/runs/{run_id}/detections": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Detections
+     * @description Most-recently-raised first (TRZ-P5-06) — small enough per run
+     *     (rule-detector fires, not every event) that this skips the query
+     *     API's cursor pagination entirely, matching the replay-bundle
+     *     endpoint's "small enough to just return it all" reasoning below.
+     */
+    get: operations["list_detections_v1_runs__run_id__detections_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/runs/{run_id}/replay-bundle": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Replay Bundle
+     * @description NDJSON: line 1 a manifest (run metadata, event count, deduplicated
+     *     blob manifest), then one line per event in seq order — everything a
+     *     replay session (SDK.md's ``trazo.replay``) needs, in one document
+     *     (REPLAY_ENGINE.md §7). Immutable/cacheable forever *once a run is no
+     *     longer ``running``*: a still-running run's bundle would otherwise be
+     *     cached as if complete, which it isn't yet.
+     */
+    get: operations["get_replay_bundle_v1_runs__run_id__replay_bundle_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/blobs/{sha256}": {
     parameters: {
       query?: never;
@@ -186,6 +234,32 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** DetectionOut */
+    DetectionOut: {
+      /** Detection Id */
+      detection_id: string;
+      /** Run Id */
+      run_id: string;
+      /** Detector */
+      detector: string;
+      /** Severity */
+      severity: string;
+      /** Raised At */
+      raised_at: string;
+      /** Evidence */
+      evidence: {
+        [key: string]: unknown;
+      }[];
+      /** Details */
+      details: {
+        [key: string]: unknown;
+      };
+    };
+    /** DetectionsPage */
+    DetectionsPage: {
+      /** Detections */
+      detections: components["schemas"]["DetectionOut"][];
+    };
     /** EventOut */
     EventOut: {
       /** Run Id */
@@ -456,6 +530,68 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["EventsPage"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_detections_v1_runs__run_id__detections_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DetectionsPage"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_replay_bundle_v1_runs__run_id__replay_bundle_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": unknown;
         };
       };
       /** @description Validation Error */
