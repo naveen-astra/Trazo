@@ -21,13 +21,20 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from trazo_server.api.deps import get_opa_client, get_trace_store, require_api_key
+from trazo_server.api.deps import (
+    get_event_bus,
+    get_opa_client,
+    get_trace_store,
+    require_api_key,
+)
 from trazo_server.api.problem_details import ProblemDetailsError
+from trazo_server.bus.protocol import EventBus
 from trazo_server.errors import OpaUnavailableError
-from trazo_server.events import EventKind, PolicyMode, Sha256Ref
+from trazo_server.events import Event, EventAdapter, EventKind, PolicyMode, Sha256Ref
 from trazo_server.metrics import POLICY_EVAL_LATENCY_SECONDS
 from trazo_server.policy.opa_client import OpaClient
 from trazo_server.store.trace_store import TraceStore
+from trazo_server.topics import EVENTS_STREAM
 from trazo_server.ulid import new_event_id
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_api_key)])
@@ -49,6 +56,7 @@ class PolicyRunContextIn(BaseModel):
 
 class PolicyEvaluateRequest(BaseModel):
     run_id: str
+    project: str
     mode: PolicyMode
     action: PolicyActionIn
     run_context: PolicyRunContextIn
@@ -66,6 +74,7 @@ async def evaluate_policy(
     body: PolicyEvaluateRequest,
     opa: Annotated[OpaClient, Depends(get_opa_client)],
     trace_store: Annotated[TraceStore, Depends(get_trace_store)],
+    bus: Annotated[EventBus, Depends(get_event_bus)],
 ) -> PolicyEvaluateResponse:
     input_doc = {
         "run_id": body.run_id,
@@ -88,24 +97,48 @@ async def evaluate_policy(
     policy_id = str(result.get("policy_id", ""))
     reasons = [str(r) for r in result.get("reasons", [])]
 
-    await trace_store.append_event(
-        run_id=body.run_id,
-        event_id=new_event_id(),
-        kind="policy.decision",
-        ts=datetime.now(timezone.utc),
-        fingerprint=None,
-        payload={
-            "policy_id": policy_id,
-            "action_ref": {
-                "fingerprint": body.action.fingerprint,
-                "kind": body.action.kind,
-            },
-            "decision": decision,
-            "reasons": reasons,
-            "eval_latency_ms": eval_ms,
-            "mode": body.mode,
+    event_id = new_event_id()
+    ts = datetime.now(timezone.utc)
+    payload = {
+        "policy_id": policy_id,
+        "action_ref": {
+            "fingerprint": body.action.fingerprint,
+            "kind": body.action.kind,
         },
+        "decision": decision,
+        "reasons": reasons,
+        "eval_latency_ms": eval_ms,
+        "mode": body.mode,
+    }
+
+    # Durable write first (this is what "before responding" means, ADR-006
+    # -- the decision is recorded no matter what happens next), then
+    # republished onto the bus so StoreWorker's generic consumption
+    # maintains the policy_decisions projection (TRZ-P6-05) and any live
+    # SSE/dashboard subscriber sees it immediately, mirroring
+    # PersistDetection's identical two-step shape (TRZ-P5-06).
+    seq = await trace_store.append_event(
+        run_id=body.run_id,
+        event_id=event_id,
+        kind="policy.decision",
+        ts=ts,
+        fingerprint=None,
+        payload=payload,
     )
+    envelope: Event = EventAdapter.validate_python(
+        {
+            "schema": "trazo.v1",
+            "event_id": event_id,
+            "run_id": body.run_id,
+            "project": body.project,
+            "seq": seq,
+            "ts": ts.isoformat(),
+            "kind": "policy.decision",
+            "payload": payload,
+        }
+    )
+    encoded = EventAdapter.dump_json(envelope, by_alias=True, exclude_none=True)
+    await bus.publish(EVENTS_STREAM, {"event": encoded.decode("utf-8")})
 
     return PolicyEvaluateResponse(
         decision=decision, policy_id=policy_id, reasons=reasons, eval_ms=eval_ms
