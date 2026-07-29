@@ -20,7 +20,7 @@ from prometheus_client import make_asgi_app
 from redis.asyncio import Redis
 
 from trazo_server import __version__
-from trazo_server.api import ingest_router, live_router, query_router
+from trazo_server.api import ingest_router, live_router, policy_router, query_router
 from trazo_server.api.problem_details import register_problem_details_handlers
 from trazo_server.bus.redis_streams import RedisStreamsBus
 from trazo_server.config import Settings
@@ -30,6 +30,7 @@ from trazo_server.detectors.loop import LoopDetector
 from trazo_server.detectors.thrash import ThrashDetector
 from trazo_server.logging import configure_logging
 from trazo_server.middleware import RequestIDMiddleware
+from trazo_server.policy.opa_client import HttpOpaClient
 from trazo_server.store.blob_fs import FilesystemBlobStore
 from trazo_server.store.engine import create_engine
 from trazo_server.store.postgres_trace_store import PostgresTraceStore
@@ -59,6 +60,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.event_bus = event_bus
         app.state.trace_store = trace_store
         app.state.blob_store = FilesystemBlobStore(Path(settings.blob_root))
+        app.state.opa_client = HttpOpaClient(base_url=settings.opa_url)
 
         worker_task: asyncio.Task[None] | None = None
         if settings.feature_store_worker:
@@ -100,6 +102,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     await detector_worker_task
             await redis_client.aclose()
             await engine.dispose()
+            await app.state.opa_client.aclose()
 
     app = FastAPI(title="Trazo control plane", version=__version__, lifespan=lifespan)
     app.state.settings = settings
@@ -109,6 +112,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ingest_router)
     app.include_router(query_router)
     app.include_router(live_router)
+    app.include_router(policy_router)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:

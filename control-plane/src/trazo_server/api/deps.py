@@ -14,6 +14,7 @@ from fastapi import Header, Request
 
 from trazo_server.api.problem_details import ProblemDetailsError
 from trazo_server.bus.protocol import EventBus
+from trazo_server.policy.opa_client import OpaClient
 from trazo_server.store.blob_store import BlobStore
 from trazo_server.store.trace_store import TraceStore
 
@@ -44,3 +45,8 @@ def get_blob_store(request: Request) -> BlobStore:
 def get_trace_store(request: Request) -> TraceStore:
     store: TraceStore = request.app.state.trace_store
     return store
+
+
+def get_opa_client(request: Request) -> OpaClient:
+    client: OpaClient = request.app.state.opa_client
+    return client
