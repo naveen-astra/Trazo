@@ -22,7 +22,7 @@ from trazo_server.api.deps import get_trace_store
 from trazo_server.app import create_app
 from trazo_server.config import Settings
 from trazo_server.store.memory_trace_store import InMemoryTraceStore
-from trazo_server.store.rows import DetectionRow, EventRow, RunRow
+from trazo_server.store.rows import DetectionRow, EventRow, PolicyDecisionRow, RunRow
 
 _NOW = datetime(2026, 7, 18, 9, 30, tzinfo=timezone.utc)
 
@@ -85,6 +85,23 @@ def _detection(**overrides: object) -> DetectionRow:
     }
     defaults.update(overrides)
     return DetectionRow(**defaults)  # type: ignore[arg-type]
+
+
+def _policy_decision(**overrides: object) -> PolicyDecisionRow:
+    defaults: dict[str, object] = {
+        "decision_id": "dec_1",
+        "run_id": "run_1",
+        "policy_id": "cost_cap",
+        "action_kind": "tool.call",
+        "action_fp": "sha256:" + "a" * 64,
+        "decision": "deny",
+        "mode": "enforce",
+        "reasons": ["over cap"],
+        "decided_at": _NOW,
+        "eval_ms": 12.5,
+    }
+    defaults.update(overrides)
+    return PolicyDecisionRow(**defaults)  # type: ignore[arg-type]
 
 
 async def test_list_runs__returns_newest_first_and_respects_limit(
@@ -239,6 +256,48 @@ async def test_list_detections__empty_for_a_run_with_no_detections(
 
 def test_list_detections__404_for_unknown_run(client: TestClient) -> None:
     response = client.get("/v1/runs/run_missing/detections")
+
+    assert response.status_code == 404
+    assert response.headers["content-type"] == "application/problem+json"
+
+
+async def test_list_policy_decisions__returns_most_recently_decided_first(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    await trace_store.upsert_run(_run())
+    await trace_store.insert_policy_decision(
+        _policy_decision(decision_id="dec_older", decided_at=_NOW)
+    )
+    await trace_store.insert_policy_decision(
+        _policy_decision(
+            decision_id="dec_newer",
+            policy_id="tool_blocklist",
+            decided_at=_NOW + timedelta(minutes=1),
+        )
+    )
+
+    response = client.get("/v1/runs/run_1/policy-decisions")
+
+    body = response.json()
+    assert [d["decision_id"] for d in body["decisions"]] == [
+        "dec_newer",
+        "dec_older",
+    ]
+    assert body["decisions"][0]["policy_id"] == "tool_blocklist"
+
+
+async def test_list_policy_decisions__empty_for_a_run_with_no_decisions(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    await trace_store.upsert_run(_run())
+
+    response = client.get("/v1/runs/run_1/policy-decisions")
+
+    assert response.json() == {"decisions": []}
+
+
+def test_list_policy_decisions__404_for_unknown_run(client: TestClient) -> None:
+    response = client.get("/v1/runs/run_missing/policy-decisions")
 
     assert response.status_code == 404
     assert response.headers["content-type"] == "application/problem+json"
