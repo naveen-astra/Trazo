@@ -27,6 +27,21 @@ class ReplayStepRecord:
 
 
 @dataclass(frozen=True)
+class StepFidelityRecord:
+    """One step.started/step.finished's recomputed state hash compared
+    against what was recorded — REPLAY_ENGINE.md §5's "headline number".
+    Matched strictly by order (no lookahead): step order reflects the
+    framework's own deterministic control flow, not a race between
+    parallel boundary calls the way llm.call/tool.call can be."""
+
+    kind: str
+    step_index: int
+    recorded_hash: str | None
+    recomputed_hash: str | None
+    matched: bool
+
+
+@dataclass(frozen=True)
 class DivergenceDetail:
     """Field-level context for a mismatch — "which part of the prompt
     changed" (REPLAY_ENGINE.md §3): the recorded normalized inputs next
@@ -63,6 +78,7 @@ class ReplayReport:
     def __init__(self) -> None:
         self.steps: list[ReplayStepRecord] = []
         self.divergences: list[ReplayDivergence] = []
+        self.step_fidelity_records: list[StepFidelityRecord] = []
 
     def record_match(
         self, *, kind: str, fingerprint: str, event_id: str, seq: int, reordered: bool
@@ -80,12 +96,45 @@ class ReplayReport:
     def record_divergence(self, divergence: ReplayDivergence) -> None:
         self.divergences.append(divergence)
 
+    def record_step_result(
+        self,
+        *,
+        kind: str,
+        step_index: int,
+        recorded_hash: str | None,
+        recomputed_hash: str | None,
+    ) -> None:
+        self.step_fidelity_records.append(
+            StepFidelityRecord(
+                kind=kind,
+                step_index=step_index,
+                recorded_hash=recorded_hash,
+                recomputed_hash=recomputed_hash,
+                matched=(
+                    recorded_hash is not None and recorded_hash == recomputed_hash
+                ),
+            )
+        )
+
     @property
     def fidelity(self) -> float:
-        """Matched boundary calls / total boundary calls attempted. ``1.0``
-        for a report with no boundary calls at all (nothing to diverge on)."""
+        """Boundary fidelity (REPLAY_ENGINE.md §5): matched boundary
+        calls / total boundary calls attempted. ``1.0`` for a report with
+        no boundary calls at all (nothing to diverge on)."""
         total = len(self.steps) + len(self.divergences)
         return 1.0 if total == 0 else len(self.steps) / total
+
+    @property
+    def state_fidelity(self) -> float:
+        """State fidelity (REPLAY_ENGINE.md §5's "headline number"):
+        steps whose recomputed state hash matched the recorded one /
+        total steps compared. ``1.0`` for a report with no steps compared
+        at all."""
+        total = len(self.step_fidelity_records)
+        if total == 0:
+            return 1.0
+        matched = sum(1 for r in self.step_fidelity_records if r.matched)
+        return matched / total
 
     @property
     def reordered_count(self) -> int:
