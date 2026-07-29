@@ -1,8 +1,10 @@
 import { Link, useParams } from "react-router-dom";
 
+import DetectionBadges from "../components/DetectionBadges";
 import LiveBadge from "../components/LiveBadge";
 import RunTimeline from "../components/RunTimeline";
 import StatusBadge from "../components/StatusBadge";
+import { useDetections } from "../hooks/useDetections";
 import { useLiveRunEvents } from "../hooks/useLiveRunEvents";
 import { useRun } from "../hooks/useRun";
 
@@ -14,6 +16,7 @@ export default function RunDetailPage() {
   const { runId } = useParams<{ runId: string }>();
   const { data: run, isLoading, isError, error } = useRun(runId ?? "");
   const { events, connected } = useLiveRunEvents(runId ?? "");
+  const { data: detectionsPage } = useDetections(runId ?? "", run?.status);
 
   if (!runId) {
     return <p>No run id.</p>;
@@ -45,6 +48,8 @@ export default function RunDetailPage() {
           {!connected && events.length === 0 ? " · connecting…" : ""}
         </p>
       )}
+
+      <DetectionBadges detections={detectionsPage?.detections ?? []} />
 
       {events.length === 0 ? <p>No events yet.</p> : <RunTimeline events={events} />}
     </section>

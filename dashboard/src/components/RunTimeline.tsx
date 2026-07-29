@@ -64,6 +64,7 @@ export default function RunTimeline({ events }: RunTimelineProps) {
               return (
                 <button
                   key={event.event_id}
+                  id={`evt-${event.event_id}`}
                   type="button"
                   className="timeline-event"
                   onClick={() => setSelected(event)}
