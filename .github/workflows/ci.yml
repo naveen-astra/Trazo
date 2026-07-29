@@ -20,6 +20,7 @@ jobs:
     outputs:
       python: ${{ steps.filter.outputs.python }}
       dashboard: ${{ steps.filter.outputs.dashboard }}
+      policies: ${{ steps.filter.outputs.policies }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -37,6 +38,9 @@ jobs:
               - '.github/workflows/ci.yml'
             dashboard:
               - 'dashboard/**'
+              - '.github/workflows/ci.yml'
+            policies:
+              - 'policies/**'
               - '.github/workflows/ci.yml'
 
   python:
@@ -114,6 +118,24 @@ jobs:
           uv sync --dev
           uv run mypy
           uv run pytest
+
+  opa:
+    needs: changes
+    if: needs.changes.outputs.policies == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OPA
+        # Pinned to the same version deploy/docker-compose.yml's opa
+        # service runs, so a passing test here means the exact binary
+        # production uses actually accepts this bundle.
+        run: |
+          curl -sL -o /usr/local/bin/opa \
+            https://github.com/open-policy-agent/opa/releases/download/v0.70.0/opa_linux_amd64_static
+          chmod +x /usr/local/bin/opa
+          opa version
+      - name: opa test
+        run: opa test policies/trazo policies/tests/trazo -v
 
   dashboard:
     needs: changes
