@@ -206,7 +206,7 @@ def _inject_loop() -> Iterator[dict[str, Any]]:
     original = crew.ScriptedLLM
     crew.ScriptedLLM = _LoopScriptedLLM
     try:
-        yield {"class": "loop"}
+        yield {"class": "loop", "start_call_index": 0}
     finally:
         crew.ScriptedLLM = original
 
@@ -216,7 +216,7 @@ def _inject_budget() -> Iterator[dict[str, Any]]:
     original = crew.ScriptedLLM
     crew.ScriptedLLM = _BudgetScriptedLLM
     try:
-        yield {"class": "budget"}
+        yield {"class": "budget", "start_call_index": 1}  # 0-based: the 2nd LLM call
     finally:
         crew.ScriptedLLM = original
 
@@ -236,7 +236,7 @@ def _inject_thrash() -> Iterator[dict[str, Any]]:
     crew.web_search = _corrupted_web_search
     crew.fetch_style_guide = fetch_style_guide  # unchanged; kept for clarity
     try:
-        yield {"class": "thrash"}
+        yield {"class": "thrash", "start_call_index": 0}
     finally:
         crew.web_search = original_web_search
         crew.fetch_style_guide = original_fetch_style_guide
@@ -247,7 +247,7 @@ def _inject_drift() -> Iterator[dict[str, Any]]:
     original = crew.ScriptedLLM
     crew.ScriptedLLM = _DriftScriptedLLM
     try:
-        yield {"class": "drift"}
+        yield {"class": "drift", "start_call_index": 2}  # 0-based: the 3rd LLM call
     finally:
         crew.ScriptedLLM = original
 

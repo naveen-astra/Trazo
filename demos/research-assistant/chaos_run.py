@@ -59,7 +59,7 @@ def _inject_loop() -> Iterator[dict[str, Any]]:
 
     llm._fixture = _stuck_fixture
     try:
-        yield {"class": "loop"}
+        yield {"class": "loop", "start_call_index": 0}
     finally:
         llm._fixture = original_fixture
 
@@ -82,7 +82,7 @@ def _inject_budget() -> Iterator[dict[str, Any]]:
 
     llm._fixture = _inflated_fixture
     try:
-        yield {"class": "budget"}
+        yield {"class": "budget", "start_call_index": 1}  # 0-based: the 2nd LLM call
     finally:
         llm._fixture = original_fixture
 
@@ -106,7 +106,7 @@ def _inject_thrash() -> Iterator[dict[str, Any]]:
     agent.web_search = _corrupted_web_search
     agent.fetch_document = _corrupted_fetch_document
     try:
-        yield {"class": "thrash"}
+        yield {"class": "thrash", "start_call_index": 0}
     finally:
         agent.web_search = original_web_search
         agent.fetch_document = original_fetch_document
@@ -131,7 +131,10 @@ def _inject_drift() -> Iterator[dict[str, Any]]:
 
     agent.ask_synthesize = _drifted_ask_synthesize
     try:
-        yield {"class": "drift"}
+        yield {
+            "class": "drift",
+            "start_call_index": 1,
+        }  # 0-based: the 2nd synthesize call
     finally:
         agent.ask_synthesize = original_ask_synthesize
 
