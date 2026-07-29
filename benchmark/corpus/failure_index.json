@@ -1,0 +1,2102 @@
+[
+  {
+    "run_id": "run_01KYQ5SY1EP3BXYJ6SNHAT085J",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T14:52:43.305534+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5T6TT4JCMC6RTCQ56A7XY",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T14:52:50.104233+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5TDAZD8K5Y0F073DAJ615",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T14:52:56.905956+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5TKTMDXBB657KHTNB2CKV",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T14:53:03.589228+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5TTJ1046DCBM12Q2MT82F",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T14:53:10.256814+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5V10JZ5VS4ES1B8X8RDAD",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T14:53:17.142238+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5V7PYEXH369EQQ7BKMJ0Z",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T14:53:23.896018+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5VEA7XCN2DAD8S4M2S017",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T14:53:30.574300+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5VMSVHZK19T08JHHFH9Z3",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T14:53:37.191931+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5VV96GMFD4D1QTWNH3ECP",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T14:53:44.116353+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5W2612R2BAB9TNDDYQQ1B",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T14:53:50.993493+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5W8NBNQ05FVHX3ZNG1K94",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T14:53:57.498638+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5WF1H1JQ9Z4ZZ04KJ2CKE",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T14:54:04.146998+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5WNNBAD1H5062DSZHWAGM",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T14:54:10.920479+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5WW48T190Q4PZ9HGW2NPN",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T14:54:17.822989+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5X48BRXENM9FT9AHR5YNV",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T14:54:30.865159+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5XH134WXA740Y03TMM1NA",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T14:54:44.060260+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5XXY8X6P2AYPVG8TX0TPX",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T14:54:57.214911+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5YAP699QAEJF8ZKPGGK7K",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T14:55:10.000654+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5YQ4KVZQPVAV2KMJW09AA",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T14:55:23.040353+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5Z3Y3YXTNHRNEE75DDFG7",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T14:55:36.135936+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5ZGKZ9MCTXN03K3N4DZZM",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T14:55:49.070757+00:00"
+  },
+  {
+    "run_id": "run_01KYQ5ZXAZKX8M4XJ2NH7DY0B0",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T14:56:01.950996+00:00"
+  },
+  {
+    "run_id": "run_01KYQ60AX9FSFP6PJF4BKE39F8",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T14:56:17.836112+00:00"
+  },
+  {
+    "run_id": "run_01KYQ60SDFQY1FQV5TVYRQW9G8",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T14:56:30.921716+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6168D5Z1S5ZEMVR3J1D2B",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T14:56:44.226285+00:00"
+  },
+  {
+    "run_id": "run_01KYQ61M97FSRF5JNDZ89PM44Y",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T14:56:58.561131+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6215SPJ5P6SA3A8FA6AK8",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T14:57:11.967417+00:00"
+  },
+  {
+    "run_id": "run_01KYQ62F00J0TQG5VRVCVCA1GJ",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T14:57:25.674695+00:00"
+  },
+  {
+    "run_id": "run_01KYQ62VPFV5M9F4NA0RQ3KJVN",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T14:57:38.667210+00:00"
+  },
+  {
+    "run_id": "run_01KYQ65B8K38RS50GK971HGY3Q",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T14:58:55.115121+00:00"
+  },
+  {
+    "run_id": "run_01KYQ65HXBC3PAMX8Q0R270VFY",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T14:59:02.031007+00:00"
+  },
+  {
+    "run_id": "run_01KYQ65RH3763ZEH59QSQP95W2",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T14:59:08.984616+00:00"
+  },
+  {
+    "run_id": "run_01KYQ65ZAAWTBQCD14MAK52JEJ",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T14:59:15.671849+00:00"
+  },
+  {
+    "run_id": "run_01KYQ665TM24HREG47ZD1M9712",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T14:59:22.526596+00:00"
+  },
+  {
+    "run_id": "run_01KYQ66CR71GPV5ZP5EHDJX5KF",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T14:59:29.716946+00:00"
+  },
+  {
+    "run_id": "run_01KYQ66KEJ60Q1FHW6QB4HGV0F",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T14:59:36.490840+00:00"
+  },
+  {
+    "run_id": "run_01KYQ66T5P3BV1G9W9GJT639GQ",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T14:59:43.095267+00:00"
+  },
+  {
+    "run_id": "run_01KYQ670M2FE767MFZAQW9FCNM",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T14:59:49.907776+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6775XEQSE7GGTWQYAN7JS",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T14:59:56.667704+00:00"
+  },
+  {
+    "run_id": "run_01KYQ67DWCM7SZC5ES5THBGVWV",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:00:03.455468+00:00"
+  },
+  {
+    "run_id": "run_01KYQ67MEXVMDB1BV2GVHTMAN8",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:00:10.405007+00:00"
+  },
+  {
+    "run_id": "run_01KYQ67VMY25YMBS2GWRMYBGJE",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:00:17.689387+00:00"
+  },
+  {
+    "run_id": "run_01KYQ682CN32KQ9V8Q74H20VAB",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:00:24.406591+00:00"
+  },
+  {
+    "run_id": "run_01KYQ688XFVAVEF74JCSX8C7YM",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:00:31.141418+00:00"
+  },
+  {
+    "run_id": "run_01KYQ68FT71CW4DC7FVACPTW3W",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:00:38.263938+00:00"
+  },
+  {
+    "run_id": "run_01KYQ68PR79B1HXEH9QX0TS8D4",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:00:45.151465+00:00"
+  },
+  {
+    "run_id": "run_01KYQ68XA35NXJDYQQ197E7T5B",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:00:52.386307+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6949RV5RVV9P8A0MXDVMG",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:00:59.442151+00:00"
+  },
+  {
+    "run_id": "run_01KYQ69BG7G75P4YQ1E1AGBB1J",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:01:06.717291+00:00"
+  },
+  {
+    "run_id": "run_01KYQ69JB62VHERW2S3NB6V3AV",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:01:14.020341+00:00"
+  },
+  {
+    "run_id": "run_01KYQ69SHJTFVWWD8P2WGCA4E0",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:01:24.475358+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6A3QC9FVFJNGEJ5KH66S6",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:01:31.376176+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6AAH09MMA6J8RVGY82EJ1",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:01:38.252876+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6AH08AWSPS2SV3EZ169JZ",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:01:45.244536+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6AQR5QV7DF9EWANJ0CPZA",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:01:52.187120+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6AYPGQEGWWQDHDRVR6WMF",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:01:59.175528+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6B5DBHSDW59P7A5K7P41S",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:02:05.868135+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6BBXAM2PPJGYHMT2DBJSR",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:02:12.865569+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6BJYZESR2FK7JJ2CD363V",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:02:19.706534+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6BSJDWH9EBJGXQG9YBYKB",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:02:26.463422+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6C03Q0XVNJX2SAPQYNZH3",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:02:33.460939+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6C78VJQ1PG4TAJP5MG0JH",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:02:40.517207+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6CDZ9VFRCXSBVQSMQVGDA",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:02:47.563377+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6CMSKCSA683RKGZBJS2RD",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:02:54.343798+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6CVGPRWRGBGEAB8EH4GXB",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:03:01.370753+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6D2ASH5RVY97P2KHMJ0Q4",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:03:08.345965+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6D971NEP9PHH1NV4T8H8G",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:03:15.248869+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6DFR33KE3JSJRA7BK29N9",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:03:22.030804+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6DPCF6V0XC55P29NAD66X",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:03:29.053422+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6DX8HVGFDCR6FGMBSSC86",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:03:35.919181+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6E3ZTYJ5P2C409BZJX5YE",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:03:42.610648+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6EAG051F13PN0B185Y74E",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:03:49.797431+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6EHE7ZW56WYA12QYG4E6B",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:03:56.583794+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6ER7JTNYGJSE2W0KNM9AV",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:04:03.513835+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6EZ1KY095XSSKBBY98HNW",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:04:10.508241+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6F5Q55H9PZQRSWC8BGFJN",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:04:17.307936+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6FCVK4P2TDQ53GN8PYHX3",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:04:24.991848+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6FMR2WHFMDEVHPK5SZX7P",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:04:32.645528+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6FVCYY84WFZM2M0MQCVYQ",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:04:39.460279+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6G1Z6F7AF14GJ6YJK76SR",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:04:46.735942+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6G95BYMRDK965NNB9QB7P",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:04:53.730840+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6GG0EH7QM1745YCXZGSVK",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:05:00.650840+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6GPR3X4C4HP21W6QPTHGK",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:05:07.599765+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6GXWCNSC9ECHTR8Z9DMV7",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:05:15.159949+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6H4X9RAP99J608F70GTR4",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:05:22.512417+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6HC4QTRW4VJMRQHEH0EF2",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:05:29.774788+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6HK4C2ZCB9HAP6GB58AG1",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:05:36.859870+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6HT4DBBAQMV5644ZJREXS",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:05:44.317063+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6J24S06TVR07VVSYEMMG3",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:05:52.341751+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6J9F32MQ17VT0AHFQP80P",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:05:59.724587+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6JGFCSFY5P99XJ5R11VBY",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:06:06.662455+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6JQ7DYK50AY1H7SSHZD4J",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:06:13.361554+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6JXRTY7C7CZAP72TT8DW3",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:06:20.767181+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6K53N0CGX38CNS6C0VYQM",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:06:28.289848+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6KCCFM4KBY9G06D6SWMH4",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:06:35.157741+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6KK6J5Z7Z0R08V0XMJW0C",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:06:42.628154+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6KTE170M1Q2A7V1WXEZK6",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:06:49.753266+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6M1FQV3FW9SGB8J28X85C",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:06:57.043099+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6M8EBN506QT5V48NNE4XB",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:07:04.347555+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6MFXJV4AQCNXQWK79F7DG",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:07:12.194021+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6MQ4P4DH2TRZCYH6250B5",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:07:19.689967+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6MYG2WYFRSQC8Q802PT33",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:07:26.718136+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6N5AKBJ6574T52HXYYJXW",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:07:33.884263+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6NCKQJ1FCTCX942HJSAGF",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:07:41.316000+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6NKKYBFCMNGJWZQ1KS01T",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:07:48.633453+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6NTTXFCGNB3J3A1P2578M",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:07:55.482033+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6P1PV0RSS8XFFKSAQ120M",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:08:03.197809+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6P9T8RJM6CWGK0CFTX95J",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:08:11.335881+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6PGXW0BXZNZGYYEVC4S6D",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:08:18.135264+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6PQJM5E36SB6KENS5414K",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:08:25.233008+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6PYJ4BHGECSKPFNE9Z10Y",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:08:32.526912+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6Q5M9HWY1Z5QSH3QTGYMH",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:08:39.815034+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6QCMWS743CFR56KG0JK18",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:08:47.518185+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6QM7F8VVY90A42C97E466",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:08:54.748125+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6QVC1WRMP7XYRB28D7Q95",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:09:02.021815+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6R2B7GZM8PYE52VM5PQ5R",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:09:09.214683+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6R9GHRYBG1KSS4NWH22R2",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:09:16.887915+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6RH49AAM6SG2FM14TQHTV",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:09:24.092309+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6RR0T0Q9QJXS6S7ZWGRJJ",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:09:31.362011+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6RZ65N13GC0R1QZPS8F1C",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:09:39.032213+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6S6SNC1KVNPA1KQREVSQQ",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:09:46.842125+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6SE8C18B45RBVQ9CJCE9J",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:09:54.363764+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6SNP1RN73J6CHTXHYHWWP",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:10:01.992713+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6SX8TPY91AYKV4DY2YBZQ",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:10:09.126043+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6T42GTKDWS2MDHVQ775G5",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:10:16.754111+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6TBMEH4SQ71FRD2J3MYBX",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:10:24.216890+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6TJSF8A5K7DDW46YKK8HX",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:10:31.841018+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6TT9A2S5YZK4JG7EM5PTZ",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:10:39.293543+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6V1HSXBCK00MGNXXSYXCR",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:10:47.056188+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6V91SDWJ2QWGD20375MZR",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:10:54.633691+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6VGKRVAF03Y9TBC8SR4GH",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:11:01.975941+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6VQJS0PKE8E3CRE4NN89P",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:11:09.296703+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6VZ0DM4FZQKM5MYYPBBTF",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:11:16.868120+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6W674DWENDVKYDHB7DQCD",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:11:24.609028+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6WDT213BD28A2PDB16VKT",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:11:32.162678+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6WNCR2MHPMM0W57SVNG14",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:11:44.335760+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6X1CHWCX79KVZE0SZVYN6",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:11:52.120064+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6X8KG81KPHK4WMAT7F9VV",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:11:59.583500+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6XFWFR7RWT036A9YM7VRR",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:12:06.964090+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6XQ40CE821R2787959GYK",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:12:14.461530+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6XYBP84VR1AK03EE4XGV7",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:12:21.835932+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6Y5HCVG17YVGDZ46EV5N5",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:12:29.286645+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6YCVBMM4CMN97KMH2S9QV",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:12:36.493606+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6YKX3EKYSK1SG62CJ67AQ",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:12:44.063261+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6YVDFQYMG6SN0WWRH7SZC",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:12:51.677497+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6Z2QHKPFA6780NB6343JK",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:12:59.794334+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6ZAWTM475ZABANYV9BFKG",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:13:07.766965+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6ZJMWFTXRW3QRQ5DB70RR",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:13:15.478754+00:00"
+  },
+  {
+    "run_id": "run_01KYQ6ZT3AH4SKVJXT5AWBS5AV",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:13:23.226398+00:00"
+  },
+  {
+    "run_id": "run_01KYQ701JB2G97H7XCXHW2Q4ZC",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:13:31.096826+00:00"
+  },
+  {
+    "run_id": "run_01KYQ70969FV8ET81H1VG7TKA1",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:13:38.685395+00:00"
+  },
+  {
+    "run_id": "run_01KYQ70H44HZGTS6W3KHYR44J3",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:13:46.943321+00:00"
+  },
+  {
+    "run_id": "run_01KYQ70RTTJCG1WRB01BVMPKF8",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:13:54.394866+00:00"
+  },
+  {
+    "run_id": "run_01KYQ70ZZWB1S7829Y6QNN80VV",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:14:01.536869+00:00"
+  },
+  {
+    "run_id": "run_01KYQ716YTGDAQEGS9HMGTDN0Q",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:14:08.978388+00:00"
+  },
+  {
+    "run_id": "run_01KYQ71E9JY17Z6MHE73NW6CNG",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:14:16.762160+00:00"
+  },
+  {
+    "run_id": "run_01KYQ71NSNRZ0D4MY58YCAGQ0H",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:14:24.312757+00:00"
+  },
+  {
+    "run_id": "run_01KYQ71XCKBANZJDD4REA3M27G",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:14:32.032104+00:00"
+  },
+  {
+    "run_id": "run_01KYQ724QHRMNTRH3RPN7KACMF",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:14:39.536714+00:00"
+  },
+  {
+    "run_id": "run_01KYQ72C7Q7FZ2M0A7BZWEJACW",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:14:47.428863+00:00"
+  },
+  {
+    "run_id": "run_01KYQ72M97W23TCJCVZFZYWYHQ",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:14:55.612803+00:00"
+  },
+  {
+    "run_id": "run_01KYQ72W01CZ7QWTPNSF9D052Y",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:15:03.463259+00:00"
+  },
+  {
+    "run_id": "run_01KYQ733G774MW3GTCGV8H7J9G",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:15:11.138506+00:00"
+  },
+  {
+    "run_id": "run_01KYQ73AX600AZW4J3S7BR9TWR",
+    "project": "research-assistant",
+    "framework": "langgraph",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:15:18.819427+00:00"
+  },
+  {
+    "run_id": "run_01KYQ73MCTNF2AFA564TMVGNTE",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:15:34.960142+00:00"
+  },
+  {
+    "run_id": "run_01KYQ743DM3A41TRAXV4W36WKS",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:15:50.008527+00:00"
+  },
+  {
+    "run_id": "run_01KYQ74JAPJNCE2X47YZ62GZAZ",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:16:04.540404+00:00"
+  },
+  {
+    "run_id": "run_01KYQ750VN2F2PFP5R8GDBFMED",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:16:19.747967+00:00"
+  },
+  {
+    "run_id": "run_01KYQ75J2MR1STWPAW9Z4XE39Z",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:16:37.277892+00:00"
+  },
+  {
+    "run_id": "run_01KYQ760BZR5WDPNG50FV6WGNK",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:16:51.749849+00:00"
+  },
+  {
+    "run_id": "run_01KYQ76G5WN0J86TPJ6YJTY6YC",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:17:08.179924+00:00"
+  },
+  {
+    "run_id": "run_01KYQ76Z104EASTEB50QTFQAZX",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:17:24.082916+00:00"
+  },
+  {
+    "run_id": "run_01KYQ77FABC2VSNFCT3JEH46EM",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:17:40.560864+00:00"
+  },
+  {
+    "run_id": "run_01KYQ77XVV6KX1AX2FRKMVN23H",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:17:55.218534+00:00"
+  },
+  {
+    "run_id": "run_01KYQ78DW05CG5J7QAZNFJ6WEK",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:18:11.784172+00:00"
+  },
+  {
+    "run_id": "run_01KYQ78WHA96CY9SJ0MS0BV7HJ",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:18:27.310746+00:00"
+  },
+  {
+    "run_id": "run_01KYQ79BQBGNFTTDYYJHT2GKP3",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:18:42.554632+00:00"
+  },
+  {
+    "run_id": "run_01KYQ79THCG3SS8VPB0AMY75QY",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:18:58.138446+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7A9SXJB7MDKS8VYZ6E4RV",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:19:13.522103+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7ARVVB37EPTM0VVNE89N7",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:19:28.982549+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7B7WQ163N5PWVEFD4PFVS",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:19:44.328794+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7BQNXS1R0CXNHXVRZZ13N",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:20:00.993384+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7C71V12J67GK63HMV4H7M",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:20:15.996018+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7CNT17QEB11P21B93YK0N",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:20:31.363126+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7D4R835K69H84BK4MSCKB",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:20:47.083684+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7DMA34BRZY7GKVWVGWE4H",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:21:02.622430+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7E3D672XMPY410210AFZ5",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:21:17.983407+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7EK14KR5WPC6M8GV8XRD9",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:21:34.474458+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7F2P1FSS58KYNRXAZ0ZG5",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:21:50.727269+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7FJA2YJYAS9F4SG4G19KR",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:22:06.276607+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7G1F8WV960386Y9T0DF1H",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:22:22.718820+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7GHG61DXRSBZCNWFF6SS9",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:22:38.181921+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7H0QGYY88436P4JKSW3C7",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:22:53.170662+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7HF9GRFAFAM8336JJ880Z",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:23:08.649468+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7HYDS7Y6XREPXPAYV2D8M",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:23:24.490788+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7JE13P4K6YB9KMJX903P2",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:23:39.429587+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7JYY9TPACVERK7K8B28C3",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:23:56.653161+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7KDD384887FJMEHN27CTS",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:24:11.520050+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7KWAXM7NVP6D672TPRR0D",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:24:27.406783+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7MBK0D0DW9J4R0ZZZ5ZJT",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:24:43.023620+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7MTHFEXSNKG9HBWNHPSJV",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:24:58.869145+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7NC77QFJFP3KD0A1FBPDW",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:25:16.551545+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7NVB7MSTDZ9AE6JHT2CRW",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:25:32.105822+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7PAHET39HDXBA2VYTC3ZG",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:25:47.865625+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7PSZTR554P13Z2EEZ0EFM",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:26:02.934512+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7Q8WK6DGC0D85Q6T7HVTR",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:26:18.795900+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7QQZSFS1PAP1CNSQ3XDNZ",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:26:33.900360+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7R6XDMDJF502C35ZG1SCZ",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:26:49.605009+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7RP5JDYHARNCPVZWV1S0M",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:27:04.943501+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7S5ANF6HSJ1KKQHRZ2X64",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:27:20.752063+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7SMKCJ241PGJ9SSY4X3WT",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "clean",
+    "recorded_at": "2026-07-29T15:27:36.314958+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7T4HZHT8027SHJHT5HVYF",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:27:52.442006+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7TKM299JFBQGXVRXB5TM3",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:28:07.881053+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7V2R32MZVCMMSJFPNQMZ8",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:28:24.026309+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7VJFW4X54MJSWVRB1H95F",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:28:39.733965+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7W2M9QBPAF4NN2KQCH5RH",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:28:56.345091+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7WK7DSVEEADBAQNR6X14V",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:29:13.644411+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7X3ADYB1KAWRT1EZ65FC1",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:29:29.894920+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7XJTZBCETJEZ94R9E5ZFQ",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:29:45.922657+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7Y2DV98MSCEJYRX09HVNG",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:30:01.850324+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7YJAYM9SXZBYS2GA12CZ3",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:30:18.110362+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7Z2013VPMXDGN8SSFWCBS",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:30:33.507232+00:00"
+  },
+  {
+    "run_id": "run_01KYQ7ZH02CGXCV9H89YR7B6YQ",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:30:49.790540+00:00"
+  },
+  {
+    "run_id": "run_01KYQ800TW7QBCS5YNG57S4K7X",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:31:05.873090+00:00"
+  },
+  {
+    "run_id": "run_01KYQ80GAEAV9VDV1BS5A1RHKC",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:31:21.584674+00:00"
+  },
+  {
+    "run_id": "run_01KYQ80ZRYAJS0GCQHKRJEHB57",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:31:36.866544+00:00"
+  },
+  {
+    "run_id": "run_01KYQ81EQYQFP3X8WJRPRDQ7NB",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:31:52.397925+00:00"
+  },
+  {
+    "run_id": "run_01KYQ81XVAD1F00VW7JSGVH72X",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:32:07.963585+00:00"
+  },
+  {
+    "run_id": "run_01KYQ82D3HYJ31A0DPS7XBZMTQ",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:32:24.236921+00:00"
+  },
+  {
+    "run_id": "run_01KYQ82X0F1JC9CE0DNE7MMC6M",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:32:40.186893+00:00"
+  },
+  {
+    "run_id": "run_01KYQ83D4G4GDZ1MFF16NGMMDA",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:32:57.325091+00:00"
+  },
+  {
+    "run_id": "run_01KYQ83XAHA9N480F1AFW27ARA",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:33:13.636444+00:00"
+  },
+  {
+    "run_id": "run_01KYQ84D9DNWFBGJ0FMRF8S4VX",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "loop",
+    "recorded_at": "2026-07-29T15:33:30.064571+00:00"
+  },
+  {
+    "run_id": "run_01KYQ84X98V1SZJVHCZE1N9Y36",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:33:45.804493+00:00"
+  },
+  {
+    "run_id": "run_01KYQ85CQ1HM6PQKSV0VTQK39S",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:34:01.545582+00:00"
+  },
+  {
+    "run_id": "run_01KYQ85W0T3JJ1DK42VBBQQ6TT",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:34:17.346781+00:00"
+  },
+  {
+    "run_id": "run_01KYQ86BDV8AKHC02F5W5NTPB3",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:34:32.599401+00:00"
+  },
+  {
+    "run_id": "run_01KYQ86TD5CBD5XVQFZ5GWZKK1",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:34:48.464784+00:00"
+  },
+  {
+    "run_id": "run_01KYQ879SVQFAR2W4YV9PHC234",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:35:05.160641+00:00"
+  },
+  {
+    "run_id": "run_01KYQ87T4K0QNV7RMSD30GSVQN",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:35:21.523545+00:00"
+  },
+  {
+    "run_id": "run_01KYQ88A63587V197MT5QWF4YS",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:35:37.326936+00:00"
+  },
+  {
+    "run_id": "run_01KYQ88SGWB1EF5JCMXSREHDRD",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:35:53.430765+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8999447C0PX7FV4RQRM8C",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:36:09.831836+00:00"
+  },
+  {
+    "run_id": "run_01KYQ89S4SW2Y0GFHKW7KRD906",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:36:25.784786+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8A8YGS93C7HGW7YA943JY",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:36:42.045719+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8ARQZMZ7RMDZM4D05FNYP",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:36:57.825913+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8B94NBR6SF0J51GTG9MST",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:37:15.043681+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8BRZYWHFJ8FATDB64D1VA",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:37:31.100739+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8C8NBMSW8P36ZXH1BS2EY",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:37:47.119742+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8CR9RJJDQ5CSNPK7E3C9T",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:38:03.404371+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8D85QNDDRP67C7G3E8MZ3",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:38:19.792775+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8DR7FHJMFZWJCVFFQMW8A",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:38:36.471270+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8E8TCPMBRK9RTEFMKEWJA",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:38:52.647718+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8ESJ4BD3TDRECA8MXNE42",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:39:10.076481+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8FA0SZ81EDVNQZ7WF4DXD",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "budget",
+    "recorded_at": "2026-07-29T15:39:26.891363+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8FSSAEVZM67VTBB5H9YT2",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:39:42.878690+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8GBXCZN50H2J08M8VW6FD",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:40:01.928320+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8GVXQA68X9XE3C9S7ERSJ",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:40:18.229110+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8HC4V0QSMNMMJ9ZEMTEC1",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:40:34.637820+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8HW063D4RHVFTRF0QHBQT",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:40:51.855856+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8JCNKJMEQ2E7VNYV104DS",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:41:08.187331+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8JXG2EV5P81RBHXJMCNHD",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:41:25.969860+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8KEZHXFC7F4YQJ76FB0QS",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:41:43.162677+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8KYV7W70NR10W1X0SR9HW",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:41:59.250787+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8MERXKT47RDW54YEQ1MST",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:42:21.965781+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8N4S11ESH2KPVV1HGBNGQ",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:42:38.291210+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8NMZGTPW7TTX3E705TVF2",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:42:55.082191+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8P51C0H29Z8D6K9H6X1PV",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:43:11.114130+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8PMRPXWZZHH058M4S754R",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:43:27.659959+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8Q4PP382EQHNEKJ2EDTEJ",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:43:44.082322+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8QN5RSBEP5MKWH737RPRH",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:44:00.831448+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8R5A4GS6ZBFY4RAAXFWAX",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:44:16.870561+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8RMZ7725B6WAAAJDJZG8B",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:44:32.922659+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8S4VHP7YX0627T6DSMR4V",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:44:49.766032+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8SMZ4T3YQQ2H2F8P17M93",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:45:06.093077+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8T574D33JCYBFBSM288RV",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:45:23.405204+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8TNWHC2ZAYPJWD54HRVXD",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "thrash",
+    "recorded_at": "2026-07-29T15:45:39.841151+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8V6JS3TQ2YM5081573VE5",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:45:57.003862+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8VPN9VPWEQQ607DCZCRR4",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:46:13.181341+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8W8DA9DTJR2JVZZ97WZQB",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:46:31.972748+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8WRVV7YE015691NPTY388",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:46:48.526801+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8X91EX7MJ9X54SEN4XZEA",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:47:05.030520+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8XS7R3YEMZHZ5MT4N1DA9",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:47:20.681494+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8Y9N31P4JNNWVQ5C88GCS",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:47:38.243734+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8YSTP12YH9ERGCBG2Z7XQ",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:47:54.404556+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8ZAE8DKSTEFK8KAWH9B3Q",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:48:12.181635+00:00"
+  },
+  {
+    "run_id": "run_01KYQ8ZTSJCAKG6TN2YZY18JZV",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:48:28.538372+00:00"
+  },
+  {
+    "run_id": "run_01KYQ90AW4DD5GRTPEFTFG2X3A",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:48:44.761180+00:00"
+  },
+  {
+    "run_id": "run_01KYQ90TJDR4MKK2WTFEEFXAJ0",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:49:01.454696+00:00"
+  },
+  {
+    "run_id": "run_01KYQ91CFJ15CVJKM2C8P8K6T4",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:49:19.320193+00:00"
+  },
+  {
+    "run_id": "run_01KYQ91WC4V9CTT9R5VH7NDFSK",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:49:35.903998+00:00"
+  },
+  {
+    "run_id": "run_01KYQ92CJ4SQEQVWPPAYCJ58FT",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:49:52.357947+00:00"
+  },
+  {
+    "run_id": "run_01KYQ92WM0YM2EKWC64DM8EM0C",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:50:08.488641+00:00"
+  },
+  {
+    "run_id": "run_01KYQ93C8DM3H4QY1YF75ZXJX1",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:50:25.505332+00:00"
+  },
+  {
+    "run_id": "run_01KYQ93XT511Z68JPMJQAMM5ZM",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:50:43.360100+00:00"
+  },
+  {
+    "run_id": "run_01KYQ94EEZ0BB6BFT9CEDMC6CR",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:51:00.480319+00:00"
+  },
+  {
+    "run_id": "run_01KYQ94ZAQYPJA8ZV025YGWDF7",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:51:17.275282+00:00"
+  },
+  {
+    "run_id": "run_01KYQ95G0Q1SYE4Y2K7D5CZ6SC",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:51:33.973899+00:00"
+  },
+  {
+    "run_id": "run_01KYQ95ZYX2PW70R7GHMF8P4AG",
+    "project": "content-pipeline",
+    "framework": "crewai",
+    "label": "drift",
+    "recorded_at": "2026-07-29T15:51:50.381139+00:00"
+  }
+]
