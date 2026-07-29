@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from trazo_server.store.memory_trace_store import InMemoryTraceStore
-from trazo_server.store.rows import EventRow, RunRow
+from trazo_server.store.rows import DetectionRow, EventRow, RunRow
 
 _NOW = datetime(2026, 7, 18, 9, 30, tzinfo=timezone.utc)
 
@@ -209,3 +209,103 @@ async def test_trace_store__get_project_events_after_event_id_resumes_correctly(
         "evt_0000000000000000000000002",
         "evt_0000000000000000000000003",
     ]
+
+
+async def test_trace_store__append_event_assigns_next_seq_after_existing() -> None:
+    store = InMemoryTraceStore()
+    await store.upsert_events([_event(seq=0), _event(seq=1, kind="llm.call")])
+
+    assigned = await store.append_event(
+        run_id="run_1",
+        event_id="evt_detection",
+        kind="detection.raised",
+        ts=_NOW,
+        fingerprint=None,
+        payload={"detector": "loop"},
+    )
+
+    assert assigned == 2
+    [event] = await store.get_events("run_1", after_seq=1)
+    assert event.seq == 2
+    assert event.kind == "detection.raised"
+
+
+async def test_trace_store__append_event_starts_at_zero_for_a_run_with_no_events() -> (
+    None
+):
+    store = InMemoryTraceStore()
+
+    assigned = await store.append_event(
+        run_id="run_new",
+        event_id="evt_1",
+        kind="detection.raised",
+        ts=_NOW,
+        fingerprint=None,
+        payload={},
+    )
+
+    assert assigned == 0
+
+
+async def test_trace_store__insert_detection_then_list_round_trips() -> None:
+    store = InMemoryTraceStore()
+    detection = DetectionRow(
+        detection_id="det_1",
+        run_id="run_1",
+        detector="loop",
+        severity="warn",
+        raised_at=_NOW,
+        evidence=[{"run_id": "run_1", "seq": 5}],
+        details={"repeat_count": 4},
+    )
+
+    await store.insert_detection(detection)
+
+    [fetched] = await store.list_detections("run_1")
+    assert fetched == detection
+
+
+async def test_trace_store__insert_detection_is_idempotent_on_detection_id() -> None:
+    store = InMemoryTraceStore()
+    detection = DetectionRow(
+        detection_id="det_1",
+        run_id="run_1",
+        detector="loop",
+        severity="warn",
+        raised_at=_NOW,
+        evidence=[],
+        details={},
+    )
+
+    await store.insert_detection(detection)
+    await store.insert_detection(detection)  # simulates a bus redelivery
+
+    assert len(await store.list_detections("run_1")) == 1
+
+
+async def test_trace_store__list_detections_orders_most_recent_first() -> None:
+    store = InMemoryTraceStore()
+    older = DetectionRow(
+        detection_id="det_older",
+        run_id="run_1",
+        detector="loop",
+        severity="warn",
+        raised_at=_NOW,
+        evidence=[],
+        details={},
+    )
+    newer = DetectionRow(
+        detection_id="det_newer",
+        run_id="run_1",
+        detector="budget",
+        severity="critical",
+        raised_at=_NOW + timedelta(minutes=1),
+        evidence=[],
+        details={},
+    )
+
+    await store.insert_detection(older)
+    await store.insert_detection(newer)
+
+    fetched = await store.list_detections("run_1")
+    assert [d.detection_id for d in fetched] == ["det_newer", "det_older"]

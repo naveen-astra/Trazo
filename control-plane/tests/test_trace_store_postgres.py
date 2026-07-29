@@ -8,6 +8,7 @@ contract holds against real Postgres ON CONFLICT DO UPDATE semantics.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
@@ -21,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from trazo_server.config import Settings
 from trazo_server.store.engine import create_engine
 from trazo_server.store.postgres_trace_store import PostgresTraceStore
-from trazo_server.store.rows import EventRow, RunRow
+from trazo_server.store.rows import DetectionRow, EventRow, RunRow
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _NOW = datetime(2026, 7, 18, 9, 30, tzinfo=timezone.utc)
@@ -186,3 +187,138 @@ async def test_postgres_store__upsert_events_overwrites_same_seq(
 
     [event] = await store.get_events(run_id)
     assert event.agent_id == "fixed-agent"
+
+
+async def test_postgres_store__append_event_assigns_sequential_seqs(
+    engine: AsyncEngine, ids: tuple[str, str]
+) -> None:
+    project_id, run_id = ids
+    store = PostgresTraceStore(engine)
+    await store.ensure_project(project_id, f"test-{project_id}")
+    await store.upsert_run(_run_row(project_id, run_id))
+    await store.upsert_events(
+        [
+            EventRow(
+                run_id=run_id,
+                seq=0,
+                event_id="evt_0",
+                kind="run.started",
+                ts=_NOW,
+                step_id=None,
+                agent_id=None,
+                fingerprint=None,
+                payload={"framework": "langgraph"},
+                blobs=[],
+            )
+        ]
+    )
+
+    first = await store.append_event(
+        run_id=run_id,
+        event_id="evt_detection_1",
+        kind="detection.raised",
+        ts=_NOW,
+        fingerprint=None,
+        payload={"detector": "loop"},
+    )
+    second = await store.append_event(
+        run_id=run_id,
+        event_id="evt_detection_2",
+        kind="detection.raised",
+        ts=_NOW,
+        fingerprint=None,
+        payload={"detector": "budget"},
+    )
+
+    assert (first, second) == (1, 2)
+    events = await store.get_events(run_id, after_seq=0)
+    assert [e.seq for e in events] == [1, 2]
+
+
+async def test_postgres_store__append_event_concurrent_calls_never_collide(
+    engine: AsyncEngine, ids: tuple[str, str]
+) -> None:
+    """The whole point of locking the last-seq row inside the same
+    transaction as the insert: N concurrent reservations for one run_id
+    must still come out as N distinct, gapless seqs -- never a duplicate
+    (which upsert_events would silently merge, masking a lost detection)."""
+    project_id, run_id = ids
+    store = PostgresTraceStore(engine)
+    await store.ensure_project(project_id, f"test-{project_id}")
+    await store.upsert_run(_run_row(project_id, run_id))
+    await store.upsert_events(
+        [
+            EventRow(
+                run_id=run_id,
+                seq=0,
+                event_id="evt_0",
+                kind="run.started",
+                ts=_NOW,
+                step_id=None,
+                agent_id=None,
+                fingerprint=None,
+                payload={"framework": "langgraph"},
+                blobs=[],
+            )
+        ]
+    )
+
+    async def _append(i: int) -> int:
+        return await store.append_event(
+            run_id=run_id,
+            event_id=f"evt_concurrent_{i}",
+            kind="detection.raised",
+            ts=_NOW,
+            fingerprint=None,
+            payload={},
+        )
+
+    assigned = await asyncio.gather(*(_append(i) for i in range(10)))
+
+    assert sorted(assigned) == list(range(1, 11))
+
+
+async def test_postgres_store__insert_detection_then_list_round_trips(
+    engine: AsyncEngine, ids: tuple[str, str]
+) -> None:
+    project_id, run_id = ids
+    store = PostgresTraceStore(engine)
+    await store.ensure_project(project_id, f"test-{project_id}")
+    await store.upsert_run(_run_row(project_id, run_id))
+    detection = DetectionRow(
+        detection_id=f"det_{run_id}",
+        run_id=run_id,
+        detector="loop",
+        severity="warn",
+        raised_at=_NOW,
+        evidence=[{"run_id": run_id, "seq": 5}],
+        details={"repeat_count": 4},
+    )
+
+    await store.insert_detection(detection)
+
+    [fetched] = await store.list_detections(run_id)
+    assert fetched == detection
+
+
+async def test_postgres_store__insert_detection_is_idempotent_on_detection_id(
+    engine: AsyncEngine, ids: tuple[str, str]
+) -> None:
+    project_id, run_id = ids
+    store = PostgresTraceStore(engine)
+    await store.ensure_project(project_id, f"test-{project_id}")
+    await store.upsert_run(_run_row(project_id, run_id))
+    detection = DetectionRow(
+        detection_id=f"det_{run_id}",
+        run_id=run_id,
+        detector="loop",
+        severity="warn",
+        raised_at=_NOW,
+        evidence=[],
+        details={},
+    )
+
+    await store.insert_detection(detection)
+    await store.insert_detection(detection)  # simulates a bus redelivery
+
+    assert len(await store.list_detections(run_id)) == 1
