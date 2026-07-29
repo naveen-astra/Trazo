@@ -134,6 +134,7 @@ class Recorder:
         ctx = current_run_context()
         if ctx is None:
             raise NoActiveRunError()
+        ctx.totals.record_event(kind, payload)
 
         envelope: dict[str, Any] = {
             "schema": "trazo.v1",
