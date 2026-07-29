@@ -8,6 +8,8 @@ export type RunOut = components["schemas"]["RunOut"];
 export type RunsPage = components["schemas"]["RunsPage"];
 export type EventOut = components["schemas"]["EventOut"];
 export type EventsPage = components["schemas"]["EventsPage"];
+export type DetectionOut = components["schemas"]["DetectionOut"];
+export type DetectionsPage = components["schemas"]["DetectionsPage"];
 
 const BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8420";
@@ -53,6 +55,10 @@ export function listRunEvents(
   if (params.cursor) query.set("cursor", params.cursor);
   const qs = query.toString();
   return fetchJson<EventsPage>(`/v1/runs/${encodeURIComponent(runId)}/events${qs ? `?${qs}` : ""}`);
+}
+
+export function listRunDetections(runId: string): Promise<DetectionsPage> {
+  return fetchJson<DetectionsPage>(`/v1/runs/${encodeURIComponent(runId)}/detections`);
 }
 
 export function blobUrl(sha256: string): string {
