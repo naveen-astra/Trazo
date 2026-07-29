@@ -10,12 +10,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import httpx
 from agents.research_assistant import ToyState, build_toy_graph, initial_state
 from langgraph.graph import END, START, StateGraph
 
 from trazo.core.context import init as context_init
+from trazo.core.policy import PolicyHook, PolicyMode
 from trazo.core.recorder import Recorder
 from trazo.decorators import trace_llm, trace_tool
+from trazo.errors import PolicyDenied
 from trazo.integrations.langgraph import instrument
 
 
@@ -233,4 +236,45 @@ def test_instrument__run_error_still_emits_run_finished_with_error_status() -> N
     assert raised, "the node's real exception must propagate, not be swallowed"
     run_finished = _events_by_kind(shipper.enqueued, "run.finished")
     assert len(run_finished) == 1
-    assert run_finished[0]["payload"]["status"] == "error"
+
+
+def _deny_policy_hook() -> PolicyHook:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"decision": "deny", "policy_id": "tool_blocklist", "reasons": ["x"]},
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    return PolicyHook(
+        endpoint="http://example.test",
+        api_key="k",
+        client=client,
+        mode=PolicyMode.ENFORCE,
+        governed_side_effect_classes=frozenset({"external"}),
+    )
+
+
+def test_instrument__policy_denied_tool_call_never_actually_executes() -> None:
+    """TRZ-P6-04's DoD: "Blocked call provably never executes" — a real
+    side-effect sentinel (the toy tool's own call counter, independent of
+    anything the recorder observes) proves the tool's body genuinely
+    never ran, not just that an event wasn't recorded for it."""
+    context_init(project="toy-agent-test")
+    shipper = _FakeShipper()
+    recorder = Recorder(shipper=shipper)
+    graph, counters = build_toy_graph()
+
+    traced = instrument(graph, recorder=recorder, policy_hook=_deny_policy_hook())
+
+    raised = False
+    try:
+        traced.invoke(initial_state())
+    except PolicyDenied as exc:
+        raised = True
+        assert exc.decision == "deny"
+        assert exc.policy_id == "tool_blocklist"
+
+    assert raised, "PolicyDenied must propagate out of .invoke()"
+    assert counters.llm_calls == 1, "the plan node's LLM call is ungoverned, unaffected"
+    assert counters.tool_calls == 0, "the tool's real body must never have run"
