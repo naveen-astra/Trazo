@@ -26,7 +26,7 @@ from trazo_server.bus.protocol import BusMessage, EventBus
 from trazo_server.events import Event, EventAdapter
 from trazo_server.metrics import BUS_DLQ_DEPTH_MESSAGES, BUS_LAG_MESSAGES
 from trazo_server.store.blob_store import BlobStore
-from trazo_server.store.rows import EventRow, RunRow
+from trazo_server.store.rows import DetectionRow, EventRow, RunRow
 from trazo_server.store.trace_store import TraceStore
 from trazo_server.topics import EVENTS_STREAM, STORE_WORKER_GROUP
 
@@ -59,6 +59,16 @@ def _derive_project_id(project_name: str) -> str:
     """
     digest = hashlib.sha1(project_name.encode("utf-8")).hexdigest()[:20]
     return f"proj_{digest}"
+
+
+def _detection_id_from_event(event_id: str) -> str:
+    """Derive a stable detection_id from the event_id that carries it —
+    idempotent under bus redelivery (the same detection.raised event
+    always yields the same detection_id, so insert_detection's
+    on-conflict-do-nothing correctly no-ops on a repeat) without needing
+    the detections projection to invent its own identity scheme."""
+    _, _, ulid = event_id.partition("_")
+    return f"det_{ulid}"
 
 
 class StoreWorker:
@@ -263,5 +273,19 @@ class StoreWorker:
                     finished_at=event.ts,
                     tags={},
                     totals=event.payload.totals.model_dump(mode="json"),
+                )
+            )
+        elif event.kind == "detection.raised":
+            await self._trace_store.insert_detection(
+                DetectionRow(
+                    detection_id=_detection_id_from_event(event.event_id),
+                    run_id=event.run_id,
+                    detector=event.payload.detector,
+                    severity=event.payload.severity,
+                    raised_at=event.ts,
+                    evidence=[
+                        {"event_id": eid} for eid in event.payload.evidence_event_ids
+                    ],
+                    details=event.payload.details,
                 )
             )
