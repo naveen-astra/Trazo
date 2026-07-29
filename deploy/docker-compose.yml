@@ -39,7 +39,11 @@ services:
     ports:
       - "${OPA_PORT:-8181}:8181"
     volumes:
-      - ../policies:/policies:ro
+      # Only the runtime policies -- policies/tests/ (opa test fixtures)
+      # is deliberately excluded so the running server's data.trazo.decision
+      # document never carries test-only helper rules on every request
+      # (TRZ-P6-01).
+      - ../policies/trazo:/policies:ro
 
   control-plane:
     build:
