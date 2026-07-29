@@ -14,7 +14,9 @@ import threading
 import pytest
 
 from trazo.core.context import (
+    SdkConfig,
     agent_scope,
+    config_scope,
     current_agent_id,
     current_run_id,
     current_step_id,
@@ -54,6 +56,32 @@ def test_get_config__before_init_raises_not_initialized() -> None:
     assert is_initialized() is False
     with pytest.raises(NotInitializedError):
         get_config()
+
+
+def test_config_scope__installs_and_restores_the_previous_config() -> None:
+    """TRZ-P4-07: a replay session needs get_config().project to work
+    (adapters call it just like a live run does) without a real
+    trazo.init() ever having been called in this process, and without
+    disturbing one that has."""
+    init(project="original", endpoint="http://example.test", api_key="k")
+
+    with config_scope(
+        SdkConfig(project="replay-proj", endpoint="http://x", api_key="")
+    ):
+        assert get_config().project == "replay-proj"
+
+    assert get_config().project == "original"
+
+
+def test_config_scope__restores_uninitialized_if_nothing_was_set_before() -> None:
+    assert is_initialized() is False
+
+    with config_scope(
+        SdkConfig(project="replay-proj", endpoint="http://x", api_key="")
+    ):
+        assert get_config().project == "replay-proj"
+
+    assert is_initialized() is False
 
 
 def test_run_scope__establishes_and_tears_down_run_context() -> None:
