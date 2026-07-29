@@ -145,6 +145,7 @@ class PolicyHook:
         else:
             decision, policy_id, reasons = self._evaluate(
                 run_id=ctx.run_id,
+                project=ctx.project,
                 kind=kind,
                 fingerprint=fingerprint,
                 tool_name=tool_name,
@@ -161,6 +162,7 @@ class PolicyHook:
         self,
         *,
         run_id: str,
+        project: str,
         kind: str,
         fingerprint: str,
         tool_name: str | None,
@@ -170,6 +172,7 @@ class PolicyHook:
     ) -> tuple[str, str, list[str]]:
         body = {
             "run_id": run_id,
+            "project": project,
             "mode": self.mode.value,
             "action": {
                 "kind": kind,
