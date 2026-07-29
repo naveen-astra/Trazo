@@ -161,6 +161,18 @@ def test_record__tracks_recent_tool_names_in_order() -> None:
     assert list(window.recent_tool_names) == ["web_search", "web_search"]
 
 
+def test_record__tracks_recent_tool_fingerprints_in_order() -> None:
+    window = RunWindow(_RUN_ID)
+
+    window.record(_tool_call(seq=0, fingerprint=f"sha256:{'a' * 64}"))
+    window.record(_tool_call(seq=1, fingerprint=f"sha256:{'b' * 64}"))
+
+    assert list(window.recent_tool_fingerprints) == [
+        f"sha256:{'a' * 64}",
+        f"sha256:{'b' * 64}",
+    ]
+
+
 def test_as_summary__is_json_safe() -> None:
     import json
 

@@ -66,6 +66,7 @@ class RunWindow:
         self.recent_state_hashes: deque[str] = deque(maxlen=max_size)
         self.recent_llm_costs: deque[float] = deque(maxlen=max_size)
         self.recent_tool_names: deque[str] = deque(maxlen=max_size)
+        self.recent_tool_fingerprints: deque[str | None] = deque(maxlen=max_size)
         self.cost_usd_total = 0.0
         self.tokens_total = 0
         self.step_count = 0
@@ -89,6 +90,7 @@ class RunWindow:
             self.recent_llm_costs.append(event.payload.cost_usd)
         if event.kind == "tool.call":
             self.recent_tool_names.append(event.payload.tool_name)
+            self.recent_tool_fingerprints.append(event.fingerprint)
         if event.kind == "step.finished":
             self.recent_state_hashes.append(event.payload.state_after_hash)
             self.step_count += 1
