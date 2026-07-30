@@ -32,8 +32,9 @@ a small adapter interface — not just Trazo's own.
 
 ```python
 class MyDetector:
-    def detect(self, events: list[Event]) -> list[Detection]:
-        ...  # your own logic; return every Detection found
+    def detect(
+        self, events: list[Event]
+    ) -> list[Detection]: ...  # your own logic; return every Detection found
 ```
 
 Score it against the labeled corpus (`runner.py` needs `benchmark/` on
