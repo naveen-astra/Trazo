@@ -7,7 +7,7 @@ interface BlobFieldProps {
   sha256: string;
 }
 
-function BlobField({ field, sha256 }: BlobFieldProps) {
+export function BlobField({ field, sha256 }: BlobFieldProps) {
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
