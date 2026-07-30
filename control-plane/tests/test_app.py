@@ -1,5 +1,6 @@
 """Ops-endpoint tests for the app factory (TRZ-P0-02/03, TRZ-P1-08)."""
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -44,20 +45,6 @@ def test_healthz__returns_ok_and_version(client: TestClient) -> None:
     assert body["version"]
 
 
-def test_readyz__reports_not_ready_without_live_dependencies(
-    client: TestClient,
-) -> None:
-    """TRZ-P1-08: /readyz now does real Postgres/Redis checks (ARCHITECTURE
-    §8) — under TestClient, with no live services, both must report
-    'error' and the endpoint must answer 503, not silently claim ready."""
-    response = client.get("/readyz")
-
-    assert response.status_code == 503
-    body = response.json()
-    assert body["status"] == "not_ready"
-    assert body["checks"] == {"postgres": "error", "redis": "error"}
-
-
 class _FakeConn:
     async def execute(self, *_args: object, **_kwargs: object) -> None:
         return None
@@ -69,9 +56,47 @@ class _FakeEngine:
         yield _FakeConn()
 
 
+class _RaisingEngine:
+    @asynccontextmanager
+    async def connect(self) -> AsyncIterator[Any]:
+        raise ConnectionError("postgres unreachable")
+        yield  # pragma: no cover — unreachable, satisfies the generator type
+
+
 class _FakeRedis:
     async def ping(self) -> bool:
         return True
+
+
+class _RaisingRedis:
+    async def ping(self) -> bool:
+        raise ConnectionError("redis unreachable")
+
+
+def test_readyz__reports_not_ready_without_live_dependencies(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """TRZ-P1-08: /readyz does real Postgres/Redis checks (ARCHITECTURE
+    §8) — when neither is reachable, both must report 'error' and the
+    endpoint must answer 503, not silently claim ready. Uses fakes that
+    raise rather than an ambiently-unreachable database_url/redis_url:
+    CI's own `python` job env-points Settings' defaults at real service
+    containers for every step, so relying on "nothing's listening" isn't
+    actually true there (or on a dev machine with Postgres/Redis running
+    locally for something else) — this must fail the same way regardless
+    of what else happens to be reachable on the host."""
+    settings = Settings(feature_store_worker=False, blob_root=str(tmp_path / "blobs"))
+    with TestClient(create_app(settings)) as test_client:
+        app = test_client.app
+        monkeypatch.setattr(app.state, "engine", _RaisingEngine())
+        monkeypatch.setattr(app.state, "redis_client", _RaisingRedis())
+
+        response = test_client.get("/readyz")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "not_ready"
+    assert body["checks"] == {"postgres": "error", "redis": "error"}
 
 
 def test_readyz__reports_ready_when_dependencies_are_reachable(
