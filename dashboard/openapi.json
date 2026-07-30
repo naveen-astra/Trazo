@@ -394,6 +394,46 @@
         }
       }
     },
+    "/v1/runs/{run_id}/policy-decisions": {
+      "get": {
+        "summary": "List Policy Decisions",
+        "description": "Most-recently-decided first (TRZ-P6-05) \u2014 same \"small enough to\njust return it all\" reasoning as ``list_detections`` above: policy\ndecisions accrue only on governed actions, not every event.",
+        "operationId": "list_policy_decisions_v1_runs__run_id__policy_decisions_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyDecisionsPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/runs/{run_id}/replay-bundle": {
       "get": {
         "summary": "Get Replay Bundle",
@@ -544,6 +584,62 @@
         }
       }
     },
+    "/v1/policy/evaluate": {
+      "post": {
+        "summary": "Evaluate Policy",
+        "operationId": "evaluate_policy_v1_policy_evaluate_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyEvaluateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyEvaluateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "summary": "Healthz",
@@ -648,9 +744,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "detections"
-        ],
+        "required": ["detections"],
         "title": "DetectionsPage"
       },
       "EventOut": {
@@ -759,10 +853,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "events",
-          "next_cursor"
-        ],
+        "required": ["events", "next_cursor"],
         "title": "EventsPage"
       },
       "HTTPValidationError": {
@@ -790,9 +881,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "events"
-        ],
+        "required": ["events"],
         "title": "IngestEventsRequest"
       },
       "IngestEventsResponse": {
@@ -810,11 +899,217 @@
           }
         },
         "type": "object",
-        "required": [
-          "accepted",
-          "rejected"
-        ],
+        "required": ["accepted", "rejected"],
         "title": "IngestEventsResponse"
+      },
+      "PolicyActionIn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "run.started",
+              "run.finished",
+              "step.started",
+              "step.finished",
+              "llm.call",
+              "tool.call",
+              "memory.read",
+              "memory.write",
+              "agent.message",
+              "plan.updated",
+              "human.checkpoint",
+              "policy.decision",
+              "detection.raised",
+              "sdk.diagnostic"
+            ],
+            "title": "Kind"
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Fingerprint"
+          },
+          "tool_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Name"
+          },
+          "args_summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Args Summary"
+          },
+          "side_effect_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Side Effect Class"
+          },
+          "projected_cost_usd": {
+            "type": "number",
+            "title": "Projected Cost Usd",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "required": ["kind", "fingerprint"],
+        "title": "PolicyActionIn"
+      },
+      "PolicyDecisionOut": {
+        "properties": {
+          "decision_id": {
+            "type": "string",
+            "title": "Decision Id"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "policy_id": {
+            "type": "string",
+            "title": "Policy Id"
+          },
+          "action_kind": {
+            "type": "string",
+            "title": "Action Kind"
+          },
+          "action_fp": {
+            "type": "string",
+            "title": "Action Fp"
+          },
+          "decision": {
+            "type": "string",
+            "title": "Decision"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "decided_at": {
+            "type": "string",
+            "title": "Decided At"
+          },
+          "eval_ms": {
+            "type": "number",
+            "title": "Eval Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "decision_id",
+          "run_id",
+          "policy_id",
+          "action_kind",
+          "action_fp",
+          "decision",
+          "mode",
+          "reasons",
+          "decided_at",
+          "eval_ms"
+        ],
+        "title": "PolicyDecisionOut"
+      },
+      "PolicyDecisionsPage": {
+        "properties": {
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyDecisionOut"
+            },
+            "type": "array",
+            "title": "Decisions"
+          }
+        },
+        "type": "object",
+        "required": ["decisions"],
+        "title": "PolicyDecisionsPage"
+      },
+      "PolicyEvaluateRequest": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "project": {
+            "type": "string",
+            "title": "Project"
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["observe", "enforce"],
+            "title": "Mode"
+          },
+          "action": {
+            "$ref": "#/components/schemas/PolicyActionIn"
+          },
+          "run_context": {
+            "$ref": "#/components/schemas/PolicyRunContextIn"
+          }
+        },
+        "type": "object",
+        "required": ["run_id", "project", "mode", "action", "run_context"],
+        "title": "PolicyEvaluateRequest"
+      },
+      "PolicyEvaluateResponse": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "title": "Decision"
+          },
+          "policy_id": {
+            "type": "string",
+            "title": "Policy Id"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "eval_ms": {
+            "type": "number",
+            "title": "Eval Ms"
+          }
+        },
+        "type": "object",
+        "required": ["decision", "policy_id", "reasons", "eval_ms"],
+        "title": "PolicyEvaluateResponse"
+      },
+      "PolicyRunContextIn": {
+        "properties": {
+          "cost_usd_so_far": {
+            "type": "number",
+            "title": "Cost Usd So Far",
+            "default": 0.0
+          },
+          "active_detections": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Active Detections"
+          }
+        },
+        "type": "object",
+        "title": "PolicyRunContextIn"
       },
       "RejectedEvent": {
         "properties": {
@@ -828,10 +1123,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "index",
-          "reason"
-        ],
+        "required": ["index", "reason"],
         "title": "RejectedEvent"
       },
       "RunOut": {
@@ -913,10 +1205,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "runs",
-          "next_cursor"
-        ],
+        "required": ["runs", "next_cursor"],
         "title": "RunsPage"
       },
       "ValidationError": {
@@ -952,11 +1241,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
+        "required": ["loc", "msg", "type"],
         "title": "ValidationError"
       }
     }

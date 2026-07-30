@@ -112,6 +112,28 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/runs/{run_id}/policy-decisions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Policy Decisions
+     * @description Most-recently-decided first (TRZ-P6-05) — same "small enough to
+     *     just return it all" reasoning as ``list_detections`` above: policy
+     *     decisions accrue only on governed actions, not every event.
+     */
+    get: operations["list_policy_decisions_v1_runs__run_id__policy_decisions_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/runs/{run_id}/replay-bundle": {
     parameters: {
       query?: never;
@@ -190,6 +212,23 @@ export interface paths {
     get: operations["live_firehose_v1_live_firehose_get"];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/policy/evaluate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Evaluate Policy */
+    post: operations["evaluate_policy_v1_policy_evaluate_post"];
     delete?: never;
     options?: never;
     head?: never;
@@ -312,6 +351,106 @@ export interface components {
       accepted: number;
       /** Rejected */
       rejected: components["schemas"]["RejectedEvent"][];
+    };
+    /** PolicyActionIn */
+    PolicyActionIn: {
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind:
+        | "run.started"
+        | "run.finished"
+        | "step.started"
+        | "step.finished"
+        | "llm.call"
+        | "tool.call"
+        | "memory.read"
+        | "memory.write"
+        | "agent.message"
+        | "plan.updated"
+        | "human.checkpoint"
+        | "policy.decision"
+        | "detection.raised"
+        | "sdk.diagnostic";
+      /** Fingerprint */
+      fingerprint: string;
+      /** Tool Name */
+      tool_name?: string | null;
+      /** Args Summary */
+      args_summary?: {
+        [key: string]: unknown;
+      };
+      /** Side Effect Class */
+      side_effect_class?: string | null;
+      /**
+       * Projected Cost Usd
+       * @default 0
+       */
+      projected_cost_usd: number;
+    };
+    /** PolicyDecisionOut */
+    PolicyDecisionOut: {
+      /** Decision Id */
+      decision_id: string;
+      /** Run Id */
+      run_id: string;
+      /** Policy Id */
+      policy_id: string;
+      /** Action Kind */
+      action_kind: string;
+      /** Action Fp */
+      action_fp: string;
+      /** Decision */
+      decision: string;
+      /** Mode */
+      mode: string;
+      /** Reasons */
+      reasons: string[];
+      /** Decided At */
+      decided_at: string;
+      /** Eval Ms */
+      eval_ms: number;
+    };
+    /** PolicyDecisionsPage */
+    PolicyDecisionsPage: {
+      /** Decisions */
+      decisions: components["schemas"]["PolicyDecisionOut"][];
+    };
+    /** PolicyEvaluateRequest */
+    PolicyEvaluateRequest: {
+      /** Run Id */
+      run_id: string;
+      /** Project */
+      project: string;
+      /**
+       * Mode
+       * @enum {string}
+       */
+      mode: "observe" | "enforce";
+      action: components["schemas"]["PolicyActionIn"];
+      run_context: components["schemas"]["PolicyRunContextIn"];
+    };
+    /** PolicyEvaluateResponse */
+    PolicyEvaluateResponse: {
+      /** Decision */
+      decision: string;
+      /** Policy Id */
+      policy_id: string;
+      /** Reasons */
+      reasons: string[];
+      /** Eval Ms */
+      eval_ms: number;
+    };
+    /** PolicyRunContextIn */
+    PolicyRunContextIn: {
+      /**
+       * Cost Usd So Far
+       * @default 0
+       */
+      cost_usd_so_far: number;
+      /** Active Detections */
+      active_detections?: string[];
     };
     /** RejectedEvent */
     RejectedEvent: {
@@ -574,6 +713,37 @@ export interface operations {
       };
     };
   };
+  list_policy_decisions_v1_runs__run_id__policy_decisions_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PolicyDecisionsPage"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
   get_replay_bundle_v1_runs__run_id__replay_bundle_get: {
     parameters: {
       query?: never;
@@ -685,6 +855,41 @@ export interface operations {
         };
         content: {
           "application/json": unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  evaluate_policy_v1_policy_evaluate_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        authorization?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PolicyEvaluateRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PolicyEvaluateResponse"];
         };
       };
       /** @description Validation Error */
