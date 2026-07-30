@@ -2,10 +2,12 @@ import { Link, useParams } from "react-router-dom";
 
 import DetectionBadges from "../components/DetectionBadges";
 import LiveBadge from "../components/LiveBadge";
+import PolicyDecisionsPanel from "../components/PolicyDecisionsPanel";
 import RunTimeline from "../components/RunTimeline";
 import StatusBadge from "../components/StatusBadge";
 import { useDetections } from "../hooks/useDetections";
 import { useLiveRunEvents } from "../hooks/useLiveRunEvents";
+import { usePolicyDecisions } from "../hooks/usePolicyDecisions";
 import { useRun } from "../hooks/useRun";
 
 // Run detail: kind-colored, step-grouped timeline (TRZ-P2-07). The event
@@ -17,6 +19,7 @@ export default function RunDetailPage() {
   const { data: run, isLoading, isError, error } = useRun(runId ?? "");
   const { events, connected } = useLiveRunEvents(runId ?? "");
   const { data: detectionsPage } = useDetections(runId ?? "", run?.status);
+  const { data: policyDecisionsPage } = usePolicyDecisions(runId ?? "", run?.status);
 
   if (!runId) {
     return <p>No run id.</p>;
@@ -50,6 +53,7 @@ export default function RunDetailPage() {
       )}
 
       <DetectionBadges detections={detectionsPage?.detections ?? []} />
+      <PolicyDecisionsPanel decisions={policyDecisionsPage?.decisions ?? []} />
 
       {events.length === 0 ? <p>No events yet.</p> : <RunTimeline events={events} />}
     </section>
