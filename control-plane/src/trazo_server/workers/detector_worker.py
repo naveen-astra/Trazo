@@ -150,15 +150,23 @@ class DetectorWorker:
         reclaim_min_idle_ms: int = 30_000,
         reclaim_every: int = 10,
     ) -> None:
-        """Never raises on a transient bus error — logs and keeps going,
-        matching ``StoreWorker``'s own resilience contract (a worker that
-        crashes the process on a momentary hiccup is worse than one
-        briefly behind)."""
-        await self.ensure_group()
-        await self.rebuild_running_windows()
+        """Never raises on a transient bus/store error — logs and keeps
+        going, matching ``StoreWorker``'s own resilience contract (a
+        worker that crashes the process on a momentary hiccup is worse
+        than one briefly behind)."""
         iterations = 0
+        started = False
         while True:
             try:
+                if not started:
+                    # Inside the loop, not a call before it: see
+                    # StoreWorker.run_forever's identical guard — a
+                    # Postgres/Redis hiccup at startup is transient, not
+                    # fatal, and both ensure_group() and
+                    # rebuild_running_windows() are safe to retry.
+                    await self.ensure_group()
+                    await self.rebuild_running_windows()
+                    started = True
                 await self.poll_once(block_ms=poll_block_ms)
                 iterations += 1
                 if iterations % reclaim_every == 0:

@@ -157,10 +157,20 @@ class StoreWorker:
         behind (ARCHITECTURE.md §7: workers never block the group).
         Cancellation (task shutdown) propagates normally.
         """
-        await self.ensure_group()
         iterations = 0
+        group_ready = False
         while True:
             try:
+                if not group_ready:
+                    # Inside the loop, not a call before it: this is the
+                    # same "must not crash the process on a Redis/Postgres
+                    # hiccup" contract the rest of the loop already has —
+                    # a bus that's unreachable when the worker *starts*
+                    # (e.g. Redis still coming up) is transient, not fatal,
+                    # and ensure_group() is documented idempotent so
+                    # retrying it costs nothing once the bus is back.
+                    await self.ensure_group()
+                    group_ready = True
                 await self.poll_once(block_ms=poll_block_ms)
                 iterations += 1
                 if iterations % reclaim_every == 0:
