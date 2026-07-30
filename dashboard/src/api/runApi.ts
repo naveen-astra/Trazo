@@ -67,6 +67,47 @@ export function listRunPolicyDecisions(runId: string): Promise<PolicyDecisionsPa
   return fetchJson<PolicyDecisionsPage>(`/v1/runs/${encodeURIComponent(runId)}/policy-decisions`);
 }
 
+// The replay-bundle endpoint returns raw NDJSON (application/x-ndjson,
+// query.py's get_replay_bundle), not a JSON body FastAPI can generate an
+// OpenAPI schema for -- these two types are hand-written to match that
+// handler's manifest/event shape exactly (REPLAY_ENGINE.md §7).
+export interface ReplayBundleManifest {
+  schema: string;
+  run_id: string;
+  project_id: string;
+  framework: string;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  tags: Record<string, unknown>;
+  totals: Record<string, unknown>;
+  event_count: number;
+  blob_manifest: { sha256: string; bytes: number }[];
+}
+
+export interface ReplayBundle {
+  manifest: ReplayBundleManifest;
+  events: EventOut[];
+}
+
+export async function getReplayBundle(runId: string): Promise<ReplayBundle> {
+  const path = `/v1/runs/${encodeURIComponent(runId)}/replay-bundle`;
+  const response = await fetch(`${BASE_URL}${path}`);
+  if (!response.ok) {
+    throw new Error(`${path} -> HTTP ${response.status}`);
+  }
+  const text = await response.text();
+  const lines = text.split("\n").filter((line) => line.trim().length > 0);
+  const [manifestLine, ...eventLines] = lines;
+  if (manifestLine === undefined) {
+    throw new Error(`${path} -> empty replay bundle`);
+  }
+  return {
+    manifest: JSON.parse(manifestLine) as ReplayBundleManifest,
+    events: eventLines.map((line) => JSON.parse(line) as EventOut),
+  };
+}
+
 export function blobUrl(sha256: string): string {
   return `${BASE_URL}/v1/blobs/${encodeURIComponent(sha256)}`;
 }
