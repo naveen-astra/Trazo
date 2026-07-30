@@ -22,41 +22,51 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_REPO_ROOT / "benchmark"))
+
+from adapter import ReplayAdapter, SubprocessReplayAdapter  # noqa: E402
+
 _DEFAULT_CORPUS_INDEX = _REPO_ROOT / "benchmark" / "corpus" / "index.json"
 _DEFAULT_RESULTS_PATH = _REPO_ROOT / "benchmark" / "fidelity" / "results.md"
 
-# project name (benchmark/corpus/archive_run.py's own field) -> how to
-# invoke that demo's replay_entrypoint.py in its own subprocess.
-_DEMO_COMMANDS: dict[str, list[str]] = {
-    "research-assistant": [
-        "uv",
-        "run",
-        "--project",
-        "sdk",
-        "--extra",
-        "langgraph",
-        "--extra",
-        "demos",
-        "python",
-        str(_REPO_ROOT / "demos" / "research-assistant" / "replay_entrypoint.py"),
-    ],
-    "content-pipeline": [
-        "uv",
-        "run",
-        "--project",
-        "sdk",
-        "--extra",
-        "crewai",
-        "python",
-        str(_REPO_ROOT / "demos" / "content-pipeline" / "replay_entrypoint.py"),
-    ],
+# project name (benchmark/corpus/archive_run.py's own field) -> the
+# ReplayAdapter (benchmark/adapter.py) that knows how to replay it. A
+# third party benchmarking their own tool registers a new project name
+# here (or their own ReplayAdapter implementation) rather than needing
+# to touch _replay_one/main below.
+_DEMO_ADAPTERS: dict[str, ReplayAdapter] = {
+    "research-assistant": SubprocessReplayAdapter(
+        [
+            "uv",
+            "run",
+            "--project",
+            "sdk",
+            "--extra",
+            "langgraph",
+            "--extra",
+            "demos",
+            "python",
+            str(_REPO_ROOT / "demos" / "research-assistant" / "replay_entrypoint.py"),
+        ]
+    ),
+    "content-pipeline": SubprocessReplayAdapter(
+        [
+            "uv",
+            "run",
+            "--project",
+            "sdk",
+            "--extra",
+            "crewai",
+            "python",
+            str(_REPO_ROOT / "demos" / "content-pipeline" / "replay_entrypoint.py"),
+        ]
+    ),
 }
 
 
@@ -78,22 +88,12 @@ class FidelityResult:
 
 def _replay_one(entry: dict[str, Any], *, endpoint: str) -> FidelityResult:
     project = entry["project"]
-    if project not in _DEMO_COMMANDS:
+    if project not in _DEMO_ADAPTERS:
         raise UnknownProjectError(
-            f"no replay command registered for project {project!r} "
-            f"(known: {sorted(_DEMO_COMMANDS)})"
+            f"no replay adapter registered for project {project!r} "
+            f"(known: {sorted(_DEMO_ADAPTERS)})"
         )
-    command = [
-        *_DEMO_COMMANDS[project],
-        entry["run_id"],
-        "--endpoint",
-        endpoint,
-        "--json",
-    ]
-    completed = subprocess.run(
-        command, capture_output=True, text=True, cwd=_REPO_ROOT, check=False
-    )
-    report = json.loads(completed.stdout)
+    report = _DEMO_ADAPTERS[project].replay(entry["run_id"], endpoint=endpoint)
     return FidelityResult(
         run_id=entry["run_id"],
         project=project,

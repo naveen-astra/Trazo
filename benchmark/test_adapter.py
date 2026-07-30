@@ -1,11 +1,13 @@
-"""Unit tests for the TrazoBench detection-adapter interface (TRZ-P7-01)."""
+"""Unit tests for the TrazoBench adapter interfaces (TRZ-P7-01)."""
 
 from __future__ import annotations
 
+import json
+import subprocess
 from typing import Any
 
 import pytest
-from adapter import RandomFlaggerAdapter, TrazoDetectorAdapter
+from adapter import RandomFlaggerAdapter, SubprocessReplayAdapter, TrazoDetectorAdapter
 
 from trazo_server.events import Event, EventAdapter
 
@@ -132,3 +134,26 @@ def test_random_flagger__ignores_non_boundary_events() -> None:
 def test_random_flagger__rejects_out_of_range_flag_rate() -> None:
     with pytest.raises(ValueError):
         RandomFlaggerAdapter(flag_rate=1.5)
+
+
+def test_subprocess_replay_adapter__parses_json_and_forwards_run_id_and_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_report = {
+        "boundary_fidelity": 0.9,
+        "state_fidelity": 0.8,
+        "replay_overhead": 0.15,
+        "divergences": [],
+    }
+
+    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert command[:2] == ["uv", "run"]
+        assert command[-4:] == ["run_1", "--endpoint", "http://example.test", "--json"]
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(fake_report))
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    adapter = SubprocessReplayAdapter(["uv", "run", "some-entrypoint.py"])
+
+    report = adapter.replay("run_1", endpoint="http://example.test")
+
+    assert report == fake_report

@@ -1,9 +1,10 @@
-"""TrazoBench detection-adapter interface (TRZ-P7-01, RESEARCH.md RQ3).
+"""TrazoBench adapter interfaces (TRZ-P7-01, RESEARCH.md RQ3).
 
-A small ``Protocol`` any tool -- Trazo's own or a third party's -- can
-implement to be scored by ``benchmark/detection/runner.py``:
+Small ``Protocol``s any tool -- Trazo's own or a third party's -- can
+implement to be scored by TrazoBench's runners:
 
-    detect(events) -> list[Detection]
+    detect(events) -> list[Detection]                 # RQ2/detection
+    replay(run_id, endpoint=...) -> dict[str, Any]     # RQ1/fidelity
 
 Deliberately not ``trazo_server.detectors.base.Detector``'s per-event/
 window Protocol: that one is shaped for the *online* ``DetectorWorker``'s
@@ -28,9 +29,11 @@ online-only field.
 from __future__ import annotations
 
 import hashlib
+import json
+import subprocess
 import sys
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _CONTROL_PLANE_SRC = _REPO_ROOT / "control-plane" / "src"
@@ -131,3 +134,46 @@ class RandomFlaggerAdapter:
                 )
             )
         return found
+
+
+class ReplayAdapter(Protocol):
+    """Implement this to register a new project's replay tool for
+    ``benchmark/fidelity/run_harness.py`` (RQ1/RQ3).
+
+    Not literally ``replay(bundle) -> report`` (RESEARCH.md's shorthand):
+    ``trazo.replay.Session.run_to()`` needs a *registered entrypoint*
+    per framework to re-invoke (building the agent, wrapping it with the
+    right ``instrument()``, invoking it) -- there is no generic way to
+    replay a bundle without framework-specific re-invocation code, so
+    "the bundle" isn't actually a self-sufficient input here the way a
+    detector's event list is. What every replay tool this harness can
+    score *does* share: given a corpus entry's ``run_id`` and a live
+    control-plane endpoint to fetch it from, produce a report shaped
+    like ``trazo verify --json``'s own stable, documented output
+    (REPLAY_ENGINE.md) -- ``boundary_fidelity``, ``state_fidelity``,
+    ``replay_overhead``, ``divergences``.
+    """
+
+    def replay(self, run_id: str, *, endpoint: str) -> dict[str, Any]: ...
+
+
+class SubprocessReplayAdapter:
+    """Reference ReplayAdapter for Trazo's own demos: invokes a demo's
+    own ``replay_entrypoint.py <run_id> --endpoint ... --json`` in its
+    own subprocess (never both demos' same-named ``llm``/``agent``
+    modules in one interpreter -- see each entrypoint script's own
+    docstring) and parses its ``trazo verify``-shaped JSON report."""
+
+    def __init__(self, command: list[str]) -> None:
+        self._command = command
+
+    def replay(self, run_id: str, *, endpoint: str) -> dict[str, Any]:
+        completed = subprocess.run(
+            [*self._command, run_id, "--endpoint", endpoint, "--json"],
+            capture_output=True,
+            text=True,
+            cwd=_REPO_ROOT,
+            check=False,
+        )
+        result: dict[str, Any] = json.loads(completed.stdout)
+        return result
