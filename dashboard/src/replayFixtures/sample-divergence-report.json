@@ -1,0 +1,16 @@
+{
+  "boundary_fidelity": 0.6666666666666666,
+  "state_fidelity": 0.5,
+  "matched": 2,
+  "reordered": 0,
+  "divergences": [
+    {
+      "kind": "tool.call",
+      "reason": "fingerprint mismatch beyond lookahead",
+      "expected_seq": 5,
+      "expected_event_id": "evt_01K3",
+      "expected_fingerprint": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "live_fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}
