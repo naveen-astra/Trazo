@@ -427,3 +427,41 @@
   font-size: 0.75rem;
   padding: 0.2rem 0.5rem;
 }
+
+/* ---- memory inspector ---- */
+
+.memory-inspector {
+  margin-top: 0.75rem;
+}
+
+.memory-inspector__query {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.memory-inspector__docs {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.memory-inspector__docs li {
+  font-size: 0.82rem;
+  background: rgba(11, 11, 11, 0.04);
+  border-radius: 6px;
+  padding: 0.5rem 0.65rem;
+}
+
+.memory-inspector__doc-text {
+  display: block;
+}
+
+.memory-inspector__doc-score {
+  display: block;
+  margin-top: 0.25rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
