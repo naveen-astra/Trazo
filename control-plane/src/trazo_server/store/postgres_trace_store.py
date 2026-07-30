@@ -189,19 +189,29 @@ class PostgresTraceStore:
         payload: dict[str, Any],
     ) -> int:
         async with self._engine.begin() as conn:
-            # Locks just the run's own last-seq row (or nothing, on a
-            # run's very first server-minted event) so a second
-            # concurrent reservation for the same run_id blocks until
-            # this transaction commits, then re-reads the now-committed
-            # max — the standard Postgres gapless-sequence pattern.
-            # Aggregates can't carry FOR UPDATE directly, hence the
-            # ORDER BY/LIMIT 1 instead of a bare MAX(seq).
-            result = await conn.execute(
-                sa.select(events.c.seq)
-                .where(events.c.run_id == run_id)
-                .order_by(events.c.seq.desc())
-                .limit(1)
+            # Lock the run's own `runs` row (present for every run before
+            # its first event, unlike an events row) rather than the last
+            # events row: locking `ORDER BY seq DESC LIMIT 1 ... FOR
+            # UPDATE` looked equivalent but isn't — when a blocked
+            # transaction's FOR UPDATE wait resolves, Postgres re-checks
+            # only the *same physical row* it originally matched
+            # (EvalPlanQual), it does not re-run the ORDER BY/LIMIT scan.
+            # Since a concurrent insert doesn't modify that row, the
+            # unblocked transaction reads the same stale "last seq" the
+            # first transaction started from, and both assign the same
+            # next_seq -- reproduced by the concurrent-append test as a
+            # duplicate-key error on `events_pkey`. Locking the `runs` row
+            # instead makes every concurrent reservation for this run_id
+            # wait for the whole transaction (lock plus insert plus
+            # commit), so each one's subsequent MAX(seq) read is against
+            # the latest committed state.
+            await conn.execute(
+                sa.select(runs.c.run_id)
+                .where(runs.c.run_id == run_id)
                 .with_for_update()
+            )
+            result = await conn.execute(
+                sa.select(sa.func.max(events.c.seq)).where(events.c.run_id == run_id)
             )
             last_seq = result.scalar_one_or_none()
             next_seq = 0 if last_seq is None else last_seq + 1
