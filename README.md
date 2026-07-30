@@ -3,7 +3,7 @@
 **Observability, replay, and governance for multi-agent AI systems.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Status](https://img.shields.io/badge/status-design%20phase-orange)
+![Status](https://img.shields.io/badge/status-MVP%20in%20progress-yellow)
 
 *Trazo* is Spanish and Portuguese for a drawn stroke — the mark a pen leaves behind. That mark, applied to an agent's execution, is what this project is about: the durable, inspectable record of what an autonomous system actually did, as opposed to what its logs claim it did.
 
@@ -85,40 +85,96 @@ What this buys you: faithful, inspectable reconstruction of a specific failure, 
 
 The two research questions this raises — how to define and measure "replay fidelity" when the underlying system is stochastic, and what the actual replay overhead is at scale — are the first entries in [Research direction](#research-direction) below, precisely because they don't have settled answers yet.
 
-## Design preview: target developer experience
+## Quickstart
 
-Nothing below is implemented yet — no package exists to install. This is included because architecture is easier to evaluate when you can see the shape of the API it implies, not just the boxes in a diagram. Treat it as a preview of the target design, subject to change once real usage puts pressure on it.
+No PyPI package is published yet (`v0.1.0` is the first tagged release, once
+[TRZ-P7-02](.github/workflows/release.yml) actually cuts one — see
+[Project status](#project-status)) — until then, install the SDK editable
+from a clone. Everything below is real, working code, run for real against
+`docker compose up` as part of this repo's own CI/smoke checks
+(`scripts/smoke/phase2.sh`) — not a design sketch. The one thing not
+independently re-verified in *this* environment specifically is wall-clock
+time end to end (no Docker daemon here — see [Project status](#project-status));
+budget roughly 10-15 minutes on a machine with Docker already installed,
+most of it image pulls/builds the first time.
 
-```python
-# Instrumenting a LangGraph agent
-from trazo.integrations.langgraph import instrument
-
-graph = build_research_agent_graph()
-traced_graph = instrument(graph, project="research-assistant")
-
-result = traced_graph.invoke({"query": "..."})
-# every state transition, tool call, and memory access in this run
-# is now a durable, individually addressable trace event
+```bash
+git clone https://github.com/naveen-astra/Trazo.git
+cd Trazo
+cp deploy/.env.example deploy/.env      # sets TRAZO_API_KEY (dev-change-me by default)
+make up                                  # docker compose up: postgres, redis, opa, control-plane, dashboard
 ```
 
+Wait for the stack to report healthy (`docker compose -f deploy/docker-compose.yml ps`,
+or just watch `curl http://localhost:8420/healthz`), then run a real
+instrumented LangGraph agent against it:
+
+```bash
+uv run --project sdk --extra langgraph python scripts/smoke/run_toy_agent.py
+```
+
+That's `sdk/tests/agents/research_assistant.py` — a small but real LangGraph
+graph (plan → search → retrieve → synthesize) — wrapped in
+`trazo.integrations.langgraph.instrument()` exactly the way your own agent
+would be:
+
 ```python
-# Replaying a specific historical run, step by step
+from trazo.integrations.langgraph import instrument
+import trazo
+
+trazo.init(
+    project="research-assistant",
+    endpoint="http://localhost:8420",
+    api_key="dev-change-me",
+)
+
+graph = build_research_agent_graph()
+traced_graph = instrument(graph)
+
+result = traced_graph.invoke({"query": "..."})
+# every state transition, tool call, and memory access in this run is now
+# a durable, individually addressable trace event — query it or open the
+# dashboard (below) to see it
+trazo.shutdown()  # flushes before the process exits
+```
+
+Query what just landed, or open the dashboard:
+
+```bash
+curl http://localhost:8420/v1/runs?project=research-assistant   # the run + its rollup
+open http://localhost:5173                                       # timeline, memory inspector, replay stepper
+```
+
+Step through the run, boundary call by boundary call, against the exact
+recorded state (not a fresh, differently-sampled re-run — see
+[Replay under non-determinism](#replay-under-non-determinism)):
+
+```python
 from trazo import replay
 
-session = replay.load("run_01JABCDEF...", mode="strict")
+session = replay.load("run_01J...", mode="strict")  # run_id from the query above
 
 for step in session.steps():
     print(step.index, step.name, step.state_before)
     # step.boundary_events holds the *recorded* llm/tool/memory calls
     # from the original run — not freshly generated ones
-    step.verify()  # re-drive this step, compare against the recorded state hash
 ```
 
-```rego
-# A policy evaluated inline, before the action it governs executes
-package trazo
+Or from the CLI: `trazo verify run_01J...` reports boundary/state fidelity
+and any divergence, in the same JSON shape TrazoBench's fidelity harness
+scores third-party replay tools against
+([benchmark/README.md](benchmark/README.md)).
 
-deny[msg] {
+A policy that blocks a governed action inline, before it executes, is just
+a `.rego` file mounted into the OPA sidecar
+(`policies/trazo/`) — no code change on the SDK or control-plane side:
+
+```rego
+package trazo.decision
+
+import rego.v1
+
+deny contains {"policy_id": "send_email_cap", "reason": msg} if {
     input.action.tool_name == "send_email"
     input.action.projected_cost_usd > 5
     msg := "blocked: projected cost exceeds per-action budget"
@@ -127,35 +183,48 @@ deny[msg] {
 
 ## Project status
 
-This repository is at the end of its design phase and the start of implementation. The problem statement, system design, and technical bets are settled and written down in the [engineering handbook](#engineering-handbook); the repository scaffold (packages, local stack, CI) is in place; the product code is not yet built. There is no usable release, no running replay engine, and no benchmark results — any such claims elsewhere should be treated as aspirational until this section says otherwise.
+Every component below is real, running code with passing tests, not a
+design sketch — Phases 0 through 6 are functionally complete; Phase 7
+(benchmark packaging, release engineering) is in progress. No `v0.1.0` has
+been tagged yet, so there is no PyPI/npm package and no GitHub Release —
+build from source per [Quickstart](#quickstart) until there is. Live-browser
+verification of the dashboard, and end-to-end verification against a real
+`docker compose up`, were both done in whatever environment last built each
+piece — not independently re-run in the environment that wrote this
+sentence (no Docker daemon here); [ROADMAP.md](ROADMAP.md)'s own footnotes
+are the honest, per-phase record of exactly what was and wasn't
+re-verified, and where.
 
 | Component | Status |
 |---|---|
 | Engineering handbook (architecture, contracts, ADRs, task plan) | Complete — the binding design |
-| Repository scaffold (packages, Docker Compose stack, CI, lint/type/test wiring) | In place (Phase 0) |
-| Trace event schema | Specified in [EVENTS.md](EVENTS.md); machine-readable JSON Schema lands in Phase 1 |
-| Instrumentation SDK (Python) | Not started (Phase 2) |
-| LangGraph adapter | Not started (Phase 2) |
-| CrewAI adapter | Not started (Phase 3) |
-| Ingestion pipeline (HTTP → Redis Streams → Postgres) | Not started (Phase 1) |
-| Replay engine | Not started (Phase 4) — the core open technical problem |
-| Failure injection + anomaly detection | Not started (Phase 5) |
-| Policy engine (OPA integration) | Not started (Phase 6) |
-| Memory inspector + dashboard | Scaffold only; features land in Phases 2 and 6 |
+| Repository scaffold (packages, Docker Compose stack, CI, lint/type/test wiring) | Done (Phase 0) |
+| Trace event schema | Frozen at `schema-v1.0` ([EVENTS.md](EVENTS.md), [CHANGELOG.md](CHANGELOG.md)); CI fails a PR that changes it without a version bump |
+| Instrumentation SDK (Python) | Done (Phase 2) — public API in [SDK.md](SDK.md) |
+| LangGraph adapter | Done (Phase 2) |
+| CrewAI adapter | Done (Phase 3) |
+| Ingestion pipeline (HTTP → Redis Streams → Postgres) | Done (Phase 1) |
+| Replay engine | Done (Phase 4) — record-and-substitute replay, divergence detection, fidelity harness ([REPLAY_ENGINE.md](REPLAY_ENGINE.md)) |
+| Failure injection + anomaly detection | Done (Phase 5) — three rule-based detectors scored against a 300-run labeled corpus ([benchmark/README.md](benchmark/README.md)) |
+| Policy engine (OPA integration) | Done (Phase 6) — synchronous inline enforcement (ADR-006); CrewAI's own event-bus design has no synchronous pre-execution hook point yet, documented not solved |
+| Memory inspector + dashboard | Done (Phases 2 and 6) — timeline, memory inspector, replay stepper |
+| TrazoBench v0 (detection + replay adapter interfaces, baseline numbers) | Done (Phase 7) — [benchmark/README.md](benchmark/README.md) |
+| Release engineering (`release.yml`, version stamping, schema cross-check) | Done (Phase 7) — no tag pushed yet |
+| Tagged release, PyPI/npm packages, rehearsed demo script | Not yet — remaining Phase 7 work |
 | AutoGen adapter, TypeScript SDK, Kafka, ClickHouse, hosted tier | Deliberately deferred post-MVP ([ROADMAP.md](ROADMAP.md)) |
 
 ## Roadmap
 
 The roadmap is ordered by dependency, not by calendar. Each phase produces something demonstrable, because the biggest risk to a project like this is polishing the easy 80% (a nice trace timeline) while quietly never building the hard 20% (real replay) that justifies the project existing. The replay phase deliberately runs as a long parallel lane starting mid-project — the full task breakdown lives in [TASKS/](TASKS/) and phase statuses in [ROADMAP.md](ROADMAP.md).
 
-1. **P0 — Scaffold.** Monorepo boots: `docker compose up` brings up the stack, CI is green, every later task has a slot.
-2. **P1 — Schema, ingest, store.** Event schema v1 frozen (JSON Schema + generated models); a hand-crafted trace flows HTTP → Redis Streams → Postgres and reads back idempotently.
-3. **P2 — SDK core + LangGraph + dashboard v1.** A real LangGraph agent traced live into a minimal timeline view.
-4. **P3 — CrewAI + demo agents.** Second adapter proves the cross-framework claim; two demo agents (a research assistant, a content pipeline) generate a realistic trace corpus nightly.
-5. **P4 — Replay engine** (parallel lane, three weeks). Record-and-substitute replay with divergence detection and a fidelity harness — this is the milestone the rest of the project's credibility rests on.
-6. **P5 — Failure injection + detection.** A chaos harness induces loops, budget overruns, thrash, and drift; rule-based detectors scored honestly against the labeled corpus.
-7. **P6 — Policy, memory inspector, dashboard v2.** A cost-cap policy blocks a live tool call before it executes; retrieval results inspectable per step; replay stepper in the UI.
-8. **P7 — Benchmark + release.** TrazoBench v0 regenerates from scripts; v0.1.0 tagged; the full demo runs unfaked.
+1. **P0 — Scaffold (done).** Monorepo boots: `docker compose up` brings up the stack, CI is green, every later task has a slot.
+2. **P1 — Schema, ingest, store (done).** Event schema v1 frozen (JSON Schema + generated models); a hand-crafted trace flows HTTP → Redis Streams → Postgres and reads back idempotently.
+3. **P2 — SDK core + LangGraph + dashboard v1 (done).** A real LangGraph agent traced live into a minimal timeline view.
+4. **P3 — CrewAI + demo agents (done).** Second adapter proves the cross-framework claim; two demo agents (a research assistant, a content pipeline) generate a realistic trace corpus nightly.
+5. **P4 — Replay engine (done, parallel lane, three weeks).** Record-and-substitute replay with divergence detection and a fidelity harness — this is the milestone the rest of the project's credibility rests on.
+6. **P5 — Failure injection + detection (done).** A chaos harness induces loops, budget overruns, thrash, and drift; rule-based detectors scored honestly against the labeled corpus.
+7. **P6 — Policy, memory inspector, dashboard v2 (done).** A cost-cap policy blocks a live tool call before it executes; retrieval results inspectable per step; replay stepper in the UI.
+8. **P7 — Benchmark + release (in progress).** TrazoBench v0 regenerates from scripts (done); `v0.1.0` tagging, release engineering, and the rehearsed demo script are what's left.
 
 ## Research direction
 
@@ -189,6 +258,31 @@ Boring technology, deliberately: the novelty budget is spent entirely on replay 
 The intended user is the engineer who gets paged when an agentic system misbehaves in production — the same audience LangChain, CrewAI, and Langfuse already serve, specifically on the debugging and governance layer that's currently underserved. If your team runs LangGraph, CrewAI, or a hand-rolled agent loop past the demo stage, this is meant for you: the first two get full adapters, custom agents get `@trace_tool` / `@trace_llm` decorators, and AutoGen is next on the adapter roadmap.
 
 The intended model, once there is something to ship, is open-core: the SDK, self-hosted trace store, and replay engine are meant to stay free and open. A hosted tier — managed trace storage at scale, more capable anomaly-detection models, SSO/RBAC, and audit-compliance features — is the planned path to sustaining the project, not a current product. Nothing in this section describes revenue that exists today.
+
+## Security posture
+
+Stated loudly, as ADR-009 itself requires: **the MVP is not multi-tenant-safe.**
+It's built for a single team self-hosting on localhost or a private network,
+not for exposing a Trazo deployment to untrusted users.
+
+- One static bearer key (`TRAZO_API_KEY`) guards the ingest and policy
+  endpoints. Query and dashboard endpoints are unauthenticated by default —
+  bind them to localhost or put them behind your own reverse-proxy auth if
+  the control plane is reachable from anywhere else.
+- No RBAC, no SSO, no per-project keys yet. `project_id` is threaded through
+  every table and query path specifically so that layer is additive later,
+  not a schema migration — but it isn't built.
+- Every recorded event goes through a redaction pass (configurable key
+  patterns — `api_key`, `authorization`, `password`, ...) before it ships,
+  and large payloads are stored content-addressed (sha256) rather than at
+  a caller-controlled path.
+- OPA policies are code-reviewed files mounted read-only into the sidecar;
+  there is no runtime policy-upload endpoint to secure or abuse.
+
+Full detail in ADR-009 and ARCHITECTURE.md §5. If your deployment needs
+more than this before those roadmap items land, put your own auth/network
+boundary in front of it — that's what `project_id` being everywhere already
+was built to make possible without a rewrite.
 
 ## Engineering handbook
 
