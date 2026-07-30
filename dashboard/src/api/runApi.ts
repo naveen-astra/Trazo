@@ -10,6 +10,8 @@ export type EventOut = components["schemas"]["EventOut"];
 export type EventsPage = components["schemas"]["EventsPage"];
 export type DetectionOut = components["schemas"]["DetectionOut"];
 export type DetectionsPage = components["schemas"]["DetectionsPage"];
+export type PolicyDecisionOut = components["schemas"]["PolicyDecisionOut"];
+export type PolicyDecisionsPage = components["schemas"]["PolicyDecisionsPage"];
 
 const BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8420";
@@ -59,6 +61,10 @@ export function listRunEvents(
 
 export function listRunDetections(runId: string): Promise<DetectionsPage> {
   return fetchJson<DetectionsPage>(`/v1/runs/${encodeURIComponent(runId)}/detections`);
+}
+
+export function listRunPolicyDecisions(runId: string): Promise<PolicyDecisionsPage> {
+  return fetchJson<PolicyDecisionsPage>(`/v1/runs/${encodeURIComponent(runId)}/policy-decisions`);
 }
 
 export function blobUrl(sha256: string): string {
