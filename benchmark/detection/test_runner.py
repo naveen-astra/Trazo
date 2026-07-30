@@ -3,9 +3,19 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
+# Not relying on runner.py's own sys.path.insert side effect (which would
+# make this import order-fragile against ruff's import sorter -- "adapter"
+# and "runner" fall in the same unclassified-local-module bucket ruff
+# wants alphabetized together, but adapter must not resolve before
+# runner.py's sys.path.insert has actually run): this file sets up its
+# own path to benchmark/ so either import order works.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "benchmark"))
+
+from adapter import TrazoDetectorAdapter
 from runner import (
     ClassMetrics,
     CorpusEntry,
@@ -217,7 +227,11 @@ def test_score_run__loop_detector_fires_and_first_fire_seq_is_recorded() -> None
         label="loop",
     )
 
-    result = score_run(entry, events, [LoopDetector(min_repeats=4, window_events=20)])
+    result = score_run(
+        entry,
+        events,
+        TrazoDetectorAdapter(detectors=[LoopDetector(min_repeats=4, window_events=20)]),
+    )
 
     assert result.first_fire_seq == {"loop": 15}
     assert result.any_detector_fired is True
@@ -236,7 +250,11 @@ def test_score_run__no_detections_when_nothing_repeats() -> None:
         label="clean",
     )
 
-    result = score_run(entry, events, [LoopDetector(min_repeats=4, window_events=20)])
+    result = score_run(
+        entry,
+        events,
+        TrazoDetectorAdapter(detectors=[LoopDetector(min_repeats=4, window_events=20)]),
+    )
 
     assert result.first_fire_seq == {}
     assert result.any_detector_fired is False

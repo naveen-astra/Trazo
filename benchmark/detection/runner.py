@@ -44,13 +44,11 @@ from typing import Any
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CONTROL_PLANE_SRC = _REPO_ROOT / "control-plane" / "src"
 sys.path.insert(0, str(_CONTROL_PLANE_SRC))
+sys.path.insert(0, str(_REPO_ROOT / "benchmark"))
 
+from adapter import DetectionAdapter, TrazoDetectorAdapter  # noqa: E402
 from pydantic import ValidationError  # noqa: E402
 
-from trazo_server.detectors.base import Detector, RunWindow  # noqa: E402
-from trazo_server.detectors.budget import BudgetDetector  # noqa: E402
-from trazo_server.detectors.loop import LoopDetector  # noqa: E402
-from trazo_server.detectors.thrash import ThrashDetector  # noqa: E402
 from trazo_server.events import Event, EventAdapter  # noqa: E402
 
 _DEFAULT_INDEX_PATH = _REPO_ROOT / "benchmark" / "corpus" / "failure_index.json"
@@ -132,16 +130,24 @@ def onset_seq(events: list[Event], kind: str, call_index: int) -> int | None:
 
 
 def score_run(
-    entry: CorpusEntry, events: list[Event], detectors: list[Detector]
+    entry: CorpusEntry, events: list[Event], adapter: DetectionAdapter
 ) -> RunResult:
-    window = RunWindow(entry.run_id)
+    seq_by_event_id = {e.event_id: e.seq for e in events}
     first_fire: dict[str, int] = {}
-    for event in sorted(events, key=lambda e: e.seq):
-        window.record(event)
-        for detector in detectors:
-            detection = detector.on_event(event, window)
-            if detection is not None and detector.id not in first_fire:
-                first_fire[detector.id] = event.seq
+    for detection in adapter.detect(events):
+        if detection.detector in first_fire:
+            continue
+        # The adapter interface (benchmark/adapter.py) hands back
+        # Detections, not the seq each fired at -- every shipped
+        # detector's evidence includes the triggering event itself last,
+        # so this recovers the fire point without the interface needing
+        # an extra online-only field.
+        fire_seq = max(
+            seq_by_event_id[eid]
+            for eid in detection.evidence_event_ids
+            if eid in seq_by_event_id
+        )
+        first_fire[detection.detector] = fire_seq
 
     start_call_index = None
     if entry.label in _RULE_DETECTOR_CLASSES:
@@ -263,7 +269,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     entries = load_entries(args.index_path)
-    detectors: list[Detector] = [LoopDetector(), BudgetDetector(), ThrashDetector()]
+    adapter = TrazoDetectorAdapter()
 
     results: list[RunResult] = []
     skipped = 0
@@ -278,7 +284,7 @@ def main(argv: list[str] | None = None) -> int:
             for raw in raw_events
             if (e := bundle_event_to_event(manifest, raw)) is not None
         ]
-        results.append(score_run(entry, events, detectors))
+        results.append(score_run(entry, events, adapter))
 
     class_metrics = [compute_class_metrics(c, results) for c in _RULE_DETECTOR_CLASSES]
     drift_size = sum(1 for r in results if r.entry.label == "drift")
