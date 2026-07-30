@@ -35,7 +35,12 @@ def _alembic_config() -> Config:
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _ensure_schema() -> None:
+def _skip_without_postgres() -> None:
+    """conftest.py's session-scoped _ensure_schema already migrated (or
+    tried to) before any test ran; this just preserves this file's own
+    graceful skip for a Postgres-less local run — the session fixture
+    fails open rather than skipping, since skipping there would skip
+    every test in the run, not just this file's."""
     try:
         command.upgrade(_alembic_config(), "head")
     except Exception:

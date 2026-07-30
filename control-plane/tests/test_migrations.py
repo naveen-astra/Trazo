@@ -69,4 +69,9 @@ def test_migrations__upgrade_downgrade_upgrade_cycle_is_idempotent() -> None:
 
         assert asyncio.run(_fetch_public_table_names()) >= _EXPECTED_TABLES
     finally:
-        command.downgrade(cfg, "base")  # leave a clean slate for the next run
+        # Re-upgrade rather than leaving the schema torn down: this runs
+        # against the same live Postgres every other test in the session
+        # shares (conftest.py's _ensure_schema fixture only migrates
+        # once, up front), so downgrading to "base" here would leave
+        # every test collected after this file with no tables.
+        command.upgrade(cfg, "head")
