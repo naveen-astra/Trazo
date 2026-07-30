@@ -46,7 +46,11 @@ _CONTROL_PLANE_SRC = _REPO_ROOT / "control-plane" / "src"
 sys.path.insert(0, str(_CONTROL_PLANE_SRC))
 sys.path.insert(0, str(_REPO_ROOT / "benchmark"))
 
-from adapter import DetectionAdapter, TrazoDetectorAdapter  # noqa: E402
+from adapter import (  # noqa: E402
+    DetectionAdapter,
+    RandomFlaggerAdapter,
+    TrazoDetectorAdapter,
+)
 from pydantic import ValidationError  # noqa: E402
 
 from trazo_server.events import Event, EventAdapter  # noqa: E402
@@ -225,6 +229,71 @@ def compute_class_metrics(label: str, results: list[RunResult]) -> ClassMetrics:
     )
 
 
+@dataclass(frozen=True)
+class OverallMetrics:
+    """Binary "is this run faulty at all" quality -- the level the RQ3
+    baseline is actually comparable at: RandomFlaggerAdapter has no
+    concept of loop/budget/thrash classes, only "did I flag anything in
+    this run", so per-class ClassMetrics isn't a fair comparison point.
+    """
+
+    name: str
+    corpus_size: int
+    true_positives: int
+    false_negatives: int
+    false_positives: int
+    precision: float | None
+    recall: float | None
+    fpr_on_clean: float | None
+
+
+def compute_overall_metrics(name: str, results: list[RunResult]) -> OverallMetrics:
+    faulty = [r for r in results if r.entry.label != "clean"]
+    clean = [r for r in results if r.entry.label == "clean"]
+
+    tp = sum(1 for r in faulty if r.any_detector_fired)
+    fn = len(faulty) - tp
+    fp = sum(1 for r in clean if r.any_detector_fired)
+
+    recall = tp / len(faulty) if faulty else None
+    precision = tp / (tp + fp) if (tp + fp) > 0 else None
+    fpr_on_clean = fp / len(clean) if clean else None
+
+    return OverallMetrics(
+        name=name,
+        corpus_size=len(faulty),
+        true_positives=tp,
+        false_negatives=fn,
+        false_positives=fp,
+        precision=precision,
+        recall=recall,
+        fpr_on_clean=fpr_on_clean,
+    )
+
+
+def score_corpus(
+    entries: list[CorpusEntry], cache_dir: Path, adapter: DetectionAdapter
+) -> tuple[list[RunResult], int]:
+    """Score every corpus entry with a cached bundle on disk through
+    ``adapter``; returns the results plus how many entries were skipped
+    for lacking one (regenerate via generate_failure_corpus.py)."""
+    results: list[RunResult] = []
+    skipped = 0
+    for entry in entries:
+        cache_path = cache_dir / f"{entry.run_id}.ndjson"
+        if not cache_path.exists():
+            skipped += 1
+            continue
+        manifest, raw_events = load_bundle(cache_path)
+        events = [
+            e
+            for raw in raw_events
+            if (e := bundle_event_to_event(manifest, raw)) is not None
+        ]
+        results.append(score_run(entry, events, adapter))
+    return results, skipped
+
+
 def _fmt(value: float | None, *, pct: bool = False) -> str:
     if value is None:
         return "n/a"
@@ -232,7 +301,11 @@ def _fmt(value: float | None, *, pct: bool = False) -> str:
 
 
 def render_report(
-    class_metrics: list[ClassMetrics], *, drift_corpus_size: int, clean_corpus_size: int
+    class_metrics: list[ClassMetrics],
+    *,
+    drift_corpus_size: int,
+    clean_corpus_size: int,
+    overall_metrics: list[OverallMetrics] | None = None,
 ) -> str:
     lines = [
         "# RQ2 — Detector precision/recall (TRZ-P5-05)",
@@ -258,6 +331,32 @@ def render_report(
         "(AI_DEBUGGER.md §5's stretch classifier, TRZ-P5-07); reported "
         "as corpus size only."
     )
+
+    if overall_metrics:
+        lines.append("")
+        lines.append("## RQ3 — Baseline comparison (flag-any-fault)")
+        lines.append("")
+        lines.append(
+            "RandomFlaggerAdapter has no notion of loop/budget/thrash "
+            'classes -- only "did this tool flag anything in this run" '
+            "-- so it's compared against Trazo's own detectors at that "
+            "same binary level, not per-class, to anchor the scale "
+            "(RESEARCH.md RQ3)."
+        )
+        lines.append("")
+        lines.append(
+            "| Adapter | Corpus (faulty) | TP | FN | FP | Precision | "
+            "Recall | FPR (clean) |"
+        )
+        lines.append("|---|---|---|---|---|---|---|---|")
+        for om in overall_metrics:
+            lines.append(
+                f"| {om.name} | {om.corpus_size} | {om.true_positives} | "
+                f"{om.false_negatives} | {om.false_positives} | "
+                f"{_fmt(om.precision, pct=True)} | {_fmt(om.recall, pct=True)} | "
+                f"{_fmt(om.fpr_on_clean, pct=True)} |"
+            )
+
     return "\n".join(lines) + "\n"
 
 
@@ -269,29 +368,23 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     entries = load_entries(args.index_path)
-    adapter = TrazoDetectorAdapter()
 
-    results: list[RunResult] = []
-    skipped = 0
-    for entry in entries:
-        cache_path = args.cache_dir / f"{entry.run_id}.ndjson"
-        if not cache_path.exists():
-            skipped += 1
-            continue
-        manifest, raw_events = load_bundle(cache_path)
-        events = [
-            e
-            for raw in raw_events
-            if (e := bundle_event_to_event(manifest, raw)) is not None
-        ]
-        results.append(score_run(entry, events, adapter))
+    results, skipped = score_corpus(entries, args.cache_dir, TrazoDetectorAdapter())
+    baseline_results, _ = score_corpus(entries, args.cache_dir, RandomFlaggerAdapter())
 
     class_metrics = [compute_class_metrics(c, results) for c in _RULE_DETECTOR_CLASSES]
     drift_size = sum(1 for r in results if r.entry.label == "drift")
     clean_size = sum(1 for r in results if r.entry.label == "clean")
+    overall_metrics = [
+        compute_overall_metrics("trazo (loop+budget+thrash)", results),
+        compute_overall_metrics("random_flagger (baseline)", baseline_results),
+    ]
 
     report = render_report(
-        class_metrics, drift_corpus_size=drift_size, clean_corpus_size=clean_size
+        class_metrics,
+        drift_corpus_size=drift_size,
+        clean_corpus_size=clean_size,
+        overall_metrics=overall_metrics,
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(report, encoding="utf-8")

@@ -22,12 +22,14 @@ from runner import (
     RunResult,
     bundle_event_to_event,
     compute_class_metrics,
+    compute_overall_metrics,
     load_bundle,
     load_entries,
     main,
     manifest_tags,
     onset_seq,
     render_report,
+    score_corpus,
     score_run,
 )
 
@@ -334,6 +336,147 @@ def test_render_report__includes_every_class_row_and_corpus_footnote() -> None:
     assert "50%" in report
     assert "Clean corpus: 7 runs" in report
     assert "Drift corpus: 5 runs" in report
+
+
+def test_compute_overall_metrics__any_detector_fired_drives_precision_recall() -> None:
+    def _entry(label: str) -> CorpusEntry:
+        return CorpusEntry(run_id="r", project="p", framework="f", label=label)
+
+    results = [
+        RunResult(
+            entry=_entry("loop"),
+            onset_seq=0,
+            first_fire_seq={},
+            any_detector_fired=True,
+        ),
+        RunResult(
+            entry=_entry("budget"),
+            onset_seq=0,
+            first_fire_seq={},
+            any_detector_fired=False,
+        ),
+        RunResult(
+            entry=_entry("clean"),
+            onset_seq=None,
+            first_fire_seq={},
+            any_detector_fired=True,
+        ),
+        RunResult(
+            entry=_entry("clean"),
+            onset_seq=None,
+            first_fire_seq={},
+            any_detector_fired=False,
+        ),
+    ]
+
+    metrics = compute_overall_metrics("test-adapter", results)
+
+    assert metrics.corpus_size == 2  # two non-clean runs
+    assert metrics.true_positives == 1
+    assert metrics.false_negatives == 1
+    assert metrics.false_positives == 1
+    assert metrics.precision == 0.5
+    assert metrics.recall == 0.5
+    assert metrics.fpr_on_clean == 0.5
+
+
+def test_compute_overall_metrics__empty_corpus_reports_none_not_zero_division() -> None:
+    metrics = compute_overall_metrics("test-adapter", [])
+
+    assert metrics.corpus_size == 0
+    assert metrics.precision is None
+    assert metrics.recall is None
+    assert metrics.fpr_on_clean is None
+
+
+def test_render_report__includes_baseline_section_when_overall_metrics_given() -> None:
+    class_metrics = [
+        ClassMetrics(
+            label="loop",
+            corpus_size=1,
+            true_positives=1,
+            false_negatives=0,
+            false_positives=0,
+            precision=1.0,
+            recall=1.0,
+            fpr_on_clean=0.0,
+            median_latency_events=1.0,
+        )
+    ]
+    overall = [
+        compute_overall_metrics(
+            "trazo",
+            [
+                RunResult(
+                    entry=CorpusEntry(
+                        run_id="r", project="p", framework="f", label="loop"
+                    ),
+                    onset_seq=0,
+                    first_fire_seq={"loop": 0},
+                    any_detector_fired=True,
+                )
+            ],
+        )
+    ]
+
+    report = render_report(
+        class_metrics, drift_corpus_size=0, clean_corpus_size=0, overall_metrics=overall
+    )
+
+    assert "RQ3" in report
+    assert "trazo" in report
+
+
+def test_render_report__omits_baseline_section_when_none_given() -> None:
+    report = render_report([], drift_corpus_size=0, clean_corpus_size=0)
+
+    assert "RQ3" not in report
+
+
+def test_score_corpus__scores_every_entry_with_a_cached_bundle(tmp_path: Path) -> None:
+    manifest = _manifest()
+    fp = "sha256:" + "a" * 64
+    raw_events = [
+        _event(
+            i * 5,
+            "tool.call",
+            fingerprint=fp,
+            payload={
+                "tool_name": "web_search",
+                "args": {},
+                "result": "no results",
+                "status": "ok",
+                "latency_ms": 1.0,
+                "side_effect_class": "external",
+            },
+        )
+        for i in range(4)
+    ]
+    lines = [json.dumps(manifest)] + [json.dumps(e) for e in raw_events]
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    (cache_dir / f"{_RUN_ID}.ndjson").write_text(
+        "\n".join(lines) + "\n", encoding="utf-8"
+    )
+    entries = [
+        CorpusEntry(
+            run_id=_RUN_ID,
+            project="research-assistant",
+            framework="langgraph",
+            label="loop",
+        ),
+        CorpusEntry(run_id="missing_run", project="p", framework="f", label="clean"),
+    ]
+
+    results, skipped = score_corpus(
+        entries,
+        cache_dir,
+        TrazoDetectorAdapter(detectors=[LoopDetector(min_repeats=4, window_events=20)]),
+    )
+
+    assert len(results) == 1
+    assert skipped == 1
+    assert results[0].any_detector_fired is True
 
 
 def test_main__end_to_end_against_a_small_fixture_corpus(tmp_path: Path) -> None:
