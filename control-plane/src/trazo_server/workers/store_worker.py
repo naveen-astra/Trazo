@@ -172,6 +172,17 @@ class StoreWorker:
                 raise
             except Exception:
                 log.exception("store_worker.iteration_failed")
+                # See detector_worker.py's identical guard: redis-py's own
+                # internal async_timeout converts a real cancellation
+                # delivered mid-poll (this task's own .cancel(), e.g. app
+                # shutdown) into a plain redis.exceptions.TimeoutError,
+                # indistinguishable by type from a genuine idle-poll
+                # timeout. Left unchecked, the broad except below would
+                # swallow it and retry forever, hanging whatever awaits
+                # this task. Task.cancelling() (3.11+) tells them apart.
+                task = asyncio.current_task()
+                if task is not None and task.cancelling() > 0:
+                    raise asyncio.CancelledError() from None
                 await asyncio.sleep(1)
 
     async def _refresh_bus_metrics(self) -> None:

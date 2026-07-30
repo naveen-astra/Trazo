@@ -167,6 +167,19 @@ class DetectorWorker:
                 raise
             except Exception:
                 log.exception("detector_worker.iteration_failed")
+                # redis-py's own internal async_timeout wraps a real
+                # cancellation (from this task's own .cancel(), e.g. app
+                # shutdown) delivered mid-poll into a plain
+                # redis.exceptions.TimeoutError -- indistinguishable from
+                # a genuine idle-poll timeout by type alone. Left
+                # unchecked, that swallows the cancellation entirely: the
+                # broad except below would just log and retry forever,
+                # so whatever awaits this task (app.py's lifespan
+                # shutdown) hangs until something else intervenes.
+                # Task.cancelling() (3.11+) is how to tell the two apart.
+                task = asyncio.current_task()
+                if task is not None and task.cancelling() > 0:
+                    raise asyncio.CancelledError() from None
                 await asyncio.sleep(1)
 
     async def _process_batch(self, messages: list[BusMessage]) -> None:

@@ -7,12 +7,15 @@ persisted) is correctly reconstructed from TraceStore for any run still
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime, timezone
 from typing import Any
 
+import pytest
+
 from trazo_server.bus.memory import InMemoryEventBus
-from trazo_server.bus.protocol import EventBus
+from trazo_server.bus.protocol import BusMessage, EventBus
 from trazo_server.detectors.base import Detection, RunWindow
 from trazo_server.events import Event
 from trazo_server.store.memory_trace_store import InMemoryTraceStore
@@ -265,3 +268,43 @@ async def test_detector_worker__restart_rebuild_recovers_window_state_from_store
     await worker.poll_once(count=10, block_ms=0)
 
     assert detector.seen_totals == [3.5]
+
+
+class _CancellationMaskingBus:
+    """A bus double standing in for what redis-py's own internal
+    asyncio.timeout() actually does: a real task cancellation delivered
+    while ``read_group`` is blocked comes out as a plain exception, not
+    ``asyncio.CancelledError`` — indistinguishable from a genuine
+    idle-poll timeout by type alone."""
+
+    async def ensure_group(self, stream: str, group: str) -> None:
+        return None
+
+    async def read_group(
+        self, stream: str, group: str, consumer: str, *, count: int, block_ms: int
+    ) -> list[BusMessage]:
+        try:
+            await asyncio.Event().wait()  # blocks until this task is cancelled
+        except asyncio.CancelledError:
+            raise TimeoutError("simulated masked cancellation") from None
+        return []  # pragma: no cover — unreachable, satisfies the return type
+
+
+async def test_detector_worker__run_forever_exits_when_cancelled_mid_poll() -> None:
+    """The CI hang this regression-tests: a masked cancellation (see
+    _CancellationMaskingBus) must not make run_forever()'s broad
+    ``except Exception`` swallow it and retry forever — whatever awaits
+    this task (app.py's lifespan shutdown, in production) needs it to
+    actually exit instead of hanging until something else intervenes."""
+    worker = DetectorWorker(
+        bus=_CancellationMaskingBus(),  # type: ignore[arg-type]
+        trace_store=InMemoryTraceStore(),
+        detectors=[],
+        consumer_name="w1",
+    )
+    task = asyncio.create_task(worker.run_forever())
+    await asyncio.sleep(0.05)  # let it reach the blocked read
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=1.0)

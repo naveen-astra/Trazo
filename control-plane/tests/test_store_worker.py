@@ -10,6 +10,7 @@ duplicate them (upsert_events is idempotent on (run_id, seq)).
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Mapping
 from datetime import datetime, timezone
@@ -367,3 +368,44 @@ async def test_store_worker__kill_and_restart_mid_stream_loses_nothing(
     # fully acked now: a third worker finds nothing left to reclaim.
     worker_c = _make_worker(real_bus, trace_store, blob_store, consumer_name="worker-c")
     assert await worker_c.reclaim_once(min_idle_ms=0, count=10) == 0
+
+
+class _CancellationMaskingBus:
+    """A bus double standing in for what redis-py's own internal
+    asyncio.timeout() actually does: a real task cancellation delivered
+    while ``read_group`` is blocked comes out as a plain exception, not
+    ``asyncio.CancelledError`` — indistinguishable from a genuine
+    idle-poll timeout by type alone."""
+
+    async def ensure_group(self, stream: str, group: str) -> None:
+        return None
+
+    async def read_group(
+        self, stream: str, group: str, consumer: str, *, count: int, block_ms: int
+    ) -> list[BusMessage]:
+        try:
+            await asyncio.Event().wait()  # blocks until this task is cancelled
+        except asyncio.CancelledError:
+            raise TimeoutError("simulated masked cancellation") from None
+        return []  # pragma: no cover — unreachable, satisfies the return type
+
+
+async def test_store_worker__run_forever_exits_when_cancelled_mid_poll(
+    tmp_path: Path,
+) -> None:
+    """The CI hang this regression-tests: a masked cancellation (see
+    _CancellationMaskingBus) must not make run_forever()'s broad
+    ``except Exception`` swallow it and retry forever — whatever awaits
+    this task (app.py's lifespan shutdown, in production) needs it to
+    actually exit instead of hanging until something else intervenes."""
+    worker = _make_worker(
+        _CancellationMaskingBus(),  # type: ignore[arg-type]
+        InMemoryTraceStore(),
+        FilesystemBlobStore(tmp_path),
+    )
+    task = asyncio.create_task(worker.run_forever())
+    await asyncio.sleep(0.05)  # let it reach the blocked read
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=1.0)
