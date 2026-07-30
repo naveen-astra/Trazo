@@ -11,6 +11,20 @@ from fastapi.testclient import TestClient
 from trazo_server.app import create_app
 from trazo_server.config import Settings
 
+# Deliberately unreachable rather than relying on ambient absence: CI's
+# `python` job env-points Settings' defaults at real, live Postgres/Redis
+# service containers for every step, so "nothing's listening" is false
+# there (same trap test_readyz__reports_not_ready_without_live_dependencies
+# hit below). Worse than a wrong assertion here, though — a *real* worker
+# left running against genuinely-reachable infra blocks in its blocking
+# bus read (StoreWorker.run_forever's poll_block_ms) and cancelling it
+# during TestClient teardown was observed taking 60s+ against GitHub's
+# runners specifically (not reproducible against a local Postgres/Redis)
+# until pytest-timeout killed the test — so this isn't just about
+# asserting the right thing, it's what keeps these two tests fast at all.
+_UNREACHABLE_DATABASE_URL = "postgresql://trazo:trazo@localhost:1/trazo"
+_UNREACHABLE_REDIS_URL = "redis://localhost:1/0"
+
 
 def test_app__store_worker_enabled_starts_and_stops_cleanly_without_redis(
     tmp_path: Path,
@@ -19,7 +33,13 @@ def test_app__store_worker_enabled_starts_and_stops_cleanly_without_redis(
     shutdown even when Redis is unreachable (run_forever catches and logs
     per-iteration errors) — a transient infra hiccup must not take the
     whole control plane down with it."""
-    settings = Settings(feature_store_worker=True, blob_root=str(tmp_path / "blobs"))
+    settings = Settings(
+        feature_store_worker=True,
+        feature_detector_worker=False,
+        database_url=_UNREACHABLE_DATABASE_URL,
+        redis_url=_UNREACHABLE_REDIS_URL,
+        blob_root=str(tmp_path / "blobs"),
+    )
     with TestClient(create_app(settings)) as test_client:
         response = test_client.get("/healthz")
         assert response.status_code == 200
@@ -31,7 +51,13 @@ def test_app__detector_worker_enabled_starts_and_stops_cleanly_without_redis(
     """Same DoD as the store-worker case above, for the detector worker
     (TRZ-P5-06): a transient infra hiccup must not take the whole control
     plane down with it."""
-    settings = Settings(feature_detector_worker=True, blob_root=str(tmp_path / "blobs"))
+    settings = Settings(
+        feature_store_worker=False,
+        feature_detector_worker=True,
+        database_url=_UNREACHABLE_DATABASE_URL,
+        redis_url=_UNREACHABLE_REDIS_URL,
+        blob_root=str(tmp_path / "blobs"),
+    )
     with TestClient(create_app(settings)) as test_client:
         response = test_client.get("/healthz")
         assert response.status_code == 200
@@ -84,8 +110,18 @@ def test_readyz__reports_not_ready_without_live_dependencies(
     containers for every step, so relying on "nothing's listening" isn't
     actually true there (or on a dev machine with Postgres/Redis running
     locally for something else) — this must fail the same way regardless
-    of what else happens to be reachable on the host."""
-    settings = Settings(feature_store_worker=False, blob_root=str(tmp_path / "blobs"))
+    of what else happens to be reachable on the host. Both worker flags
+    are off: this test only cares about the readyz handler's own logic,
+    and a real worker started against CI's live service containers (the
+    handler's own engine/redis_client get monkeypatched below, but a
+    worker builds and uses its own bus/store independently) has separately
+    been observed to make TestClient teardown take 60s+ against GitHub's
+    runners specifically."""
+    settings = Settings(
+        feature_store_worker=False,
+        feature_detector_worker=False,
+        blob_root=str(tmp_path / "blobs"),
+    )
     with TestClient(create_app(settings)) as test_client:
         app = test_client.app
         monkeypatch.setattr(app.state, "engine", _RaisingEngine())
@@ -102,7 +138,13 @@ def test_readyz__reports_not_ready_without_live_dependencies(
 def test_readyz__reports_ready_when_dependencies_are_reachable(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    settings = Settings(feature_store_worker=False, blob_root=str(tmp_path / "blobs"))
+    # Both worker flags off, same reason as the not-ready case above: this
+    # test only cares about the readyz handler's own (monkeypatched) logic.
+    settings = Settings(
+        feature_store_worker=False,
+        feature_detector_worker=False,
+        blob_root=str(tmp_path / "blobs"),
+    )
     with TestClient(create_app(settings)) as test_client:
         app = test_client.app
         # AsyncEngine/redis.asyncio.Redis attributes aren't monkeypatchable
