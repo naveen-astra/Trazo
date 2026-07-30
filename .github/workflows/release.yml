@@ -1,0 +1,81 @@
+# Release engineering (TRZ-P7-02). Triggered by pushing a tag matching
+# v*; builds the SDK wheel, the dashboard's static bundle, and a
+# standalone compose archive, then attaches all three to a GitHub
+# Release. Two safety gates run before anything is built: every
+# package's own declared version must match the tag exactly
+# (scripts/check_release_versions.py), and the frozen event schema must
+# not have drifted since the previous tag without a version bump
+# (scripts/check_schema_version_bump.py, same script ci.yml already
+# runs per-PR against origin/main -- here against the last release
+# instead). Release notes are GitHub's own auto-generated changelog
+# (commits/PRs merged since the previous tag), not a hand-maintained
+# file: CHANGELOG.md is one of this repo's internal-planning-doc
+# exclusions (.gitignore) and isn't published, so nothing here can
+# depend on it existing in the checked-out tree.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need full tag history for the schema cross-check below
+
+      - name: Version stamping check (tag must match every package's own version)
+        run: |
+          python3 scripts/check_release_versions.py "${{ github.ref_name }}" \
+            sdk/pyproject.toml control-plane/pyproject.toml dashboard/package.json
+
+      - name: Schema freeze cross-check (no drift since the last release)
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 "${{ github.ref_name }}^" 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            git show "$PREV_TAG:schema/trace-event.v1.schema.json" > /tmp/schema-before.json 2>/dev/null || echo '{}' > /tmp/schema-before.json
+          else
+            echo '{}' > /tmp/schema-before.json
+          fi
+          python3 scripts/check_schema_version_bump.py /tmp/schema-before.json schema/trace-event.v1.schema.json
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build SDK wheel
+        working-directory: sdk
+        run: uv build
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Build dashboard bundle
+        working-directory: dashboard
+        run: |
+          npm ci
+          npm run build
+          tar -czf ../dashboard-dist-${{ github.ref_name }}.tar.gz -C dist .
+
+      - name: Build compose archive
+        run: bash scripts/build_compose_archive.sh trazo-compose-${{ github.ref_name }}.tar.gz
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
+            sdk/dist/*.whl \
+            dashboard-dist-${{ github.ref_name }}.tar.gz \
+            trazo-compose-${{ github.ref_name }}.tar.gz
