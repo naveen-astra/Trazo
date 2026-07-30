@@ -1,6 +1,7 @@
 """Ops-endpoint tests for the app factory (TRZ-P0-02/03, TRZ-P1-08)."""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -10,22 +11,26 @@ from trazo_server.app import create_app
 from trazo_server.config import Settings
 
 
-def test_app__store_worker_enabled_starts_and_stops_cleanly_without_redis() -> None:
+def test_app__store_worker_enabled_starts_and_stops_cleanly_without_redis(
+    tmp_path: Path,
+) -> None:
     """TRZ-P1-06: the in-process worker task must not crash app startup or
     shutdown even when Redis is unreachable (run_forever catches and logs
     per-iteration errors) — a transient infra hiccup must not take the
     whole control plane down with it."""
-    settings = Settings(feature_store_worker=True)
+    settings = Settings(feature_store_worker=True, blob_root=str(tmp_path / "blobs"))
     with TestClient(create_app(settings)) as test_client:
         response = test_client.get("/healthz")
         assert response.status_code == 200
 
 
-def test_app__detector_worker_enabled_starts_and_stops_cleanly_without_redis() -> None:
+def test_app__detector_worker_enabled_starts_and_stops_cleanly_without_redis(
+    tmp_path: Path,
+) -> None:
     """Same DoD as the store-worker case above, for the detector worker
     (TRZ-P5-06): a transient infra hiccup must not take the whole control
     plane down with it."""
-    settings = Settings(feature_detector_worker=True)
+    settings = Settings(feature_detector_worker=True, blob_root=str(tmp_path / "blobs"))
     with TestClient(create_app(settings)) as test_client:
         response = test_client.get("/healthz")
         assert response.status_code == 200
@@ -70,9 +75,9 @@ class _FakeRedis:
 
 
 def test_readyz__reports_ready_when_dependencies_are_reachable(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    settings = Settings(feature_store_worker=False)
+    settings = Settings(feature_store_worker=False, blob_root=str(tmp_path / "blobs"))
     with TestClient(create_app(settings)) as test_client:
         app = test_client.app
         # AsyncEngine/redis.asyncio.Redis attributes aren't monkeypatchable
