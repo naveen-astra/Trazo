@@ -84,6 +84,7 @@ jobs:
           python scripts/check_schema_version_bump.py /tmp/schema-before.json schema/trace-event.v1.schema.json
       - name: SDK — sync, typecheck, test
         working-directory: sdk
+        timeout-minutes: 10
         run: |
           uv sync --dev --all-extras
           uv run mypy
@@ -113,7 +114,15 @@ jobs:
         # real LangGraph/CrewAI adapters, not just Substituter unit tests.
         run: uv run --project sdk python scripts/replay/verify_fidelity.py all
       - name: Control plane — sync, typecheck, test
+        # A run against the real postgres/redis service containers above
+        # hung silently here for 4+ hours (no output was ever flushed
+        # under pytest's default stdout buffering, so nothing distinguished
+        # it from a slow run until it was manually canceled) -- this
+        # step-level ceiling, plus pytest-timeout's per-test bound
+        # (control-plane/pyproject.toml), stop a repeat from burning the
+        # runner for anywhere near GitHub's own 6h job ceiling.
         working-directory: control-plane
+        timeout-minutes: 10
         run: |
           uv sync --dev
           uv run mypy
