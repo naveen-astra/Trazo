@@ -60,6 +60,7 @@ trazo = "trazo.cli.main:main"
 dev = [
     "pytest>=8.3",
     "pytest-cov>=5.0",
+    "pytest-timeout>=2.3",
     "mypy>=1.13",
     "ruff>=0.8",
     "jsonschema>=4.23",
@@ -76,6 +77,10 @@ packages = ["src/trazo"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# Same protective bound as control-plane/pyproject.toml, applied here
+# proactively rather than after a real SDK-side hang (see that file's
+# comment for the incident that motivated it).
+timeout = 60
 
 [tool.mypy]
 strict = true
