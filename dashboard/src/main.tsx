@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 
 import App from "./App";
+import ReplayStepperPage from "./pages/ReplayStepperPage";
 import RunDetailPage from "./pages/RunDetailPage";
 import RunsPage from "./pages/RunsPage";
 import "./index.css";
@@ -17,6 +18,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <RunsPage /> },
       { path: "runs/:runId", element: <RunDetailPage /> },
+      { path: "runs/:runId/replay", element: <ReplayStepperPage /> },
     ],
   },
 ]);

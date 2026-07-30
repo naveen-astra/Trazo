@@ -35,6 +35,11 @@ export default function RunDetailPage() {
         <h1 style={{ fontFamily: "ui-monospace, monospace", fontSize: "1.1rem" }}>{runId}</h1>
         {run && <StatusBadge status={run.status} />}
         {run?.status === "running" && <LiveBadge />}
+        {run && run.status !== "running" && (
+          <Link to={`/runs/${runId}/replay`} className="run-detail__replay-link">
+            step through replay &rarr;
+          </Link>
+        )}
       </div>
 
       {isLoading && <p>Loading run&hellip;</p>}
