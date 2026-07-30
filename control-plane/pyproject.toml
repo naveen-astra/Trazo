@@ -26,6 +26,7 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=5.0",
+    "pytest-timeout>=2.3",
     "mypy>=1.13",
     "ruff>=0.8",
     "jsonschema>=4.23",
@@ -42,6 +43,13 @@ packages = ["src/trazo_server"]
 testpaths = ["tests"]
 addopts = "-q"
 asyncio_mode = "auto"
+# A run against real Postgres hung silently for 4+ hours in CI (no
+# per-test output ever flushed under pytest's default stdout buffering,
+# so the job gave no signal it was stuck until GitHub's own 6h job
+# ceiling would've eventually killed it). This bounds any single test —
+# most likely a lock-contention deadlock in the concurrent append_event
+# test — to failing loudly instead.
+timeout = 60
 
 [tool.mypy]
 strict = true
