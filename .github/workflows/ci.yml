@@ -82,6 +82,8 @@ jobs:
         run: |
           git show origin/main:schema/trace-event.v1.schema.json > /tmp/schema-before.json 2>/dev/null || echo '{}' > /tmp/schema-before.json
           python scripts/check_schema_version_bump.py /tmp/schema-before.json schema/trace-event.v1.schema.json
+      - name: Debt-marker check (every marker links a real task ID)
+        run: python scripts/check_debt_comments.py
       - name: SDK — sync, typecheck, test
         working-directory: sdk
         timeout-minutes: 10
