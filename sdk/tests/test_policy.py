@@ -7,7 +7,7 @@ import json
 import httpx
 import pytest
 
-from trazo.core.context import run_scope
+from trazo.core.context import current_run_context, run_scope
 from trazo.core.policy import PolicyFail, PolicyHook, PolicyMode
 from trazo.errors import PolicyDenied
 
@@ -129,6 +129,58 @@ def test_check__second_call_with_the_same_fingerprint_is_cached() -> None:
         )
 
     assert call_count == 1
+
+
+def test_check__same_fingerprint_but_higher_cost_re_evaluates_and_can_now_deny() -> (
+    None
+):
+    """The exact bug a live budget-chaos demo run surfaced: a tool called
+    repeatedly with identical args (a runaway loop, the realistic case a
+    cost cap exists to catch) must not keep reusing a stale "allow" from
+    when the run's cost was still low. Confirmed live before this fix: a
+    real run hit $108 in recorded cost with zero policy decisions ever
+    made, because the first (cheap) call cached allow and every later
+    identical call reused it without re-checking."""
+    decisions = iter(
+        [
+            {"decision": "allow", "policy_id": "", "reasons": []},
+            {
+                "decision": "deny",
+                "policy_id": "cost_cap",
+                "reasons": ["over cap"],
+            },
+        ]
+    )
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        return httpx.Response(200, json=next(decisions))
+
+    hook = _hook(handler, mode=PolicyMode.ENFORCE)
+    with run_scope("proj"):
+        hook.check(
+            kind="tool.call",
+            tool_name="x",
+            args={"a": 1},
+            side_effect_class="external",
+        )
+
+        ctx = current_run_context()
+        assert ctx is not None
+        ctx.totals.cost_usd = 100.0  # simulates LLM calls accruing cost since
+
+        with pytest.raises(PolicyDenied) as exc_info:
+            hook.check(
+                kind="tool.call",
+                tool_name="x",
+                args={"a": 1},
+                side_effect_class="external",
+            )
+
+    assert call_count == 2
+    assert exc_info.value.decision == "deny"
 
 
 def test_check__different_args_are_not_cached_together() -> None:

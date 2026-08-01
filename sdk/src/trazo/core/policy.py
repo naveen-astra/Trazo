@@ -111,9 +111,23 @@ class PolicyHook:
             else _governed_side_effect_classes_from_env()
         )
         self._client = client or httpx.Client(timeout=timeout_seconds)
-        # fingerprint -> (decision, policy_id, reasons); one PolicyHook per
-        # trazo.init() call, so this is naturally scoped to one run.
-        self._cache: dict[str, tuple[str, str, list[str]]] = {}
+        # (fingerprint, cost_usd_so_far) -> (decision, policy_id, reasons);
+        # one PolicyHook per trazo.init() call, so this is naturally scoped
+        # to one run. cost_usd_so_far rides along with the fingerprint
+        # because it's mutable run state a policy can legitimately depend
+        # on (cost_cap.rego: input.run_context.cost_usd_so_far) -- caching
+        # on fingerprint alone let a genuinely repeated action (the same
+        # tool called with the same args across loop iterations -- exactly
+        # what a runaway-cost scenario looks like) keep reusing an "allow"
+        # decision from when the run's cost was still low, silently
+        # defeating the cap for the rest of the run. Confirmed live: a
+        # budget-chaos demo run hit $108 in recorded cost with zero policy
+        # decisions ever recorded, because the first (cheap) web_search
+        # call cached "allow" and every identical later call reused it.
+        # cost_usd_so_far only grows within a run, so this still hits the
+        # cache for truly back-to-back identical calls (nothing changed
+        # cost between them) while invalidating once it has.
+        self._cache: dict[tuple[str, float], tuple[str, str, list[str]]] = {}
 
     def check(
         self,
@@ -138,8 +152,10 @@ class PolicyHook:
             raise NoActiveRunError()
 
         fingerprint = fingerprint_for(kind, {"tool_name": tool_name, "args": args})
+        cost_usd_so_far = ctx.totals.cost_usd
+        cache_key = (fingerprint, cost_usd_so_far)
 
-        cached = self._cache.get(fingerprint)
+        cached = self._cache.get(cache_key)
         if cached is not None:
             decision, policy_id, reasons = cached
         else:
@@ -151,9 +167,9 @@ class PolicyHook:
                 tool_name=tool_name,
                 side_effect_class=side_effect_class,
                 projected_cost_usd=projected_cost_usd,
-                cost_usd_so_far=ctx.totals.cost_usd,
+                cost_usd_so_far=cost_usd_so_far,
             )
-            self._cache[fingerprint] = (decision, policy_id, reasons)
+            self._cache[cache_key] = (decision, policy_id, reasons)
 
         if decision in _DECIDED_STATES_THAT_BLOCK and self.mode is PolicyMode.ENFORCE:
             raise PolicyDenied(decision=decision, policy_id=policy_id, reasons=reasons)
