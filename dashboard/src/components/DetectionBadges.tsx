@@ -30,26 +30,26 @@ export default function DetectionBadges({ detections }: DetectionBadgesProps) {
   }
 
   return (
-    <div className="detection-badges">
+    <div className="row" style={{ gap: 8 }}>
       {detections.map((detection) => {
         const color = SEVERITY_COLOR[detection.severity] ?? "var(--text-muted)";
         const evidence = evidenceEventIds(detection);
         return (
-          <details
-            key={detection.detection_id}
-            className="detection-badge"
-            style={{ borderColor: color }}
-          >
-            <summary>
-              <span className="detection-badge__dot" style={{ background: color }} />
+          <details key={detection.detection_id}>
+            <summary className="badge" style={{ color, cursor: "pointer", listStyle: "none" }}>
+              <span className="badge__dot" />
               {detection.detector}
-              <span className="detection-badge__severity">{detection.severity}</span>
+              <span className="muted" style={{ fontWeight: 400 }}>
+                {detection.severity}
+              </span>
             </summary>
             {evidence.length > 0 && (
-              <ul className="detection-badge__evidence">
+              <ul className="muted" style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 11.5 }}>
                 {evidence.map((eventId) => (
                   <li key={eventId}>
-                    <a href={`#evt-${eventId}`}>{eventId}</a>
+                    <a href={`#evt-${eventId}`} className="mono">
+                      {eventId}
+                    </a>
                   </li>
                 ))}
               </ul>

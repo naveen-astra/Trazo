@@ -134,6 +134,28 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/stats": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Stats
+     * @description Fleet-wide rollups for the dashboard Overview: run/failure/cost
+     *     counters, a per-day series, cost split by project, and the newest
+     *     detections across every run.
+     */
+    get: operations["get_stats_v1_stats_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/runs/{run_id}/replay-bundle": {
     parameters: {
       query?: never;
@@ -489,6 +511,51 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** StatsDailyPoint */
+    StatsDailyPoint: {
+      /** Date */
+      date: string;
+      /** Runs */
+      runs: number;
+      /** Failed Runs */
+      failed_runs: number;
+      /** Cost Usd */
+      cost_usd: number;
+    };
+    /** StatsOut */
+    StatsOut: {
+      /** Total Runs */
+      total_runs: number;
+      /** Failed Runs */
+      failed_runs: number;
+      /** Active Runs */
+      active_runs: number;
+      /** Total Cost Usd */
+      total_cost_usd: number;
+      /** Policy Denials */
+      policy_denials: number;
+      /** Total Detections */
+      total_detections: number;
+      /** Window Runs */
+      window_runs: number;
+      /** Daily */
+      daily: components["schemas"]["StatsDailyPoint"][];
+      /** Cost By Project */
+      cost_by_project: components["schemas"]["StatsProjectCost"][];
+      /** Recent Detections */
+      recent_detections: components["schemas"]["DetectionOut"][];
+      /** Recent Policy Decisions */
+      recent_policy_decisions: components["schemas"]["PolicyDecisionOut"][];
+    };
+    /** StatsProjectCost */
+    StatsProjectCost: {
+      /** Project Id */
+      project_id: string;
+      /** Runs */
+      runs: number;
+      /** Cost Usd */
+      cost_usd: number;
+    };
     /** ValidationError */
     ValidationError: {
       /** Location */
@@ -740,6 +807,26 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_stats_v1_stats_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["StatsOut"];
         };
       };
     };

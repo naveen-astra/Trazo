@@ -12,6 +12,9 @@ export type DetectionOut = components["schemas"]["DetectionOut"];
 export type DetectionsPage = components["schemas"]["DetectionsPage"];
 export type PolicyDecisionOut = components["schemas"]["PolicyDecisionOut"];
 export type PolicyDecisionsPage = components["schemas"]["PolicyDecisionsPage"];
+export type StatsOut = components["schemas"]["StatsOut"];
+export type StatsDailyPoint = components["schemas"]["StatsDailyPoint"];
+export type StatsProjectCost = components["schemas"]["StatsProjectCost"];
 
 const BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8420";
@@ -41,6 +44,13 @@ export function listRuns(params: ListRunsParams = {}): Promise<RunsPage> {
 
 export function getRun(runId: string): Promise<RunOut> {
   return fetchJson<RunOut>(`/v1/runs/${encodeURIComponent(runId)}`);
+}
+
+/** Fleet-wide rollups for the Overview. Every number it shows is computed
+ * server-side (ARCHITECTURE.md §2.3: the dashboard is a pure consumer and
+ * computes no rollups of its own). */
+export function getStats(): Promise<StatsOut> {
+  return fetchJson<StatsOut>("/v1/stats");
 }
 
 export interface ListRunEventsParams {

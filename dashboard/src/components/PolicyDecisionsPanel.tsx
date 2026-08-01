@@ -23,36 +23,48 @@ export default function PolicyDecisionsPanel({ decisions }: PolicyDecisionsPanel
   }
 
   return (
-    <div className="policy-decisions">
-      <h2 className="policy-decisions__heading">Policy decisions</h2>
-      <ul className="policy-decisions__list">
+    <div className="card">
+      <div className="card__head">
+        <h2 className="card__title">Policy decisions</h2>
+        <span className="muted" style={{ fontSize: 12 }}>
+          {decisions.length}
+        </span>
+      </div>
+      <div className="stack" style={{ gap: 8 }}>
         {decisions.map((decision) => {
           const color = DECISION_COLOR[decision.decision] ?? "var(--text-muted)";
           return (
-            <li
+            <div
               key={decision.decision_id}
-              className="policy-decision"
-              style={{ borderColor: color }}
+              style={{
+                borderLeft: `2px solid ${color}`,
+                paddingLeft: 10,
+              }}
             >
-              <div className="policy-decision__header">
-                <span className="policy-decision__dot" style={{ background: color }} />
-                <span className="policy-decision__decision" style={{ color }}>
+              <div className="row" style={{ gap: 8 }}>
+                <span className="badge" style={{ color }}>
+                  <span className="badge__dot" />
                   {decision.decision}
                 </span>
-                <span className="policy-decision__policy-id">{decision.policy_id}</span>
-                <span className="policy-decision__action-kind">{decision.action_kind}</span>
+                <span style={{ fontWeight: 550 }}>{decision.policy_id}</span>
+                <span className="muted mono" style={{ fontSize: 12 }}>
+                  {decision.action_kind}
+                </span>
               </div>
               {decision.reasons.length > 0 && (
-                <ul className="policy-decision__reasons">
+                <ul
+                  className="muted"
+                  style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 12.5 }}
+                >
                   {decision.reasons.map((reason, index) => (
                     <li key={index}>{reason}</li>
                   ))}
                 </ul>
               )}
-            </li>
+            </div>
           );
         })}
-      </ul>
+      </div>
     </div>
   );
 }

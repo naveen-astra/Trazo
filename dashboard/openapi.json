@@ -434,6 +434,25 @@
         }
       }
     },
+    "/v1/stats": {
+      "get": {
+        "summary": "Get Stats",
+        "description": "Fleet-wide rollups for the dashboard Overview: run/failure/cost\ncounters, a per-day series, cost split by project, and the newest\ndetections across every run.",
+        "operationId": "get_stats_v1_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/runs/{run_id}/replay-bundle": {
       "get": {
         "summary": "Get Replay Bundle",
@@ -1207,6 +1226,123 @@
         "type": "object",
         "required": ["runs", "next_cursor"],
         "title": "RunsPage"
+      },
+      "StatsDailyPoint": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "runs": {
+            "type": "integer",
+            "title": "Runs"
+          },
+          "failed_runs": {
+            "type": "integer",
+            "title": "Failed Runs"
+          },
+          "cost_usd": {
+            "type": "number",
+            "title": "Cost Usd"
+          }
+        },
+        "type": "object",
+        "required": ["date", "runs", "failed_runs", "cost_usd"],
+        "title": "StatsDailyPoint"
+      },
+      "StatsOut": {
+        "properties": {
+          "total_runs": {
+            "type": "integer",
+            "title": "Total Runs"
+          },
+          "failed_runs": {
+            "type": "integer",
+            "title": "Failed Runs"
+          },
+          "active_runs": {
+            "type": "integer",
+            "title": "Active Runs"
+          },
+          "total_cost_usd": {
+            "type": "number",
+            "title": "Total Cost Usd"
+          },
+          "policy_denials": {
+            "type": "integer",
+            "title": "Policy Denials"
+          },
+          "total_detections": {
+            "type": "integer",
+            "title": "Total Detections"
+          },
+          "window_runs": {
+            "type": "integer",
+            "title": "Window Runs"
+          },
+          "daily": {
+            "items": {
+              "$ref": "#/components/schemas/StatsDailyPoint"
+            },
+            "type": "array",
+            "title": "Daily"
+          },
+          "cost_by_project": {
+            "items": {
+              "$ref": "#/components/schemas/StatsProjectCost"
+            },
+            "type": "array",
+            "title": "Cost By Project"
+          },
+          "recent_detections": {
+            "items": {
+              "$ref": "#/components/schemas/DetectionOut"
+            },
+            "type": "array",
+            "title": "Recent Detections"
+          },
+          "recent_policy_decisions": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyDecisionOut"
+            },
+            "type": "array",
+            "title": "Recent Policy Decisions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_runs",
+          "failed_runs",
+          "active_runs",
+          "total_cost_usd",
+          "policy_denials",
+          "total_detections",
+          "window_runs",
+          "daily",
+          "cost_by_project",
+          "recent_detections",
+          "recent_policy_decisions"
+        ],
+        "title": "StatsOut"
+      },
+      "StatsProjectCost": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "runs": {
+            "type": "integer",
+            "title": "Runs"
+          },
+          "cost_usd": {
+            "type": "number",
+            "title": "Cost Usd"
+          }
+        },
+        "type": "object",
+        "required": ["project_id", "runs", "cost_usd"],
+        "title": "StatsProjectCost"
       },
       "ValidationError": {
         "properties": {

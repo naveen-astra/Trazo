@@ -54,35 +54,40 @@ export default function RunTimeline({ events }: RunTimelineProps) {
   return (
     <div className="timeline">
       {groups.map((group, index) => (
-        <div className="timeline-step" key={group.stepId ?? `ungrouped-${index}`}>
+        <div
+          className={group.stepId !== null ? "timeline__step" : undefined}
+          key={group.stepId ?? `ungrouped-${index}`}
+        >
           {group.stepId !== null && (
-            <div className="timeline-step__header">step: {group.stepName ?? group.stepId}</div>
+            <div className="timeline__step-name">step: {group.stepName ?? group.stepId}</div>
           )}
-          <div className="timeline-step__events">
-            {group.events.map((event) => {
-              const chipColor = eventKindChipColor(event.kind);
-              return (
-                <button
-                  key={event.event_id}
-                  id={`evt-${event.event_id}`}
-                  type="button"
-                  className="timeline-event"
-                  onClick={() => setSelected(event)}
-                >
-                  <span
-                    className="event-kind-chip"
-                    style={
-                      chipColor
-                        ? { background: chipColor }
-                        : { border: "1px solid var(--text-muted)" }
-                    }
-                  />
-                  <span className="event-kind-label">{event.kind}</span>
-                  <span className="event-seq">#{event.seq}</span>
-                </button>
-              );
-            })}
-          </div>
+          {group.events.map((event) => {
+            const chipColor = eventKindChipColor(event.kind);
+            return (
+              <button
+                key={event.event_id}
+                id={`evt-${event.event_id}`}
+                type="button"
+                className={
+                  selected?.event_id === event.event_id
+                    ? "timeline__event timeline__event--selected"
+                    : "timeline__event"
+                }
+                onClick={() => setSelected(event)}
+              >
+                <span
+                  className="chip__dot"
+                  style={
+                    chipColor
+                      ? { background: chipColor }
+                      : { border: "1px solid var(--text-muted)" }
+                  }
+                />
+                <span className="timeline__kind">{event.kind}</span>
+                <span className="timeline__seq">#{event.seq}</span>
+              </button>
+            );
+          })}
         </div>
       ))}
       {selected && <PayloadDrawer event={selected} onClose={() => setSelected(null)} />}
