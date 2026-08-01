@@ -39,6 +39,10 @@ benchmark/corpus/_runs/
 Thumbs.db
 
 # Internal planning/design docs: kept locally, not published in the repo.
-# Any file named README.md (at any depth) is the one exception.
+# README.md (any depth) and the root SECURITY.md are the exceptions --
+# GitHub's own Security-tab vulnerability-reporting feature needs the
+# latter actually published to work at all (SECURITY.md's own content
+# tells readers to use it; TRZ-P7-05 caught this being silently untrue).
 *.md
 !README.md
+!/SECURITY.md
