@@ -165,3 +165,32 @@ def test_metrics__exposes_prometheus_text(client: TestClient) -> None:
     response = client.get("/metrics")
     assert response.status_code == 200
     assert "text/plain" in response.headers["content-type"]
+
+
+def test_cors__preflight_from_the_dashboard_origin_is_allowed(
+    client: TestClient,
+) -> None:
+    """Found running the real dashboard against a real compose stack in a
+    real browser (no CORS middleware at all — every fetch from the
+    dashboard's own origin to the control plane's was silently blocked;
+    the dashboard's live-browser verification up to this point had only
+    ever run against a same-origin stdlib mock, never the real cross-
+    origin compose layout). Confirmed by hand first: a real preflight
+    against this app returned 405, not a CORS response, before the fix."""
+    response = client.options(
+        "/v1/runs",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "*"
+
+
+def test_cors__actual_get_response_carries_the_allow_origin_header(
+    client: TestClient,
+) -> None:
+    response = client.get("/healthz", headers={"Origin": "http://localhost:5173"})
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "*"

@@ -16,6 +16,7 @@ from typing import Any
 
 import sqlalchemy as sa
 from fastapi import FastAPI, Response
+from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import make_asgi_app
 from redis.asyncio import Redis
 
@@ -108,6 +109,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
 
     app.add_middleware(RequestIDMiddleware)
+    # Outermost (added last -- Starlette wraps in reverse order of
+    # add_middleware calls), so a browser's OPTIONS preflight gets a CORS
+    # response before reaching anything else. No CORS middleware at all
+    # was the actual bug behind the dashboard's live-browser verification
+    # never having been done against the real compose stack (ROADMAP.md's
+    # own P2 footnote: only a stdlib mock control plane, same-origin,
+    # never hit this) -- confirmed directly: a real preflight against this
+    # app returned 405, not a CORS response, before this fix.
+    cors_origins = (
+        settings.cors_origins.split(",") if settings.cors_origins != "*" else ["*"]
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     register_problem_details_handlers(app)
     app.include_router(ingest_router)
     app.include_router(query_router)

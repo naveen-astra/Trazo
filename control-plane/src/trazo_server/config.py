@@ -37,3 +37,14 @@ class Settings(BaseSettings):
     # structlog output format (ARCHITECTURE.md §8): JSON in prod/containers,
     # human-readable console renderer for local dev.
     log_json: bool = True
+    # CORS origins the dashboard is served from, comma-separated ("*" for
+    # any). Query/dashboard endpoints are already documented as
+    # unauthenticated-by-default, intended for localhost/trusted-network
+    # only (ARCHITECTURE.md §5, ADR-009) -- CORS here controls which
+    # *browser* origins may read them, not whether the API itself is
+    # protected, and ingest/policy stay key-gated regardless of this
+    # setting. Defaults permissive to match that already-documented
+    # posture and because the dashboard's own port is user-configurable
+    # (deploy/.env's DASHBOARD_PORT), so no single origin is a safe
+    # non-permissive default without knowing it in advance.
+    cors_origins: str = "*"
