@@ -96,6 +96,33 @@ class PolicyDecisionsPage(BaseModel):
     decisions: list[PolicyDecisionOut]
 
 
+class StatsDailyPoint(BaseModel):
+    date: str  # YYYY-MM-DD, UTC
+    runs: int
+    failed_runs: int
+    cost_usd: float
+
+
+class StatsProjectCost(BaseModel):
+    project_id: str
+    runs: int
+    cost_usd: float
+
+
+class StatsOut(BaseModel):
+    total_runs: int
+    failed_runs: int
+    active_runs: int
+    total_cost_usd: float
+    policy_denials: int
+    total_detections: int
+    window_runs: int
+    daily: list[StatsDailyPoint]
+    cost_by_project: list[StatsProjectCost]
+    recent_detections: list[DetectionOut]
+    recent_policy_decisions: list[PolicyDecisionOut]
+
+
 def _clamp_limit(limit: int) -> int:
     if not (1 <= limit <= _MAX_LIMIT):
         raise ProblemDetailsError(
@@ -283,6 +310,98 @@ async def list_policy_decisions(
         )
     decisions = await store.list_policy_decisions(run_id)
     return PolicyDecisionsPage(decisions=[_policy_decision_out(d) for d in decisions])
+
+
+# The dashboard's Overview is a pure API consumer (ARCHITECTURE.md §2.3:
+# "anything the dashboard computes that matters -- e.g. cost rollups --
+# must come from the API instead"), so every number it shows is computed
+# here, in one round trip, rather than by fetching runs and summing them
+# client-side.
+#
+# Deliberately a bounded scan over the most recent N runs rather than a
+# GROUP BY over the whole table: at MVP corpus scale (ADR-003's "a few
+# million rows" ceiling) this is a single indexed read of already-
+# maintained `runs.totals` rollups, and it keeps the aggregate identical
+# across both TraceStore implementations instead of hand-writing
+# dialect-specific aggregate SQL twice. `window_runs` reports how many
+# runs actually backed the response, so a caller can tell "0 failures"
+# from "0 failures in the last 500 runs". Revisit with a real GROUP BY
+# (or a rollup table) when a measured page load says to -- philosophy #7.
+_STATS_WINDOW_RUNS = 500
+_STATS_RECENT_DETECTIONS = 8
+_STATS_POLICY_WINDOW = 500
+# The denial *count* above is over the whole policy window; this is just
+# how many of those decisions the feed itself renders.
+_STATS_RECENT_DECISIONS = 12
+
+_FAILED_RUN_STATUSES = frozenset({"error", "blocked"})
+_ACTIVE_RUN_STATUSES = frozenset({"running"})
+
+
+@router.get("/stats", response_model=StatsOut)
+async def get_stats(
+    store: Annotated[TraceStore, Depends(get_trace_store)],
+) -> StatsOut:
+    """Fleet-wide rollups for the dashboard Overview: run/failure/cost
+    counters, a per-day series, cost split by project, and the newest
+    detections across every run."""
+    runs = await store.list_runs(limit=_STATS_WINDOW_RUNS)
+
+    daily: dict[str, StatsDailyPoint] = {}
+    by_project: dict[str, StatsProjectCost] = {}
+    total_cost = 0.0
+    failed = 0
+    active = 0
+
+    for run in runs:
+        cost = float(run.totals.get("cost_usd", 0.0) or 0.0)
+        total_cost += cost
+        is_failed = run.status in _FAILED_RUN_STATUSES
+        failed += is_failed
+        active += run.status in _ACTIVE_RUN_STATUSES
+
+        day = run.started_at.date().isoformat()
+        point = daily.get(day) or StatsDailyPoint(
+            date=day, runs=0, failed_runs=0, cost_usd=0.0
+        )
+        daily[day] = StatsDailyPoint(
+            date=day,
+            runs=point.runs + 1,
+            failed_runs=point.failed_runs + is_failed,
+            cost_usd=point.cost_usd + cost,
+        )
+
+        bucket = by_project.get(run.project_id) or StatsProjectCost(
+            project_id=run.project_id, runs=0, cost_usd=0.0
+        )
+        by_project[run.project_id] = StatsProjectCost(
+            project_id=run.project_id,
+            runs=bucket.runs + 1,
+            cost_usd=bucket.cost_usd + cost,
+        )
+
+    recent_detections = await store.list_recent_detections(
+        limit=_STATS_RECENT_DETECTIONS
+    )
+    decisions = await store.list_recent_policy_decisions(limit=_STATS_POLICY_WINDOW)
+
+    return StatsOut(
+        total_runs=len(runs),
+        failed_runs=failed,
+        active_runs=active,
+        total_cost_usd=round(total_cost, 4),
+        policy_denials=sum(1 for d in decisions if d.decision in ("deny", "escalate")),
+        total_detections=len(recent_detections),
+        window_runs=len(runs),
+        daily=sorted(daily.values(), key=lambda p: p.date),
+        cost_by_project=sorted(
+            by_project.values(), key=lambda p: p.cost_usd, reverse=True
+        ),
+        recent_detections=[_detection_out(d) for d in recent_detections],
+        recent_policy_decisions=[
+            _policy_decision_out(d) for d in decisions[:_STATS_RECENT_DECISIONS]
+        ],
+    )
 
 
 _BUNDLE_PAGE_SIZE = 1000

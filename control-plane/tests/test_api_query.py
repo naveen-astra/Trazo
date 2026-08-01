@@ -436,3 +436,86 @@ def test_get_blob__404_for_unknown_sha(client: TestClient) -> None:
 
     assert response.status_code == 404
     assert response.headers["content-type"] == "application/problem+json"
+
+
+async def test_get_stats__aggregates_counts_cost_and_daily_series(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    """The Overview's every number comes from here in one round trip
+    (ARCHITECTURE.md §2.3: the dashboard computes no rollups itself)."""
+    await trace_store.upsert_run(
+        _run(run_id="run_ok", status="ok", totals={"cost_usd": 1.5})
+    )
+    await trace_store.upsert_run(
+        _run(
+            run_id="run_err",
+            status="error",
+            started_at=_NOW + timedelta(days=1),
+            totals={"cost_usd": 2.25},
+        )
+    )
+    await trace_store.upsert_run(
+        _run(run_id="run_live", status="running", project_id="proj_2", totals={})
+    )
+
+    body = client.get("/v1/stats").json()
+
+    assert body["total_runs"] == 3
+    assert body["failed_runs"] == 1
+    assert body["active_runs"] == 1
+    assert body["total_cost_usd"] == 3.75
+    assert body["window_runs"] == 3
+    # one bucket per distinct UTC day, oldest first
+    assert [p["date"] for p in body["daily"]] == [
+        _NOW.date().isoformat(),
+        (_NOW + timedelta(days=1)).date().isoformat(),
+    ]
+    assert body["daily"][1]["failed_runs"] == 1
+    # cost split by project, biggest spender first
+    assert body["cost_by_project"][0]["project_id"] == "proj_1"
+    assert body["cost_by_project"][0]["cost_usd"] == 3.75
+
+
+async def test_get_stats__counts_denials_and_lists_detections_across_runs(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    """Both feeds are fleet-wide, not per-run: an operator's incident
+    view asks "what is going wrong right now", across every run."""
+    await trace_store.upsert_run(_run(run_id="run_a"))
+    await trace_store.upsert_run(_run(run_id="run_b"))
+    await trace_store.insert_detection(
+        _detection(detection_id="det_a", run_id="run_a", raised_at=_NOW)
+    )
+    await trace_store.insert_detection(
+        _detection(
+            detection_id="det_b",
+            run_id="run_b",
+            detector="budget",
+            raised_at=_NOW + timedelta(minutes=5),
+        )
+    )
+    await trace_store.insert_policy_decision(
+        _policy_decision(decision_id="dec_deny", run_id="run_a", decision="deny")
+    )
+    await trace_store.insert_policy_decision(
+        _policy_decision(decision_id="dec_allow", run_id="run_b", decision="allow")
+    )
+
+    body = client.get("/v1/stats").json()
+
+    assert body["policy_denials"] == 1  # the allow is not a violation
+    assert [d["detection_id"] for d in body["recent_detections"]] == [
+        "det_b",
+        "det_a",
+    ]
+
+
+def test_get_stats__empty_store_reports_zeros_not_an_error(
+    client: TestClient,
+) -> None:
+    body = client.get("/v1/stats").json()
+
+    assert body["total_runs"] == 0
+    assert body["total_cost_usd"] == 0.0
+    assert body["daily"] == []
+    assert body["recent_detections"] == []

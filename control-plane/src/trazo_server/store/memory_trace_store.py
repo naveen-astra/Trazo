@@ -152,3 +152,17 @@ class InMemoryTraceStore:
         rows = [d for d in self._policy_decisions.values() if d.run_id == run_id]
         rows.sort(key=lambda d: d.decided_at, reverse=True)
         return rows
+
+    async def list_recent_detections(self, *, limit: int) -> list[DetectionRow]:
+        rows = sorted(
+            self._detections.values(), key=lambda d: d.raised_at, reverse=True
+        )
+        return rows[:limit]
+
+    async def list_recent_policy_decisions(
+        self, *, limit: int
+    ) -> list[PolicyDecisionRow]:
+        rows = sorted(
+            self._policy_decisions.values(), key=lambda d: d.decided_at, reverse=True
+        )
+        return rows[:limit]

@@ -294,6 +294,28 @@ class PostgresTraceStore:
             fetched = result.mappings().all()
         return [_policy_decision_row_from_mapping(row) for row in fetched]
 
+    async def list_recent_detections(self, *, limit: int) -> list[DetectionRow]:
+        stmt = (
+            sa.select(detections).order_by(detections.c.raised_at.desc()).limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            result = await conn.execute(stmt)
+            fetched = result.mappings().all()
+        return [_detection_row_from_mapping(row) for row in fetched]
+
+    async def list_recent_policy_decisions(
+        self, *, limit: int
+    ) -> list[PolicyDecisionRow]:
+        stmt = (
+            sa.select(policy_decisions)
+            .order_by(policy_decisions.c.decided_at.desc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            result = await conn.execute(stmt)
+            fetched = result.mappings().all()
+        return [_policy_decision_row_from_mapping(row) for row in fetched]
+
 
 def _run_row_from_mapping(row: sa.RowMapping) -> RunRow:
     return RunRow(

@@ -133,3 +133,21 @@ class TraceStore(Protocol):
     async def list_policy_decisions(self, run_id: str) -> list[PolicyDecisionRow]:
         """List one run's policy decisions, most recently decided first."""
         ...
+
+    async def list_recent_detections(self, *, limit: int) -> list[DetectionRow]:
+        """Most recently raised detections across *all* runs.
+
+        The per-run ``list_detections`` above answers "what went wrong in
+        this run"; this answers "what is going wrong right now", which is
+        what an operator's incident feed actually asks (the dashboard's
+        Overview). Bounded by ``limit`` rather than paginated: a feed
+        shows the newest N and nothing else ever scrolls back.
+        """
+        ...
+
+    async def list_recent_policy_decisions(
+        self, *, limit: int
+    ) -> list[PolicyDecisionRow]:
+        """Most recently decided policy decisions across *all* runs, same
+        newest-N-only contract as ``list_recent_detections``."""
+        ...
