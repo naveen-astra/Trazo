@@ -65,6 +65,19 @@ def get_policy_hook() -> PolicyHook:
     return _policy_hook
 
 
+def try_get_policy_hook() -> PolicyHook | None:
+    """``get_policy_hook()``, tolerant of ``trazo.init()`` never having
+    been called — every adapter/decorator call site that governs an
+    action needs this same tolerance (tests that construct things with
+    an explicit ``recorder=`` override and no ``trazo.init()`` call at
+    all must not break for a feature, TRZ-P6-04, that's a no-op by
+    default anyway — ``PolicyHook``'s own default mode is ``off``)."""
+    try:
+        return get_policy_hook()
+    except NotInitializedError:
+        return None
+
+
 def is_initialized() -> bool:
     return _recorder is not None
 
@@ -103,3 +116,12 @@ def _install_recorder_for_tests(recorder: Recorder) -> None:
     DiskSpool construction."""
     global _recorder
     _recorder = recorder
+
+
+def _install_policy_hook_for_tests(policy_hook: PolicyHook) -> None:
+    """Test-only: install an already-built PolicyHook (e.g. one wired to a
+    mocked httpx transport) without going through init_policy_hook's own
+    construction, so decorator/adapter call sites see it via
+    try_get_policy_hook()/get_policy_hook() exactly as in production."""
+    global _policy_hook
+    _policy_hook = policy_hook

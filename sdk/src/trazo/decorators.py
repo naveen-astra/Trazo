@@ -25,7 +25,7 @@ import time
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-from trazo.core.runtime import get_recorder
+from trazo.core.runtime import get_recorder, try_get_policy_hook
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -61,6 +61,32 @@ def trace_tool(
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             recorder = get_recorder()
             call_args = _bind_args(fn, args, kwargs)
+
+            # TRZ-P6-04/ADR-006, same governed-action check the LangGraph
+            # adapter's on_tool_start does before dispatching to a native
+            # framework tool -- this decorator is the *other* path a
+            # tool.call reaches Recorder.boundary through (SDK.md §1's
+            # "escape hatch for custom agents / un-adapted boundaries"),
+            # and until this fix it silently skipped policy checking
+            # entirely: confirmed live, a demo using only this decorator
+            # for its tools ran $108 over a $5 cost cap in enforce mode
+            # with zero policy decisions ever made, because nothing here
+            # ever called PolicyHook.check(). Raising PolicyDenied before
+            # execute() is what makes "the blocked call never executes"
+            # true for this path too -- it propagates straight out of
+            # wrapper(), no callback-exception-swallowing concern here
+            # (that's a LangChain-specific problem the adapter's own
+            # raise_error property works around; a plain function call
+            # has no equivalent to work around).
+            policy_hook = try_get_policy_hook()
+            if policy_hook is not None:
+                policy_hook.check(
+                    kind="tool.call",
+                    tool_name=tool_name,
+                    args=call_args,
+                    side_effect_class=side_effect_class,
+                )
+
             start = time.monotonic()
 
             def execute() -> dict[str, Any]:

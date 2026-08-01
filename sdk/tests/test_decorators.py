@@ -9,9 +9,11 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 import pytest
 
 from trazo.core.context import run_scope
+from trazo.core.policy import PolicyHook, PolicyMode
 from trazo.core.recorder import Recorder, RecorderMode
 from trazo.core.replay_bundle import RecordedEvent, ReplayBundle
 from trazo.core.substituter import Substituter
@@ -21,6 +23,7 @@ from trazo.decorators import (
     trace_memory_write,
     trace_tool,
 )
+from trazo.errors import PolicyDenied
 
 
 class _FakeShipper:
@@ -57,6 +60,50 @@ def test_trace_tool__records_a_tool_call_and_returns_the_real_value() -> None:
         result = lookup("k1")
 
     assert result == "value-for-k1"
+
+
+def test_trace_tool__deny_decision_blocks_the_call_in_enforce_mode() -> None:
+    """The exact gap a live demo run surfaced: @trace_tool -- SDK.md §1's
+    "escape hatch for custom agents" -- never called PolicyHook.check()
+    at all, so a governed action executed through it bypassed policy
+    enforcement entirely regardless of mode. Confirmed live before this
+    fix: a demo using only this decorator for its tools ran $108 over a
+    $5 cost cap in enforce mode with zero policy decisions ever made."""
+    from trazo.core.runtime import _install_policy_hook_for_tests
+
+    _install_recorder()
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(
+            200,
+            json={"decision": "deny", "policy_id": "cost_cap", "reasons": ["over cap"]},
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    _install_policy_hook_for_tests(
+        PolicyHook(
+            endpoint="http://example.test",
+            api_key="k",
+            mode=PolicyMode.ENFORCE,
+            client=client,
+        )
+    )
+
+    executed = False
+
+    @trace_tool(side_effect_class="external")
+    def spend(amount: float) -> None:
+        nonlocal executed
+        executed = True
+
+    with run_scope("proj"), pytest.raises(PolicyDenied) as exc_info:
+        spend(999.0)
+
+    assert len(calls) == 1
+    assert executed is False
+    assert exc_info.value.policy_id == "cost_cap"
 
 
 def test_trace_tool__emits_a_schema_shaped_event() -> None:
