@@ -34,7 +34,16 @@ def trace_store() -> InMemoryTraceStore:
 
 @pytest.fixture
 def client(tmp_path: Path, trace_store: InMemoryTraceStore) -> Iterator[TestClient]:
-    settings = Settings(blob_root=str(tmp_path / "blobs"), feature_store_worker=False)
+    settings = Settings(
+        # Both workers off, matching conftest.py's shared fixture. With only
+        # the store worker disabled, the detector worker still starts against
+        # whatever Redis is reachable - in CI that is a live service container
+        # - and blocks in its bus read, so cancelling it during TestClient
+        # teardown has been observed pushing these tests past pytest-timeout.
+        blob_root=str(tmp_path / "blobs"),
+        feature_store_worker=False,
+        feature_detector_worker=False,
+    )
     app = create_app(settings)
     app.dependency_overrides[get_trace_store] = lambda: trace_store
     with TestClient(app) as test_client:

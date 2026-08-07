@@ -281,7 +281,13 @@ def trace_store() -> InMemoryTraceStore:
 
 @pytest.fixture
 def client(tmp_path: Path, trace_store: InMemoryTraceStore) -> Iterator[TestClient]:
-    settings = Settings(blob_root=str(tmp_path / "blobs"), feature_store_worker=False)
+    settings = Settings(
+        # Both workers off - see conftest.py and test_api_query.py: a real
+        # worker against CI's live Redis blocks TestClient teardown.
+        blob_root=str(tmp_path / "blobs"),
+        feature_store_worker=False,
+        feature_detector_worker=False,
+    )
     app = create_app(settings)
     app.dependency_overrides[get_trace_store] = lambda: trace_store
     with TestClient(app) as test_client:

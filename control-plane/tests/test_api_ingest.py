@@ -35,7 +35,10 @@ def client(tmp_path: Path, bus: InMemoryEventBus) -> Iterator[TestClient]:
     settings = Settings(
         api_key=_API_KEY,
         blob_root=str(tmp_path / "blobs"),
-        feature_store_worker=False,  # no real Redis/Postgres under TestClient
+        # Both off: no real Redis/Postgres under TestClient, and a worker left
+        # running against CI's live service containers blocks teardown.
+        feature_store_worker=False,
+        feature_detector_worker=False,
     )
     app = create_app(settings)
     app.dependency_overrides[get_event_bus] = lambda: bus
