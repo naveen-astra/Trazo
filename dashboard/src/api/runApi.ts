@@ -15,6 +15,13 @@ export type PolicyDecisionsPage = components["schemas"]["PolicyDecisionsPage"];
 export type StatsOut = components["schemas"]["StatsOut"];
 export type StatsDailyPoint = components["schemas"]["StatsDailyPoint"];
 export type StatsProjectCost = components["schemas"]["StatsProjectCost"];
+export type StatsDeltas = components["schemas"]["StatsDeltas"];
+export type ToolStat = components["schemas"]["ToolStat"];
+export type ToolsPage = components["schemas"]["ToolsPage"];
+export type AgentStat = components["schemas"]["AgentStat"];
+export type AgentsPage = components["schemas"]["AgentsPage"];
+export type ProjectOut = components["schemas"]["ProjectOut"];
+export type ProjectsPage = components["schemas"]["ProjectsPage"];
 
 const BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8420";
@@ -46,11 +53,46 @@ export function getRun(runId: string): Promise<RunOut> {
   return fetchJson<RunOut>(`/v1/runs/${encodeURIComponent(runId)}`);
 }
 
+export interface StatsParams {
+  /** Restrict to runs started in the last N days; also sets the
+   * baseline the deltas compare against. Omitted = whole window. */
+  days?: number;
+  project?: string;
+}
+
 /** Fleet-wide rollups for the Overview. Every number it shows is computed
  * server-side (ARCHITECTURE.md §2.3: the dashboard is a pure consumer and
  * computes no rollups of its own). */
-export function getStats(): Promise<StatsOut> {
-  return fetchJson<StatsOut>("/v1/stats");
+export function getStats(params: StatsParams = {}): Promise<StatsOut> {
+  const query = new URLSearchParams();
+  if (params.days) query.set("days", String(params.days));
+  if (params.project) query.set("project", params.project);
+  const qs = query.toString();
+  return fetchJson<StatsOut>(`/v1/stats${qs ? `?${qs}` : ""}`);
+}
+
+/** Newest events across every run; `kind` narrows it (the Logs page
+ * passes "sdk.diagnostic"). */
+export function listRecentEvents(
+  params: { kind?: string; limit?: number } = {},
+): Promise<EventsPage> {
+  const query = new URLSearchParams();
+  if (params.kind) query.set("kind", params.kind);
+  if (params.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return fetchJson<EventsPage>(`/v1/events/recent${qs ? `?${qs}` : ""}`);
+}
+
+export function listTools(): Promise<ToolsPage> {
+  return fetchJson<ToolsPage>("/v1/tools");
+}
+
+export function listAgents(): Promise<AgentsPage> {
+  return fetchJson<AgentsPage>("/v1/agents");
+}
+
+export function listProjects(): Promise<ProjectsPage> {
+  return fetchJson<ProjectsPage>("/v1/projects");
 }
 
 export interface ListRunEventsParams {
@@ -120,6 +162,24 @@ export async function getReplayBundle(runId: string): Promise<ReplayBundle> {
 
 export function blobUrl(sha256: string): string {
   return `${BASE_URL}/v1/blobs/${encodeURIComponent(sha256)}`;
+}
+
+/** Project-wide (or, with no project, fleet-wide) SSE stream. Backs the
+ * dashboard's real-time refresh: every list view re-reads the moment an
+ * event lands rather than on a poll tick.
+ *
+ * `tail=1` because the subscriber only needs to know *that* something
+ * happened — it discards the payload and re-reads through the ordinary
+ * query endpoints. Without it the server replays the entire event
+ * history before the first live message, which costs more the longer
+ * the deployment has been recording. The browser's EventSource still
+ * sends `Last-Event-ID` on reconnect, and the server honours that over
+ * `tail`, so a dropped connection resumes rather than skipping ahead.
+ */
+export function firehoseUrl(project?: string): string {
+  const params = new URLSearchParams({ tail: "1" });
+  if (project) params.set("project", project);
+  return `${BASE_URL}/v1/live/firehose?${params.toString()}`;
 }
 
 export function liveRunUrl(runId: string): string {

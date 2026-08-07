@@ -437,8 +437,42 @@
     "/v1/stats": {
       "get": {
         "summary": "Get Stats",
-        "description": "Fleet-wide rollups for the dashboard Overview: run/failure/cost\ncounters, a per-day series, cost split by project, and the newest\ndetections across every run.",
+        "description": "Fleet-wide rollups for the dashboard Overview: run/failure/cost\ncounters, a per-day series, cost split by project, the newest\ndetections across every run, and this window's change against the\none before it.\n\n``days`` restricts to runs started within the last N days (and\ncomputes the deltas against the equally-long window before that);\nomitted means the whole bounded scan with no delta baseline.",
         "operationId": "get_stats_v1_stats_get",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Days"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -446,6 +480,130 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/StatsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/events/recent": {
+      "get": {
+        "summary": "List Recent Events",
+        "description": "Newest events across every run \u2014 the raw trace feed, and (with\n``kind=sdk.diagnostic``) the SDK's own diagnostic log.",
+        "operationId": "list_recent_events_v1_events_recent_get",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 200,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventsPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools": {
+      "get": {
+        "summary": "List Tools",
+        "description": "Per-tool rollup derived from recent ``tool.call`` events: call\ncount, error count, mean latency, and when it was last used.",
+        "operationId": "list_tools_v1_tools_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolsPage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents": {
+      "get": {
+        "summary": "List Agents",
+        "description": "Per-agent rollup from recent events' ``agent_id``.\n\n``unattributed_events`` is reported alongside on purpose: only an\nadapter that can name the acting agent sets ``agent_id`` (CrewAI's\ndoes, per-role; the LangGraph adapter leaves it null because a graph\nnode isn't an agent identity), so an empty list here means \"nothing\nattributed\", not \"nothing ran\".",
+        "operationId": "list_agents_v1_agents_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentsPage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects": {
+      "get": {
+        "summary": "List Projects",
+        "description": "Projects that actually have runs \u2014 backs the dashboard's project\nfilter. Derived from the run window rather than the `projects` table\nso the filter only ever offers values that will return something.",
+        "operationId": "list_projects_v1_projects_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectsPage"
                 }
               }
             }
@@ -574,10 +732,27 @@
           {
             "name": "project",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": "string",
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Project"
+            }
+          },
+          {
+            "name": "tail",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Tail"
             }
           }
         ],
@@ -704,6 +879,60 @@
   },
   "components": {
     "schemas": {
+      "AgentStat": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "events": {
+            "type": "integer",
+            "title": "Events"
+          },
+          "runs": {
+            "type": "integer",
+            "title": "Runs"
+          },
+          "last_seen": {
+            "type": "string",
+            "title": "Last Seen"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent_id",
+          "events",
+          "runs",
+          "last_seen"
+        ],
+        "title": "AgentStat"
+      },
+      "AgentsPage": {
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentStat"
+            },
+            "type": "array",
+            "title": "Agents"
+          },
+          "window_events": {
+            "type": "integer",
+            "title": "Window Events"
+          },
+          "unattributed_events": {
+            "type": "integer",
+            "title": "Unattributed Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agents",
+          "window_events",
+          "unattributed_events"
+        ],
+        "title": "AgentsPage"
+      },
       "DetectionOut": {
         "properties": {
           "detection_id": {
@@ -763,7 +992,9 @@
           }
         },
         "type": "object",
-        "required": ["detections"],
+        "required": [
+          "detections"
+        ],
         "title": "DetectionsPage"
       },
       "EventOut": {
@@ -872,7 +1103,10 @@
           }
         },
         "type": "object",
-        "required": ["events", "next_cursor"],
+        "required": [
+          "events",
+          "next_cursor"
+        ],
         "title": "EventsPage"
       },
       "HTTPValidationError": {
@@ -900,7 +1134,9 @@
           }
         },
         "type": "object",
-        "required": ["events"],
+        "required": [
+          "events"
+        ],
         "title": "IngestEventsRequest"
       },
       "IngestEventsResponse": {
@@ -918,7 +1154,10 @@
           }
         },
         "type": "object",
-        "required": ["accepted", "rejected"],
+        "required": [
+          "accepted",
+          "rejected"
+        ],
         "title": "IngestEventsResponse"
       },
       "PolicyActionIn": {
@@ -982,7 +1221,10 @@
           }
         },
         "type": "object",
-        "required": ["kind", "fingerprint"],
+        "required": [
+          "kind",
+          "fingerprint"
+        ],
         "title": "PolicyActionIn"
       },
       "PolicyDecisionOut": {
@@ -1057,7 +1299,9 @@
           }
         },
         "type": "object",
-        "required": ["decisions"],
+        "required": [
+          "decisions"
+        ],
         "title": "PolicyDecisionsPage"
       },
       "PolicyEvaluateRequest": {
@@ -1072,7 +1316,10 @@
           },
           "mode": {
             "type": "string",
-            "enum": ["observe", "enforce"],
+            "enum": [
+              "observe",
+              "enforce"
+            ],
             "title": "Mode"
           },
           "action": {
@@ -1083,7 +1330,13 @@
           }
         },
         "type": "object",
-        "required": ["run_id", "project", "mode", "action", "run_context"],
+        "required": [
+          "run_id",
+          "project",
+          "mode",
+          "action",
+          "run_context"
+        ],
         "title": "PolicyEvaluateRequest"
       },
       "PolicyEvaluateResponse": {
@@ -1109,7 +1362,12 @@
           }
         },
         "type": "object",
-        "required": ["decision", "policy_id", "reasons", "eval_ms"],
+        "required": [
+          "decision",
+          "policy_id",
+          "reasons",
+          "eval_ms"
+        ],
         "title": "PolicyEvaluateResponse"
       },
       "PolicyRunContextIn": {
@@ -1130,6 +1388,40 @@
         "type": "object",
         "title": "PolicyRunContextIn"
       },
+      "ProjectOut": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "runs": {
+            "type": "integer",
+            "title": "Runs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "runs"
+        ],
+        "title": "ProjectOut"
+      },
+      "ProjectsPage": {
+        "properties": {
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectOut"
+            },
+            "type": "array",
+            "title": "Projects"
+          }
+        },
+        "type": "object",
+        "required": [
+          "projects"
+        ],
+        "title": "ProjectsPage"
+      },
       "RejectedEvent": {
         "properties": {
           "index": {
@@ -1142,7 +1434,10 @@
           }
         },
         "type": "object",
-        "required": ["index", "reason"],
+        "required": [
+          "index",
+          "reason"
+        ],
         "title": "RejectedEvent"
       },
       "RunOut": {
@@ -1224,7 +1519,10 @@
           }
         },
         "type": "object",
-        "required": ["runs", "next_cursor"],
+        "required": [
+          "runs",
+          "next_cursor"
+        ],
         "title": "RunsPage"
       },
       "StatsDailyPoint": {
@@ -1247,8 +1545,58 @@
           }
         },
         "type": "object",
-        "required": ["date", "runs", "failed_runs", "cost_usd"],
+        "required": [
+          "date",
+          "runs",
+          "failed_runs",
+          "cost_usd"
+        ],
         "title": "StatsDailyPoint"
+      },
+      "StatsDeltas": {
+        "properties": {
+          "runs_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runs Pct"
+          },
+          "failed_runs_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed Runs Pct"
+          },
+          "cost_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "runs_pct",
+          "failed_runs_pct",
+          "cost_pct"
+        ],
+        "title": "StatsDeltas",
+        "description": "Percent change of this window against the immediately preceding\nwindow of the same length. ``None`` where the previous window had\nnothing to compare against \u2014 the UI shows \"no prior data\" rather\nthan a meaningless +100%."
       },
       "StatsOut": {
         "properties": {
@@ -1279,6 +1627,20 @@
           "window_runs": {
             "type": "integer",
             "title": "Window Runs"
+          },
+          "range_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Range Days"
+          },
+          "deltas": {
+            "$ref": "#/components/schemas/StatsDeltas"
           },
           "daily": {
             "items": {
@@ -1318,6 +1680,8 @@
           "policy_denials",
           "total_detections",
           "window_runs",
+          "range_days",
+          "deltas",
           "daily",
           "cost_by_project",
           "recent_detections",
@@ -1341,8 +1705,71 @@
           }
         },
         "type": "object",
-        "required": ["project_id", "runs", "cost_usd"],
+        "required": [
+          "project_id",
+          "runs",
+          "cost_usd"
+        ],
         "title": "StatsProjectCost"
+      },
+      "ToolStat": {
+        "properties": {
+          "tool_name": {
+            "type": "string",
+            "title": "Tool Name"
+          },
+          "calls": {
+            "type": "integer",
+            "title": "Calls"
+          },
+          "errors": {
+            "type": "integer",
+            "title": "Errors"
+          },
+          "avg_latency_ms": {
+            "type": "number",
+            "title": "Avg Latency Ms"
+          },
+          "side_effect_class": {
+            "type": "string",
+            "title": "Side Effect Class"
+          },
+          "last_used": {
+            "type": "string",
+            "title": "Last Used"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool_name",
+          "calls",
+          "errors",
+          "avg_latency_ms",
+          "side_effect_class",
+          "last_used"
+        ],
+        "title": "ToolStat"
+      },
+      "ToolsPage": {
+        "properties": {
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/ToolStat"
+            },
+            "type": "array",
+            "title": "Tools"
+          },
+          "window_events": {
+            "type": "integer",
+            "title": "Window Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tools",
+          "window_events"
+        ],
+        "title": "ToolsPage"
       },
       "ValidationError": {
         "properties": {
@@ -1377,7 +1804,11 @@
           }
         },
         "type": "object",
-        "required": ["loc", "msg", "type"],
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
         "title": "ValidationError"
       }
     }

@@ -144,10 +144,105 @@ export interface paths {
     /**
      * Get Stats
      * @description Fleet-wide rollups for the dashboard Overview: run/failure/cost
-     *     counters, a per-day series, cost split by project, and the newest
-     *     detections across every run.
+     *     counters, a per-day series, cost split by project, the newest
+     *     detections across every run, and this window's change against the
+     *     one before it.
+     *
+     *     ``days`` restricts to runs started within the last N days (and
+     *     computes the deltas against the equally-long window before that);
+     *     omitted means the whole bounded scan with no delta baseline.
      */
     get: operations["get_stats_v1_stats_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/events/recent": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Recent Events
+     * @description Newest events across every run — the raw trace feed, and (with
+     *     ``kind=sdk.diagnostic``) the SDK's own diagnostic log.
+     */
+    get: operations["list_recent_events_v1_events_recent_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/tools": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Tools
+     * @description Per-tool rollup derived from recent ``tool.call`` events: call
+     *     count, error count, mean latency, and when it was last used.
+     */
+    get: operations["list_tools_v1_tools_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/agents": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Agents
+     * @description Per-agent rollup from recent events' ``agent_id``.
+     *
+     *     ``unattributed_events`` is reported alongside on purpose: only an
+     *     adapter that can name the acting agent sets ``agent_id`` (CrewAI's
+     *     does, per-role; the LangGraph adapter leaves it null because a graph
+     *     node isn't an agent identity), so an empty list here means "nothing
+     *     attributed", not "nothing ran".
+     */
+    get: operations["list_agents_v1_agents_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/projects": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Projects
+     * @description Projects that actually have runs — backs the dashboard's project
+     *     filter. Derived from the run window rather than the `projects` table
+     *     so the filter only ever offers values that will return something.
+     */
+    get: operations["list_projects_v1_projects_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -295,6 +390,26 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** AgentStat */
+    AgentStat: {
+      /** Agent Id */
+      agent_id: string;
+      /** Events */
+      events: number;
+      /** Runs */
+      runs: number;
+      /** Last Seen */
+      last_seen: string;
+    };
+    /** AgentsPage */
+    AgentsPage: {
+      /** Agents */
+      agents: components["schemas"]["AgentStat"][];
+      /** Window Events */
+      window_events: number;
+      /** Unattributed Events */
+      unattributed_events: number;
+    };
     /** DetectionOut */
     DetectionOut: {
       /** Detection Id */
@@ -474,6 +589,18 @@ export interface components {
       /** Active Detections */
       active_detections?: string[];
     };
+    /** ProjectOut */
+    ProjectOut: {
+      /** Project Id */
+      project_id: string;
+      /** Runs */
+      runs: number;
+    };
+    /** ProjectsPage */
+    ProjectsPage: {
+      /** Projects */
+      projects: components["schemas"]["ProjectOut"][];
+    };
     /** RejectedEvent */
     RejectedEvent: {
       /** Index */
@@ -522,6 +649,21 @@ export interface components {
       /** Cost Usd */
       cost_usd: number;
     };
+    /**
+     * StatsDeltas
+     * @description Percent change of this window against the immediately preceding
+     *     window of the same length. ``None`` where the previous window had
+     *     nothing to compare against — the UI shows "no prior data" rather
+     *     than a meaningless +100%.
+     */
+    StatsDeltas: {
+      /** Runs Pct */
+      runs_pct: number | null;
+      /** Failed Runs Pct */
+      failed_runs_pct: number | null;
+      /** Cost Pct */
+      cost_pct: number | null;
+    };
     /** StatsOut */
     StatsOut: {
       /** Total Runs */
@@ -538,6 +680,9 @@ export interface components {
       total_detections: number;
       /** Window Runs */
       window_runs: number;
+      /** Range Days */
+      range_days: number | null;
+      deltas: components["schemas"]["StatsDeltas"];
       /** Daily */
       daily: components["schemas"]["StatsDailyPoint"][];
       /** Cost By Project */
@@ -555,6 +700,28 @@ export interface components {
       runs: number;
       /** Cost Usd */
       cost_usd: number;
+    };
+    /** ToolStat */
+    ToolStat: {
+      /** Tool Name */
+      tool_name: string;
+      /** Calls */
+      calls: number;
+      /** Errors */
+      errors: number;
+      /** Avg Latency Ms */
+      avg_latency_ms: number;
+      /** Side Effect Class */
+      side_effect_class: string;
+      /** Last Used */
+      last_used: string;
+    };
+    /** ToolsPage */
+    ToolsPage: {
+      /** Tools */
+      tools: components["schemas"]["ToolStat"][];
+      /** Window Events */
+      window_events: number;
     };
     /** ValidationError */
     ValidationError: {
@@ -813,7 +980,10 @@ export interface operations {
   };
   get_stats_v1_stats_get: {
     parameters: {
-      query?: never;
+      query?: {
+        days?: number | null;
+        project?: string | null;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -827,6 +997,107 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["StatsOut"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_recent_events_v1_events_recent_get: {
+    parameters: {
+      query?: {
+        kind?: string | null;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EventsPage"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_tools_v1_tools_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ToolsPage"];
+        };
+      };
+    };
+  };
+  list_agents_v1_agents_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentsPage"];
+        };
+      };
+    };
+  };
+  list_projects_v1_projects_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProjectsPage"];
         };
       };
     };
@@ -926,8 +1197,9 @@ export interface operations {
   };
   live_firehose_v1_live_firehose_get: {
     parameters: {
-      query: {
-        project: string;
+      query?: {
+        project?: string | null;
+        tail?: boolean;
       };
       header?: never;
       path?: never;
