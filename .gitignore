@@ -31,6 +31,10 @@ blobs/
 # benchmark/corpus/failure_index.json (run refs) is committed, never the
 # run payloads themselves (TRZ-P5-02).
 benchmark/corpus/_runs/
+# archive_run.py's local archive index: which runs this machine happens to
+# have archived. Machine-local bookkeeping, not a shared artifact — unlike
+# failure_index.json, which is the corpus definition and is committed.
+benchmark/corpus/index.json
 
 # Editor / OS noise
 .vscode/

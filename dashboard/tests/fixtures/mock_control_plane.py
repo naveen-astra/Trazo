@@ -19,6 +19,7 @@ then in another terminal `npm run dev` and `npm run test:e2e`.
 from __future__ import annotations
 
 import json
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -99,6 +100,34 @@ RUN = {
     "tags": {"env": "smoke"}, "totals": EVENTS[-1]["payload"]["totals"],
 }
 
+# Rollups for the catalog/Overview surfaces, derived by hand from the one
+# canned run above so the fixture stays internally consistent: one project,
+# one tool call, one agent, one run, zero failures.
+PROJECT_ROLLUP = {
+    "project_id": PROJECT, "runs": 1, "events": len(EVENTS),
+    "cost_usd": 0.0, "last_seen": "2026-07-24T12:00:01Z",
+}
+
+TOOL_ROLLUP = {
+    "tool_name": "web_search", "calls": 1, "errors": 0, "avg_latency_ms": 12.0,
+    "side_effect_class": "external", "last_used": "2026-07-24T12:00:01Z",
+}
+
+AGENT_ROLLUP = {
+    "agent_id": "plan", "events": 2, "runs": 1, "last_seen": "2026-07-24T12:00:01Z",
+}
+
+STATS = {
+    "total_runs": 1, "failed_runs": 0, "active_runs": 0, "total_cost_usd": 0.0,
+    "policy_denials": 0, "total_detections": 0, "window_runs": 1, "range_days": None,
+    # No prior window exists behind a single seeded run, so every delta is
+    # null — the same thing the real API returns rather than a bogus 0%.
+    "deltas": {"runs_pct": None, "failed_runs_pct": None, "cost_pct": None},
+    "daily": [{"day": "2026-07-24", "runs": 1, "failed_runs": 0, "cost_usd": 0.0}],
+    "cost_by_project": [{"project_id": PROJECT, "runs": 1, "cost_usd": 0.0}],
+    "recent_detections": [], "recent_policy_decisions": [],
+}
+
 
 class Handler(BaseHTTPRequestHandler):
     def _send_json(self, body: object, status: int = 200) -> None:
@@ -123,6 +152,20 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(RUN)
         elif path == f"/v1/runs/{RUN_ID}/events":
             self._send_json({"events": EVENTS, "next_cursor": None})
+        elif path == f"/v1/runs/{RUN_ID}/detections":
+            self._send_json({"detections": [], "next_cursor": None})
+        elif path == f"/v1/runs/{RUN_ID}/policy-decisions":
+            self._send_json({"decisions": [], "next_cursor": None})
+        elif path == "/v1/projects":
+            self._send_json({"projects": [PROJECT_ROLLUP]})
+        elif path == "/v1/stats":
+            self._send_json(STATS)
+        elif path == "/v1/events/recent":
+            self._send_json({"events": EVENTS[::-1], "next_cursor": None})
+        elif path == "/v1/tools":
+            self._send_json({"tools": [TOOL_ROLLUP]})
+        elif path == "/v1/agents":
+            self._send_json({"agents": [AGENT_ROLLUP]})
         elif path == f"/v1/live/runs/{RUN_ID}":
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -133,6 +176,24 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.dumps(event, separators=(",", ":"))
                 self.wfile.write(f"id: {event['seq']}\ndata: {body}\n\n".encode())
                 self.wfile.flush()
+        elif path == "/v1/live/firehose":
+            # Held open and silent: the dashboard subscribes with tail=1,
+            # and this fixture's one run is already history, so a correct
+            # server sends nothing. Closing instead would make EventSource
+            # reconnect in a loop for the whole test.
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            try:
+                while True:
+                    # SSE comment frames: keep-alive that clients ignore.
+                    self.wfile.write(b": keep-alive\n\n")
+                    self.wfile.flush()
+                    time.sleep(5)
+            except (BrokenPipeError, ConnectionResetError):
+                return
         else:
             self._send_json({"detail": "not found", "path": path, "query": query}, status=404)
 
