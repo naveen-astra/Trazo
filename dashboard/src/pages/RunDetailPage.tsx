@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 
 import type { EventOut } from "../api/runApi";
 import DetectionBadges from "../components/DetectionBadges";
-import ExecutionGraph from "../components/ExecutionGraph";
+import FlowGraph from "../components/FlowGraph";
 import { IconArrowRight } from "../components/Icons";
 import LiveBadge from "../components/LiveBadge";
 import PayloadDrawer from "../components/PayloadDrawer";
@@ -11,11 +11,19 @@ import PolicyDecisionsPanel from "../components/PolicyDecisionsPanel";
 import RunTimeline from "../components/RunTimeline";
 import StatusBadge from "../components/StatusBadge";
 import StepInspector from "../components/StepInspector";
+import TimelineStrip from "../components/TimelineStrip";
 import { useDetections } from "../hooks/useDetections";
 import { useLiveRunEvents } from "../hooks/useLiveRunEvents";
 import { usePolicyDecisions } from "../hooks/usePolicyDecisions";
 import { useRun } from "../hooks/useRun";
 import { buildStepNodes } from "../lib/runGraph";
+
+type View = "flow" | "timeline" | "logs";
+const VIEWS: { id: View; label: string }[] = [
+  { id: "flow", label: "Flow" },
+  { id: "timeline", label: "Timeline" },
+  { id: "logs", label: "Logs" },
+];
 
 function formatDuration(totals: Record<string, unknown>): string {
   const ms = totals.duration_ms;
@@ -23,12 +31,11 @@ function formatDuration(totals: Record<string, unknown>): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`;
 }
 
-// Run detail (TRZ-P2-07 + TRZ-P6): the execution graph is the primary
-// view — a run's control flow as steps, each selectable into the right-
-// hand inspector — with the full kind-colored timeline underneath for
-// the event-by-event read. The event stream comes from useLiveRunEvents
-// (GET /v1/live/runs/{id}), which covers both a finished run's history
-// and a running run's live tail in one mechanism.
+// Run detail: the flow graph is the primary view — the run's control
+// flow as steps with the calls each made — backed by the same live SSE
+// stream that covers both a finished run's history and a running run's
+// tail (useLiveRunEvents), so a run opened while in flight fills in as
+// it executes.
 export default function RunDetailPage() {
   const { runId } = useParams<{ runId: string }>();
   const { data: run, isLoading, isError, error } = useRun(runId ?? "");
@@ -36,11 +43,16 @@ export default function RunDetailPage() {
   const { data: detectionsPage } = useDetections(runId ?? "", run?.status);
   const { data: policyDecisionsPage } = usePolicyDecisions(runId ?? "", run?.status);
 
+  const [view, setView] = useState<View>("flow");
   const [selectedStepKey, setSelectedStepKey] = useState<string | null>(null);
   const [drawerEvent, setDrawerEvent] = useState<EventOut | null>(null);
 
   const nodes = useMemo(() => buildStepNodes(events), [events]);
   const selectedNode = nodes.find((node) => node.key === selectedStepKey) ?? nodes[0] ?? null;
+  const diagnostics = useMemo(
+    () => events.filter((event) => event.kind === "sdk.diagnostic"),
+    [events],
+  );
 
   if (!runId) {
     return (
@@ -51,6 +63,10 @@ export default function RunDetailPage() {
   }
 
   const totals = (run?.totals ?? {}) as Record<string, unknown>;
+  const stepAt = (index: number) => {
+    const next = nodes[index];
+    if (next) setSelectedStepKey(next.key);
+  };
 
   return (
     <div className="page">
@@ -84,6 +100,10 @@ export default function RunDetailPage() {
           <div className="run-meta__item">
             <span className="run-meta__label">Framework</span>
             <span className="run-meta__value">{run.framework}</span>
+          </div>
+          <div className="run-meta__item">
+            <span className="run-meta__label">Project</span>
+            <span className="run-meta__value">{run.project_id}</span>
           </div>
           <div className="run-meta__item">
             <span className="run-meta__label">Duration</span>
@@ -127,36 +147,70 @@ export default function RunDetailPage() {
         <div className="stack">
           <div className="card">
             <div className="card__head">
-              <h2 className="card__title">Execution graph</h2>
+              <div className="tabs" role="tablist">
+                {VIEWS.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={view === entry.id}
+                    className={view === entry.id ? "tab tab--active" : "tab"}
+                    onClick={() => setView(entry.id)}
+                  >
+                    {entry.label}
+                  </button>
+                ))}
+              </div>
               <span className="muted" style={{ fontSize: 12 }}>
-                {nodes.length} step{nodes.length === 1 ? "" : "s"}
+                {nodes.length} step{nodes.length === 1 ? "" : "s"} · {events.length} events
+                {!connected && events.length === 0 ? " · connecting…" : ""}
               </span>
             </div>
-            <ExecutionGraph
-              nodes={nodes}
-              selectedKey={selectedNode?.key ?? null}
-              onSelect={(node) => setSelectedStepKey(node.key)}
-            />
-          </div>
 
-          <div className="card">
-            <div className="card__head">
-              <h2 className="card__title">Timeline</h2>
-              {!connected && events.length === 0 && (
-                <span className="muted" style={{ fontSize: 12 }}>
-                  connecting&hellip;
-                </span>
-              )}
-            </div>
-            {events.length === 0 ? (
-              <div className="empty-state">No events yet.</div>
-            ) : (
-              <RunTimeline events={events} />
+            {view === "flow" && (
+              <FlowGraph
+                nodes={nodes}
+                selectedKey={selectedNode?.key ?? null}
+                onSelectStep={(node) => setSelectedStepKey(node.key)}
+                onSelectEvent={setDrawerEvent}
+              />
+            )}
+
+            {view === "timeline" &&
+              (events.length === 0 ? (
+                <div className="empty-state">No events yet.</div>
+              ) : (
+                <RunTimeline events={events} />
+              ))}
+
+            {view === "logs" &&
+              (diagnostics.length === 0 ? (
+                <div className="empty-state">
+                  No SDK diagnostics for this run — the recorder emits
+                  <code className="mono"> sdk.diagnostic</code> only when it has something to report
+                  (dropped events, degraded shipping).
+                </div>
+              ) : (
+                <RunTimeline events={diagnostics} />
+              ))}
+
+            {events.length > 0 && (
+              <TimelineStrip
+                events={events}
+                selectedEventId={drawerEvent?.event_id ?? null}
+                onSelect={setDrawerEvent}
+              />
             )}
           </div>
         </div>
 
-        <StepInspector node={selectedNode} onSelectEvent={setDrawerEvent} />
+        <StepInspector
+          node={selectedNode}
+          stepCount={nodes.length}
+          onPrev={() => selectedNode && stepAt(selectedNode.index - 1)}
+          onNext={() => selectedNode && stepAt(selectedNode.index + 1)}
+          onSelectEvent={setDrawerEvent}
+        />
       </div>
 
       {drawerEvent && <PayloadDrawer event={drawerEvent} onClose={() => setDrawerEvent(null)} />}
