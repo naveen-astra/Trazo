@@ -13,6 +13,20 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
+# How long a consumer's read blocks server-side waiting for new messages,
+# and how long the client waits for that command's reply. The second MUST
+# stay strictly greater than the first: they time the same round trip from
+# opposite ends, so an equal pair is a race the client usually loses.
+#
+# These live together because that invariant is the whole point. redis-py 8
+# changed its default socket_timeout to 5s while the workers already blocked
+# for 5s, which wedged the store worker completely — every idle poll raised
+# TimeoutError, and a batch delivered at the boundary went into the group's
+# pending list with the client never seeing the reply. Relying on a library
+# default for one half of a paired setting is what made that possible.
+BUS_BLOCK_MS = 5_000
+BUS_SOCKET_TIMEOUT_SECONDS = 15.0
+
 
 @dataclass(frozen=True)
 class BusMessage:

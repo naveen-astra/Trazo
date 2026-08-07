@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 import structlog
 from pydantic import ValidationError
 
-from trazo_server.bus.protocol import BusMessage, EventBus
+from trazo_server.bus.protocol import BUS_BLOCK_MS, BusMessage, EventBus
 from trazo_server.events import Event, EventAdapter
 from trazo_server.metrics import BUS_DLQ_DEPTH_MESSAGES, BUS_LAG_MESSAGES
 from trazo_server.store.blob_store import BlobStore
@@ -101,7 +101,7 @@ class StoreWorker:
     async def ensure_group(self) -> None:
         await self._bus.ensure_group(EVENTS_STREAM, STORE_WORKER_GROUP)
 
-    async def poll_once(self, *, count: int = 100, block_ms: int = 5000) -> int:
+    async def poll_once(self, *, count: int = 100, block_ms: int = BUS_BLOCK_MS) -> int:
         """Read and process one batch of new messages; returns count read."""
         messages = await self._bus.read_group(
             EVENTS_STREAM,
@@ -144,7 +144,7 @@ class StoreWorker:
     async def run_forever(
         self,
         *,
-        poll_block_ms: int = 5000,
+        poll_block_ms: int = BUS_BLOCK_MS,
         reclaim_min_idle_ms: int = 30_000,
         reclaim_every: int = 10,
         stale_scan_every: int = 60,
@@ -171,29 +171,56 @@ class StoreWorker:
                     # retrying it costs nothing once the bus is back.
                     await self.ensure_group()
                     group_ready = True
-                await self.poll_once(block_ms=poll_block_ms)
                 iterations += 1
+                # The poll gets its own handler so a failing read cannot
+                # skip the reclaim below. That is precisely the case
+                # reclaim exists for: a read that times out *after* Redis
+                # has already moved the batch into the group's pending
+                # list strands those messages, and only XAUTOCLAIM gets
+                # them back. Gating recovery behind a successful poll made
+                # the failure self-sustaining — observed live as a worker
+                # wedged with 167 pending messages, persisting nothing and
+                # never reclaiming any of them.
+                poll_failed = False
+                try:
+                    await self.poll_once(block_ms=poll_block_ms)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    log.exception("store_worker.poll_failed")
+                    self._reraise_if_cancelling()
+                    poll_failed = True
                 if iterations % reclaim_every == 0:
                     await self.reclaim_once(min_idle_ms=reclaim_min_idle_ms)
                 if iterations % stale_scan_every == 0:
                     await self.scan_stale_runs()
                 await self._refresh_bus_metrics()
+                if poll_failed:
+                    # Back off exactly as the outer handler does. Without
+                    # this the loop would hot-spin on a bus that is failing
+                    # fast, which is the other way to make a worker useless.
+                    await asyncio.sleep(1)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 log.exception("store_worker.iteration_failed")
-                # See detector_worker.py's identical guard: redis-py's own
-                # internal async_timeout converts a real cancellation
-                # delivered mid-poll (this task's own .cancel(), e.g. app
-                # shutdown) into a plain redis.exceptions.TimeoutError,
-                # indistinguishable by type from a genuine idle-poll
-                # timeout. Left unchecked, the broad except below would
-                # swallow it and retry forever, hanging whatever awaits
-                # this task. Task.cancelling() (3.11+) tells them apart.
-                task = asyncio.current_task()
-                if task is not None and task.cancelling() > 0:
-                    raise asyncio.CancelledError() from None
+                self._reraise_if_cancelling()
                 await asyncio.sleep(1)
+
+    @staticmethod
+    def _reraise_if_cancelling() -> None:
+        """Turn a masked cancellation back into CancelledError.
+
+        redis-py's own internal async_timeout converts a real cancellation
+        delivered mid-poll (this task's own .cancel(), e.g. app shutdown)
+        into a plain redis.exceptions.TimeoutError, indistinguishable by
+        type from a genuine idle-poll timeout. Left unchecked, the broad
+        excepts above would swallow it and retry forever, hanging whatever
+        awaits this task. Task.cancelling() (3.11+) tells them apart.
+        """
+        task = asyncio.current_task()
+        if task is not None and task.cancelling() > 0:
+            raise asyncio.CancelledError() from None
 
     async def _refresh_bus_metrics(self) -> None:
         """Update the P1-08 bus-lag/DLQ-depth gauges from current bus state."""

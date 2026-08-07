@@ -27,7 +27,7 @@ from collections.abc import Awaitable, Callable
 import structlog
 from pydantic import ValidationError
 
-from trazo_server.bus.protocol import BusMessage, EventBus
+from trazo_server.bus.protocol import BUS_BLOCK_MS, BusMessage, EventBus
 from trazo_server.detectors.base import Detection, Detector, RunWindow
 from trazo_server.events import Event, EventAdapter
 from trazo_server.store.rows import EventRow, RunRow
@@ -121,7 +121,7 @@ class DetectorWorker:
             self._windows[run.run_id] = window
         return len(running)
 
-    async def poll_once(self, *, count: int = 100, block_ms: int = 5000) -> int:
+    async def poll_once(self, *, count: int = 100, block_ms: int = BUS_BLOCK_MS) -> int:
         messages = await self._bus.read_group(
             EVENTS_STREAM,
             DETECTOR_WORKER_GROUP,
@@ -146,7 +146,7 @@ class DetectorWorker:
     async def run_forever(
         self,
         *,
-        poll_block_ms: int = 5000,
+        poll_block_ms: int = BUS_BLOCK_MS,
         reclaim_min_idle_ms: int = 30_000,
         reclaim_every: int = 10,
     ) -> None:

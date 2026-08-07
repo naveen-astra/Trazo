@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Mapping
+from contextlib import suppress
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -409,3 +410,65 @@ async def test_store_worker__run_forever_exits_when_cancelled_mid_poll(
 
     with pytest.raises(asyncio.CancelledError):
         await asyncio.wait_for(task, timeout=1.0)
+
+
+class _AlwaysTimingOutReadBus:
+    """A bus whose reads always fail the way a too-short socket timeout
+    makes them fail, while reclaim keeps working.
+
+    This is the shape of the live incident: Redis had already moved the
+    batch into the group's pending list, so the messages existed and were
+    reclaimable — the client just never got the reply."""
+
+    def __init__(self) -> None:
+        self.reclaim_calls = 0
+
+    async def ensure_group(self, stream: str, group: str) -> None:
+        return None
+
+    async def read_group(
+        self, stream: str, group: str, consumer: str, *, count: int, block_ms: int
+    ) -> list[BusMessage]:
+        raise TimeoutError("Timeout reading from redis:6379")
+
+    async def reclaim_stale(
+        self, stream: str, group: str, consumer: str, *, min_idle_ms: int, count: int
+    ) -> list[BusMessage]:
+        self.reclaim_calls += 1
+        return []
+
+    async def lag(self, stream: str, group: str) -> int:
+        return 0
+
+    async def dlq_depth(self, stream: str) -> int:
+        return 0
+
+
+async def test_store_worker__reclaims_even_while_every_poll_fails(
+    tmp_path: Path,
+) -> None:
+    """Recovery must not be gated behind a successful poll.
+
+    Found running scripts/smoke/phase2.sh against a live stack: reads
+    were timing out (redis-py 8 defaults socket_timeout to 5s and the
+    worker blocked for exactly 5s), and because `iterations` only
+    advanced after a *successful* poll, XAUTOCLAIM never ran. The worker
+    sat wedged with 167 pending, unacked messages, persisting nothing and
+    recovering nothing — a failure that sustained itself.
+    """
+    bus = _AlwaysTimingOutReadBus()
+    worker = _make_worker(
+        bus,  # type: ignore[arg-type]
+        InMemoryTraceStore(),
+        FilesystemBlobStore(tmp_path),
+    )
+
+    task = asyncio.create_task(
+        worker.run_forever(reclaim_every=1, stale_scan_every=10_000)
+    )
+    await asyncio.sleep(0.3)
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+
+    assert bus.reclaim_calls > 0, "reclaim never ran while polls were failing"
