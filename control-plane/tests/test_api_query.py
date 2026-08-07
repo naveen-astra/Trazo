@@ -681,3 +681,42 @@ async def test_list_projects__counts_runs_per_project_busiest_first(
 
     assert [p["project_id"] for p in body["projects"]] == ["proj_busy", "proj_quiet"]
     assert body["projects"][0]["runs"] == 2
+
+
+async def test_project_filter__accepts_the_human_name_not_just_the_hashed_id(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    """`?project=` must work with the name the SDK was configured with.
+
+    The envelope carries a name ("phase2-smoke"); the store keys runs on
+    a hash of it (store_worker._derive_project_id). Only the hash was
+    ever accepted, so querying by name returned an empty page — looking
+    exactly like a project with no runs. scripts/smoke/phase2.sh queried
+    by name and so could never have passed, which is how this surfaced.
+    """
+    await trace_store.ensure_project("proj_hashed", "phase2-smoke")
+    await trace_store.upsert_run(_run(run_id="run_a", project_id="proj_hashed"))
+
+    by_name = client.get("/v1/runs", params={"project": "phase2-smoke"}).json()
+    by_id = client.get("/v1/runs", params={"project": "proj_hashed"}).json()
+
+    assert [r["run_id"] for r in by_name["runs"]] == ["run_a"]
+    assert [r["run_id"] for r in by_id["runs"]] == ["run_a"]
+
+    # An unknown name matches nothing rather than widening to every project.
+    unknown = client.get("/v1/runs", params={"project": "no-such-project"}).json()
+    assert unknown["runs"] == []
+
+
+async def test_list_projects__exposes_the_human_name(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    """The dashboard's project filter showed proj_85c0c89d12f634ecf93d
+    because the name was recorded but never returned."""
+    await trace_store.ensure_project("proj_hashed", "research-assistant")
+    await trace_store.upsert_run(_run(run_id="run_a", project_id="proj_hashed"))
+
+    [project] = client.get("/v1/projects").json()["projects"]
+
+    assert project["project_id"] == "proj_hashed"
+    assert project["name"] == "research-assistant"

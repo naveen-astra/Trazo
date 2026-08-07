@@ -26,6 +26,12 @@ class PostgresTraceStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
+    async def list_project_names(self) -> dict[str, str]:
+        stmt = sa.select(projects.c.project_id, projects.c.name)
+        async with self._engine.connect() as conn:
+            result = await conn.execute(stmt)
+            return {row.project_id: row.name for row in result}
+
     async def ensure_project(self, project_id: str, name: str) -> None:
         stmt = (
             pg_insert(projects)

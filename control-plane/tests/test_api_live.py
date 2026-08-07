@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 
 from trazo_server.api.deps import get_trace_store
 from trazo_server.api.live import stream_project_events, stream_run_events
+from trazo_server.api.projects import resolve_project_id
 from trazo_server.app import create_app
 from trazo_server.config import Settings
 from trazo_server.store.memory_trace_store import InMemoryTraceStore
@@ -321,3 +322,61 @@ async def test_live_run_endpoint__last_event_id_header_resumes(
 
     assert "run.started" not in response.text
     assert "run.finished" in response.text
+
+
+async def test_firehose_resolves_the_project_filter_by_name() -> None:
+    """The firehose takes the same ``?project=`` values the query API does.
+
+    Fixing name resolution on /v1/runs and /v1/stats but not here left
+    scripts/smoke/phase2.sh subscribing by name and receiving nothing at
+    all, while the very same run asserted fine through the query API.
+    Hence one shared resolver rather than a rule to remember at each
+    call site.
+
+    Asserted through the helper rather than over HTTP: the firehose has
+    no terminal condition, so a TestClient request to it never returns.
+    """
+    store = InMemoryTraceStore()
+    await store.ensure_project("proj_hashed", "phase2-smoke")
+
+    assert await resolve_project_id(store, "phase2-smoke") == "proj_hashed"
+    assert await resolve_project_id(store, "proj_hashed") == "proj_hashed"
+    assert await resolve_project_id(store, None) is None
+    # Unknown stays unchanged: it must match nothing, never widen to all.
+    assert await resolve_project_id(store, "no-such-project") == "no-such-project"
+
+
+async def test_stream_project_events__resolves_a_late_appearing_name() -> None:
+    """Subscribing by name before the project exists must still work.
+
+    A one-shot resolution at subscribe time looked correct and passed
+    every unit test, but scripts/smoke/phase2.sh opens the firehose
+    against an empty database and *then* starts the agent: with no name
+    to match yet, the filter kept the raw string forever and the
+    subscriber received nothing for a project that did start producing
+    events seconds later.
+    """
+    store = InMemoryTraceStore()
+    stream = stream_project_events(
+        store,
+        "phase2-smoke",  # nothing in the store knows this name yet
+        after_event_id=None,
+        is_disconnected=_never_disconnected,
+        poll_interval=0.01,
+    )
+    pull = asyncio.ensure_future(anext(stream))  # type: ignore[arg-type]
+    await asyncio.sleep(0.05)
+    assert not pull.done()
+
+    # The agent starts: the project and its first event appear together.
+    await store.ensure_project("proj_hashed", "phase2-smoke")
+    await store.upsert_run(_run(run_id="run_a", project_id="proj_hashed"))
+    await store.upsert_events(
+        [_event(run_id="run_a", seq=0, event_id="evt_001", kind="run.started")]
+    )
+
+    chunk = await asyncio.wait_for(pull, timeout=5.0)
+
+    assert chunk.startswith("id: evt_001")
+    assert "run.started" in chunk
+    await stream.aclose()

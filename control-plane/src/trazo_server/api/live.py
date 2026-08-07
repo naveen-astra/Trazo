@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
 from trazo_server.api.deps import get_trace_store
+from trazo_server.api.projects import resolve_project_id
 from trazo_server.metrics import SSE_CLIENTS
 from trazo_server.store.rows import EventRow
 from trazo_server.store.trace_store import TraceStore
@@ -86,7 +87,7 @@ async def stream_run_events(
 
 async def stream_project_events(
     store: TraceStore,
-    project_id: str | None,
+    project: str | None,
     *,
     after_event_id: str | None,
     is_disconnected: Callable[[], Awaitable[bool]],
@@ -95,10 +96,19 @@ async def stream_project_events(
 ) -> AsyncIterator[str]:
     """Yields SSE messages for every event across every run in a project,
     ordered by event_id (ULID — globally sortable, unlike per-run seq).
-    ``project_id=None`` streams every project — what the dashboard's
+    ``project=None`` streams every project — what the dashboard's
     Overview subscribes to when no project filter is set, so it updates
     the instant an event lands rather than on a poll tick.
     Never terminates on its own; only a client disconnect ends it.
+
+    ``project`` may be a ``project_id`` or the human project name; it is
+    re-resolved on every poll until it maps to a known id. Resolving once
+    at subscribe time is not enough for a stream that outlives the
+    lookup: a subscriber that connects *before* the project's first event
+    finds no name to match, and a one-shot resolution would leave it
+    filtering on a value that can never match — silently delivering
+    nothing forever. scripts/smoke/phase2.sh does exactly that, opening
+    the subscription against an empty database before starting the agent.
 
     ``tail`` starts the cursor at the current head, so the client is sent
     only events that arrive after it connected. ``after_event_id`` always
@@ -106,12 +116,15 @@ async def stream_project_events(
     and silently skipping to the head on reconnect would drop exactly the
     events the resume exists to recover.
     """
+    project_id = await resolve_project_id(store, project)
     last_event_id = after_event_id
     if last_event_id is None and tail:
         last_event_id = await store.latest_event_id(project_id)
     while True:
         if await is_disconnected():
             return
+        if project_id is not None and not project_id.startswith("proj_"):
+            project_id = await resolve_project_id(store, project)
         events = await store.get_project_events(
             project_id, after_event_id=last_event_id, limit=100
         )

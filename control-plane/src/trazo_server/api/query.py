@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from trazo_server.api.cursors import InvalidCursorError, decode_cursor, encode_cursor
 from trazo_server.api.deps import get_blob_store, get_trace_store
 from trazo_server.api.problem_details import ProblemDetailsError
+from trazo_server.api.projects import resolve_project_id
 from trazo_server.errors import BlobNotFoundError
 from trazo_server.store.blob_store import BlobStore
 from trazo_server.store.rows import DetectionRow, EventRow, PolicyDecisionRow, RunRow
@@ -165,6 +166,10 @@ class AgentsPage(BaseModel):
 
 class ProjectOut(BaseModel):
     project_id: str
+    # The name the SDK was configured with ("research-assistant"), which
+    # is what a human recognises; project_id is a hash of it. Falls back
+    # to the id only if a run somehow predates its projects row.
+    name: str
     runs: int
 
 
@@ -272,7 +277,10 @@ async def list_runs(
             ) from exc
 
     fetched = await store.list_runs(
-        project_id=project, status=status, limit=limit + 1, before=before
+        project_id=await resolve_project_id(store, project),
+        status=status,
+        limit=limit + 1,
+        before=before,
     )
     page, has_more = fetched[:limit], len(fetched) > limit
     next_cursor = None
@@ -410,7 +418,10 @@ async def get_stats(
     computes the deltas against the equally-long window before that);
     omitted means the whole bounded scan with no delta baseline.
     """
-    runs = await store.list_runs(project_id=project, limit=_STATS_WINDOW_RUNS)
+    runs = await store.list_runs(
+        project_id=await resolve_project_id(store, project),
+        limit=_STATS_WINDOW_RUNS,
+    )
 
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(days=days) if days else None
@@ -611,8 +622,13 @@ async def list_projects(
     counts: dict[str, int] = {}
     for run in runs:
         counts[run.project_id] = counts.get(run.project_id, 0) + 1
+    names = await store.list_project_names()
     projects = [
-        ProjectOut(project_id=project_id, runs=count)
+        ProjectOut(
+            project_id=project_id,
+            name=names.get(project_id, project_id),
+            runs=count,
+        )
         for project_id, count in counts.items()
     ]
     projects.sort(key=lambda p: p.runs, reverse=True)

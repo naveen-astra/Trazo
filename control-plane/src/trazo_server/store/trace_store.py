@@ -20,6 +20,18 @@ from trazo_server.store.rows import DetectionRow, EventRow, PolicyDecisionRow, R
 class TraceStore(Protocol):
     """Persistence port for runs and events."""
 
+    async def list_project_names(self) -> dict[str, str]:
+        """Every known ``project_id`` mapped to its human name.
+
+        The envelope carries a name ("research-assistant"); the store keys
+        on a hash of it (store_worker._derive_project_id) so replicas agree
+        without a lookup. Both are recorded, but only the hash was ever
+        exposed — so the dashboard's project filter listed
+        ``proj_85c0c89d12f634ecf93d`` instead of the name the SDK was
+        configured with, and no caller could resolve one to the other.
+        """
+        ...
+
     async def ensure_project(self, project_id: str, name: str) -> None:
         """Insert the project if it doesn't exist yet; a no-op otherwise."""
         ...

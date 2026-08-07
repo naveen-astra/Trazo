@@ -26,6 +26,9 @@ class InMemoryTraceStore:
         self._detections: dict[str, DetectionRow] = {}
         self._policy_decisions: dict[str, PolicyDecisionRow] = {}
 
+    async def list_project_names(self) -> dict[str, str]:
+        return dict(self._projects)
+
     async def ensure_project(self, project_id: str, name: str) -> None:
         self._projects.setdefault(project_id, name)
 
