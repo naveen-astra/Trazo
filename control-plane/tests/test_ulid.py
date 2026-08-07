@@ -26,6 +26,27 @@ def test_ulid__two_calls_at_same_timestamp_differ() -> None:
     assert a != b  # random component differs
 
 
+def test_ulid__is_monotonic_within_one_millisecond() -> None:
+    """These ``evt_`` ids share the ``events`` table and the firehose with
+    the SDK's, and the firehose pages with ``WHERE event_id > cursor`` —
+    so an id sorting below an already-passed cursor is dropped from the
+    live stream for good. Ordering has to be total, not
+    millisecond-granular. Mirrors the SDK copy's test of the same name.
+    """
+    ts = 1_700_000_000_000
+    ulids = [new_ulid(timestamp_ms=ts) for _ in range(500)]
+
+    assert ulids == sorted(ulids)
+    assert len(set(ulids)) == len(ulids)
+
+
+def test_ulid__real_clock_generation_is_monotonic() -> None:
+    ulids = [new_ulid() for _ in range(2000)]
+
+    assert ulids == sorted(ulids)
+    assert len(set(ulids)) == len(ulids)
+
+
 def test_ulid__prefixed_helpers_use_the_documented_prefixes() -> None:
     assert new_event_id().startswith("evt_")
     assert new_detection_id().startswith("det_")
