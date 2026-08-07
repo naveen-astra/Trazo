@@ -17,7 +17,12 @@ from langgraph.graph import END, START, StateGraph
 from trazo.core.context import init as context_init
 from trazo.core.policy import PolicyHook, PolicyMode
 from trazo.core.recorder import Recorder
-from trazo.decorators import trace_llm, trace_tool
+from trazo.decorators import (
+    trace_llm,
+    trace_memory_read,
+    trace_memory_write,
+    trace_tool,
+)
 from trazo.errors import PolicyDenied
 from trazo.integrations.langgraph import instrument
 
@@ -209,6 +214,55 @@ def test_instrument__totals_count_escape_hatch_calls_not_just_langchain_callback
     assert totals["tool_calls"] == 1
     assert totals["tokens_in"] == 7
     assert totals["tokens_out"] == 3
+
+
+def test_instrument__totals_events_counts_kinds_outside_the_llm_tool_step_set() -> None:
+    """Real bug found running the research-assistant demo against a live
+    control plane (TRZ-P5-01): ``run.finished.totals.events`` was derived
+    arithmetically as ``2 + step_count + llm_calls + tool_calls``, so
+    ``memory.read``/``memory.write`` were never counted — a run the store
+    held 55 events for reported 49 in its own rollup, and the dashboard
+    showed both numbers on the same screen.
+
+    The existing coverage above asserts ``totals["events"] == len(events)``
+    but runs a graph emitting only kinds the formula already knew about,
+    so it could never catch this. This one emits a memory boundary
+    specifically to pin the invariant against *any* kind.
+    """
+    from trazo.core.runtime import _install_recorder_for_tests
+
+    context_init(project="toy-agent-test")
+    shipper = _FakeShipper()
+    recorder = Recorder(shipper=shipper)
+    _install_recorder_for_tests(recorder)
+
+    @trace_memory_read(store="vector")
+    def recall(query: str) -> list[str]:
+        return ["a recollection"]
+
+    @trace_memory_write(store="vector")
+    def remember(key_or_ns: str, value: str) -> None:
+        return None
+
+    def plan(state: ToyState, config: dict[str, Any]) -> dict[str, Any]:
+        recall("what do I know")
+        remember("notes", "something learned")
+        return {}
+
+    graph = StateGraph(ToyState)
+    graph.add_node("plan", plan)
+    graph.add_edge(START, "plan")
+    graph.add_edge("plan", END)
+
+    traced = instrument(graph.compile(), recorder=recorder)
+    traced.invoke({"messages": [], "search_result": ""})
+
+    events = shipper.enqueued
+    [run_finished] = _events_by_kind(events, "run.finished")
+
+    assert len(_events_by_kind(events, "memory.read")) == 1
+    assert len(_events_by_kind(events, "memory.write")) == 1
+    assert run_finished["payload"]["totals"]["events"] == len(events)
 
 
 def test_instrument__run_error_still_emits_run_finished_with_error_status() -> None:

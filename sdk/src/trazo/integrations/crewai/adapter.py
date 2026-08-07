@@ -96,8 +96,10 @@ class InstrumentedCrew:
                     {
                         "status": status,
                         "totals": {
-                            "events": 2
-                            + capture.event_count,  # +2 for run.started/finished
+                            # +1 for this run.finished itself: the tally is
+                            # read before the event is emitted, so it counts
+                            # everything up to but not including it.
+                            "events": totals.events + 1,
                             "llm_calls": totals.llm_calls,
                             "tool_calls": totals.tool_calls,
                             "cost_usd": totals.cost_usd,

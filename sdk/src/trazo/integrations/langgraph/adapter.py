@@ -82,12 +82,10 @@ class InstrumentedGraph:
                     {
                         "status": status,
                         "totals": {
-                            "events": (
-                                2
-                                + handler.step_count
-                                + totals.llm_calls
-                                + totals.tool_calls
-                            ),
+                            # +1 for this run.finished itself: the tally is
+                            # read before the event is emitted, so it counts
+                            # everything up to but not including it.
+                            "events": totals.events + 1,
                             "llm_calls": totals.llm_calls,
                             "tool_calls": totals.tool_calls,
                             "cost_usd": totals.cost_usd,

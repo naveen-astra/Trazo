@@ -116,10 +116,20 @@ class RunTotals:
     ``run.finished`` were silently always zero. ``Recorder.boundary()``
     is the one path every boundary call goes through regardless of
     mechanism, so tallying here instead is correct for any adapter.
+
+    ``events`` is that same fix applied to the run's event count. Both
+    adapters used to derive it arithmetically from what they happened to
+    know about (LangGraph: ``2 + step_count + llm_calls + tool_calls``;
+    CrewAI: ``2 + capture.event_count``), so every event kind outside
+    that formula went uncounted — ``memory.read``/``memory.write`` made a
+    55-event run report 49 in its own rollup while the store held all 55.
+    A formula that has to be revisited whenever EVENTS.md gains a kind is
+    the bug; counting on the one path every event takes cannot drift.
     """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
+        self.events = 0
         self.llm_calls = 0
         self.tool_calls = 0
         self.tokens_in = 0
@@ -128,6 +138,7 @@ class RunTotals:
 
     def record_event(self, kind: str, payload: dict[str, Any]) -> None:
         with self._lock:
+            self.events += 1
             if kind == "llm.call":
                 self.llm_calls += 1
                 self.tokens_in += int(payload.get("tokens_in", 0) or 0)
