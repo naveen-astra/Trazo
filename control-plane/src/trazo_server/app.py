@@ -17,12 +17,13 @@ from typing import Any
 import sqlalchemy as sa
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
-from prometheus_client import make_asgi_app
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from redis.asyncio import Redis
 
 from trazo_server import __version__
 from trazo_server.api import ingest_router, live_router, policy_router, query_router
 from trazo_server.api.problem_details import register_problem_details_handlers
+from trazo_server.bus.protocol import BUS_SOCKET_TIMEOUT_SECONDS
 from trazo_server.bus.redis_streams import RedisStreamsBus
 from trazo_server.config import Settings
 from trazo_server.detectors.base import Detector
@@ -53,7 +54,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # no connection is opened until first use, so this is safe even
         # when Postgres/Redis aren't reachable yet (e.g. under TestClient).
         engine = create_engine(settings.database_url)
-        redis_client = Redis.from_url(settings.redis_url, decode_responses=True)
+        # socket_timeout is set explicitly, and deliberately above the
+        # workers' XREADGROUP block (BUS_SOCKET_TIMEOUT_SECONDS), because the two
+        # race: the block is a server-side wait, the socket timeout is the
+        # client's patience for the reply to that same command. redis-py
+        # 8 defaults socket_timeout to 5s and the workers block for
+        # exactly 5s, so every idle poll lost the race and raised
+        # TimeoutError — and when Redis *did* deliver a batch at that
+        # boundary it recorded the messages in the group's pending list
+        # while the client never read the response, stranding them.
+        # Observed live: store-worker wedged with 167 pending, unacked
+        # messages and nothing persisting at all.
+        redis_client = Redis.from_url(
+            settings.redis_url,
+            decode_responses=True,
+            socket_timeout=BUS_SOCKET_TIMEOUT_SECONDS,
+        )
         event_bus = RedisStreamsBus(redis_client)
         trace_store = PostgresTraceStore(engine)
         app.state.engine = engine
@@ -160,6 +176,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             response.status_code = 503
         return {"status": "ready" if ready else "not_ready", "checks": checks}
 
-    app.mount("/metrics", make_asgi_app())
+    # A route, not app.mount("/metrics", ...): mounting makes Starlette
+    # answer the documented path (API_SPEC.md §"GET /metrics") with a 307
+    # to the trailing-slash form, so the endpoint the docs name serves no
+    # body of its own. Prometheus follows redirects, which is why this
+    # went unnoticed — but any client that doesn't gets nothing, as
+    # scripts/smoke/phase1.sh's plain `curl -fsS /metrics` did.
+    # FastAPI's own redirect_slashes still points /metrics/ back here, so
+    # anything already scraping the trailing-slash form keeps working.
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics() -> Response:
+        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     return app

@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from trazo_server.app import create_app
+from trazo_server.bus.protocol import BUS_BLOCK_MS, BUS_SOCKET_TIMEOUT_SECONDS
 from trazo_server.config import Settings
 
 # Deliberately unreachable rather than relying on ambient absence: CI's
@@ -167,6 +168,25 @@ def test_metrics__exposes_prometheus_text(client: TestClient) -> None:
     assert "text/plain" in response.headers["content-type"]
 
 
+def test_metrics__documented_path_serves_directly_without_a_redirect(
+    client: TestClient,
+) -> None:
+    """API_SPEC.md names `GET /metrics`, and that exact path must return
+    the exposition itself.
+
+    Found by running scripts/smoke/phase1.sh against a live stack: with
+    /metrics *mounted*, Starlette answered the documented path with a 307
+    to /metrics/, so the smoke's plain `curl -fsS` got an empty body and
+    its DLQ-depth assertion failed on a metric that was in fact present
+    and zero. The test above could not catch it — TestClient follows
+    redirects by default, so a 307 still reads as 200 there.
+    """
+    response = client.get("/metrics", follow_redirects=False)
+
+    assert response.status_code == 200
+    assert "trazo_bus_dlq_depth_messages" in response.text
+
+
 def test_cors__preflight_from_the_dashboard_origin_is_allowed(
     client: TestClient,
 ) -> None:
@@ -194,3 +214,21 @@ def test_cors__actual_get_response_carries_the_allow_origin_header(
     response = client.get("/healthz", headers={"Origin": "http://localhost:5173"})
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "*"
+
+
+def test_redis_client__socket_timeout_exceeds_the_worker_poll_block() -> None:
+    """The paired-timeout invariant, asserted rather than assumed.
+
+    XREADGROUP's `block` is a server-side wait; socket_timeout is the
+    client's patience for that same command's reply. If the client's is
+    not strictly longer, every idle poll races and usually loses — and a
+    batch delivered right at the boundary lands in the group's pending
+    list with the client never reading the reply, stranding it.
+
+    That is not hypothetical: redis-py 8 defaults socket_timeout to 5s
+    while the workers blocked for exactly 5s, which wedged the store
+    worker completely (167 pending, unacked messages, nothing persisted).
+    A silent dependency-default change caused it, so the relationship is
+    pinned here instead of living only in a comment.
+    """
+    assert BUS_SOCKET_TIMEOUT_SECONDS > BUS_BLOCK_MS / 1000
