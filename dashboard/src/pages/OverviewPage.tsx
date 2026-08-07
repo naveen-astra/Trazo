@@ -7,6 +7,7 @@ import { IconAlert, IconArrowRight, IconChevronDown } from "../components/Icons"
 import LiveBadge from "../components/LiveBadge";
 import StatTile from "../components/StatTile";
 import StatusBadge from "../components/StatusBadge";
+import { useProjectName } from "../hooks/useCatalog";
 import { useRuns } from "../hooks/useRuns";
 import { useStats } from "../hooks/useStats";
 import { RANGE_OPTIONS, useFilters } from "../lib/filters";
@@ -63,6 +64,7 @@ export default function OverviewPage() {
   const { project, range } = useFilters();
   const { data: stats, isLoading, isError, error } = useStats({ days: range.days, project });
   const { data: runsPage } = useRuns(project ? { project } : {});
+  const projectName = useProjectName();
 
   if (isLoading && !stats) {
     return (
@@ -190,7 +192,7 @@ export default function OverviewPage() {
                           {run.run_id.slice(0, 18)}…
                         </Link>
                       </td>
-                      <td className="muted">{run.project_id}</td>
+                      <td className="muted">{projectName(run.project_id)}</td>
                       <td>
                         <span className="row" style={{ gap: 6 }}>
                           <StatusBadge status={run.status} />

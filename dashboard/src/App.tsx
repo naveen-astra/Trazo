@@ -168,7 +168,9 @@ export default function App() {
               <option value="">All projects</option>
               {projects.map((entry) => (
                 <option key={entry.project_id} value={entry.project_id}>
-                  {entry.project_id} ({entry.runs})
+                  {/* The name the SDK was configured with, not the hash of
+                      it — "research-assistant", not proj_85c0c89d12f6… */}
+                  {entry.name} ({entry.runs})
                 </option>
               ))}
             </select>

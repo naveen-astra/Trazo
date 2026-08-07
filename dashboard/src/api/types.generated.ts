@@ -593,6 +593,8 @@ export interface components {
     ProjectOut: {
       /** Project Id */
       project_id: string;
+      /** Name */
+      name: string;
       /** Runs */
       runs: number;
     };

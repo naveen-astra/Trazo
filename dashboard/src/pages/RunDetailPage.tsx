@@ -12,6 +12,7 @@ import RunTimeline from "../components/RunTimeline";
 import StatusBadge from "../components/StatusBadge";
 import StepInspector from "../components/StepInspector";
 import TimelineStrip from "../components/TimelineStrip";
+import { useProjectName } from "../hooks/useCatalog";
 import { useDetections } from "../hooks/useDetections";
 import { useLiveRunEvents } from "../hooks/useLiveRunEvents";
 import { usePolicyDecisions } from "../hooks/usePolicyDecisions";
@@ -42,6 +43,8 @@ export default function RunDetailPage() {
   const { events, connected } = useLiveRunEvents(runId ?? "");
   const { data: detectionsPage } = useDetections(runId ?? "", run?.status);
   const { data: policyDecisionsPage } = usePolicyDecisions(runId ?? "", run?.status);
+
+  const projectName = useProjectName();
 
   const [view, setView] = useState<View>("flow");
   const [selectedStepKey, setSelectedStepKey] = useState<string | null>(null);
@@ -103,7 +106,7 @@ export default function RunDetailPage() {
           </div>
           <div className="run-meta__item">
             <span className="run-meta__label">Project</span>
-            <span className="run-meta__value">{run.project_id}</span>
+            <span className="run-meta__value">{projectName(run.project_id)}</span>
           </div>
           <div className="run-meta__item">
             <span className="run-meta__label">Duration</span>

@@ -1394,6 +1394,10 @@
             "type": "string",
             "title": "Project Id"
           },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
           "runs": {
             "type": "integer",
             "title": "Runs"
@@ -1402,6 +1406,7 @@
         "type": "object",
         "required": [
           "project_id",
+          "name",
           "runs"
         ],
         "title": "ProjectOut"

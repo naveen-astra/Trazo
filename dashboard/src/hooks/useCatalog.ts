@@ -24,3 +24,17 @@ export function useAgents() {
 export function useProjects() {
   return useQuery({ queryKey: ["projects"], queryFn: listProjects, staleTime: 10000 });
 }
+
+/** Resolve a `project_id` to the name the SDK was configured with.
+ *
+ * Runs, stats and events all carry the hashed `project_id`; only
+ * /v1/projects knows the name behind it. Reads from the same cached
+ * query the project filter uses, and falls back to the id so a project
+ * that has no row yet still renders something truthful rather than
+ * blank.
+ */
+export function useProjectName(): (projectId: string) => string {
+  const { data } = useProjects();
+  return (projectId: string) =>
+    data?.projects.find((p) => p.project_id === projectId)?.name ?? projectId;
+}
