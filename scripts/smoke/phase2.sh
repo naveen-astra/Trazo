@@ -138,18 +138,22 @@ kill "$FIREHOSE_PID" >/dev/null 2>&1 || true
 wait "$FIREHOSE_PID" 2>/dev/null || true
 FIREHOSE_PID=""
 
+# Fed on stdin rather than opened by path, like every other python3 step
+# here: $FIREHOSE_LOG is a shell-side path (/tmp/tmp.XXXX), and under Git
+# Bash on Windows the interpreter is a native Windows python that cannot
+# resolve it — the assertion died with FileNotFoundError on a file the
+# shell had just written perfectly well.
 python3 -c "
 import json, sys
 kinds = []
-with open('$FIREHOSE_LOG', encoding='utf-8') as f:
-    for line in f:
-        if line.startswith('data:'):
-            kinds.append(json.loads(line[len('data:'):])['kind'])
+for line in sys.stdin:
+    if line.startswith('data:'):
+        kinds.append(json.loads(line[len('data:'):])['kind'])
 assert kinds.count('run.started') == 1, kinds
 assert kinds.count('run.finished') == 1, kinds
 assert kinds.count('llm.call') == 1, kinds
 assert kinds.count('tool.call') == 1, kinds
 print('firehose live-delivery OK:', kinds)
-"
+" <"$FIREHOSE_LOG"
 
 echo "==> phase 2 smoke: PASS"
