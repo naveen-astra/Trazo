@@ -1,28 +1,48 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import {
   IconAlert,
+  IconBell,
+  IconBrain,
+  IconChevronDown,
+  IconGraph,
   IconGrid,
   IconList,
   IconMoon,
+  IconPlay,
   IconSearch,
   IconShield,
+  IconSliders,
   IconSun,
+  IconUsers,
+  IconWrench,
 } from "./components/Icons";
+import { useProjects } from "./hooks/useCatalog";
+import { useLiveRefresh } from "./hooks/useLiveRefresh";
 import { useStats } from "./hooks/useStats";
+import { useFilters } from "./lib/filters";
 
-// Nav lists only surfaces this control plane actually serves. Sections
-// the API has no data for (agent registries, datasets, evaluations,
-// approvals, integrations) are deliberately absent rather than rendered
-// as dead links — a nav item that goes nowhere is worse than a shorter
-// nav (the README's "Project status" table makes the same promise).
+// Nav lists only surfaces this control plane actually serves. Sections a
+// product like this often has but Trazo records no data for (datasets,
+// evaluations, prompt diffs, alert rules, approvals, integrations) are
+// deliberately absent rather than rendered as dead links.
 const NAV = [
   {
     group: "Observe",
     items: [
       { to: "/", label: "Overview", icon: <IconGrid />, end: true },
       { to: "/runs", label: "Runs", icon: <IconList />, end: false },
+      { to: "/traces", label: "Traces", icon: <IconGraph />, end: false },
+      { to: "/agents", label: "Agents", icon: <IconUsers />, end: false },
+      { to: "/tools", label: "Tools", icon: <IconWrench />, end: false },
+    ],
+  },
+  {
+    group: "Debug",
+    items: [
+      { to: "/replay", label: "Replay Studio", icon: <IconPlay />, end: false },
+      { to: "/logs", label: "Logs", icon: <IconBrain />, end: false },
     ],
   },
   {
@@ -31,6 +51,10 @@ const NAV = [
       { to: "/incidents", label: "Incidents", icon: <IconAlert />, end: false },
       { to: "/policy", label: "Policy", icon: <IconShield />, end: false },
     ],
+  },
+  {
+    group: "Config",
+    items: [{ to: "/settings", label: "Settings", icon: <IconSliders />, end: false }],
   },
 ];
 
@@ -51,10 +75,17 @@ function useTheme(): [Theme, () => void] {
 
 export default function App() {
   const [theme, toggleTheme] = useTheme();
-  // Only feeds the Incidents badge; a failed/pending stats call means no
-  // badge, never a broken nav.
-  const { data: stats } = useStats();
+  const { project, setProject } = useFilters();
+  const { data: stats } = useStats({ project });
+  const { data: projectsPage } = useProjects();
+  // One SSE subscription for the whole app: every list/aggregate view
+  // re-reads the moment events land (see useLiveRefresh).
+  const { connected, streaming } = useLiveRefresh(project);
+  const navigate = useNavigate();
+  const [query, setQuery] = useState("");
+
   const openIncidents = stats?.recent_detections.length ?? 0;
+  const projects = projectsPage?.projects ?? [];
 
   return (
     <div className="app">
@@ -84,15 +115,77 @@ export default function App() {
           </div>
         ))}
 
-        <div className="sidebar__footer">observability · replay · governance</div>
+        <div className="sidebar__footer">
+          <span
+            className="chip"
+            title={
+              connected
+                ? "Subscribed to the live event stream"
+                : "Live stream disconnected — views refresh on navigation"
+            }
+          >
+            <span
+              className="chip__dot"
+              style={{
+                borderRadius: "50%",
+                background: connected ? "var(--status-good)" : "var(--text-muted)",
+                animation: streaming ? "live-pulse 1s ease-in-out infinite" : "none",
+              }}
+            />
+            {connected ? (streaming ? "receiving" : "live") : "offline"}
+          </span>
+        </div>
       </nav>
 
       <div className="main">
         <header className="topbar">
-          <label className="topbar__search">
+          <form
+            className="topbar__search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const trimmed = query.trim();
+              if (trimmed) navigate(`/runs/${encodeURIComponent(trimmed)}`);
+            }}
+          >
             <IconSearch />
-            <input placeholder="Search runs by id…" disabled />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Go to run by id…"
+              aria-label="Go to run by id"
+            />
+          </form>
+
+          {/* A real project filter, not a workspace switcher: Trazo has no
+              tenancy (ADR-009), but project_id is on every row, so this
+              scopes the API calls for real. */}
+          <label className="select-wrap" title="Filter every view by project">
+            <select
+              className="select"
+              value={project ?? ""}
+              onChange={(event) => setProject(event.target.value || undefined)}
+            >
+              <option value="">All projects</option>
+              {projects.map((entry) => (
+                <option key={entry.project_id} value={entry.project_id}>
+                  {entry.project_id} ({entry.runs})
+                </option>
+              ))}
+            </select>
+            <IconChevronDown />
           </label>
+
+          <NavLink
+            to="/incidents"
+            className="icon-button"
+            style={{ position: "relative" }}
+            aria-label={`${openIncidents} open incidents`}
+            title={`${openIncidents} recent detections`}
+          >
+            <IconBell />
+            {openIncidents > 0 && <span className="icon-button__badge">{openIncidents}</span>}
+          </NavLink>
+
           <button
             type="button"
             className="icon-button"
