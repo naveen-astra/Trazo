@@ -169,6 +169,110 @@ async def test_stream_project_events__spans_runs_ordered_by_event_id() -> None:
     assert chunks[1].startswith("id: evt_002")
 
 
+async def test_stream_project_events__tail_skips_the_backlog() -> None:
+    """A tail subscriber gets nothing for events that predate it.
+
+    This is what keeps the dashboard's refresh trigger cheap: it only
+    needs to know *that* something happened, so replaying the whole
+    history first would cost more the longer the deployment has run.
+    """
+    store = InMemoryTraceStore()
+    await store.upsert_run(_run(run_id="run_a", project_id="proj_a"))
+    await store.upsert_events(
+        [
+            _event(run_id="run_a", seq=0, event_id="evt_001"),
+            _event(run_id="run_a", seq=1, event_id="evt_002"),
+        ]
+    )
+
+    chunks = await _collect(
+        stream_project_events(
+            store,
+            "proj_a",
+            after_event_id=None,
+            is_disconnected=_DisconnectAfterN(1),
+            tail=True,
+            poll_interval=0.01,
+        )
+    )
+
+    assert chunks == []
+
+
+async def test_stream_project_events__tail_still_yields_events_that_arrive_after() -> (
+    None
+):
+    store = InMemoryTraceStore()
+    await store.upsert_run(_run(run_id="run_a", project_id="proj_a"))
+    await store.upsert_events([_event(run_id="run_a", seq=0, event_id="evt_001")])
+
+    stream = stream_project_events(
+        store,
+        "proj_a",
+        after_event_id=None,
+        is_disconnected=_never_disconnected,
+        tail=True,
+        poll_interval=0.01,
+    )
+    # Pull one chunk with the backlog already in place: it must block
+    # until the *new* event lands rather than replaying evt_001.
+    pull = asyncio.ensure_future(anext(stream))  # type: ignore[arg-type]
+    await asyncio.sleep(0.05)
+    assert not pull.done()
+
+    await store.upsert_events([_event(run_id="run_a", seq=1, event_id="evt_002")])
+    chunk = await asyncio.wait_for(pull, timeout=5.0)
+
+    assert chunk.startswith("id: evt_002")
+    await stream.aclose()
+
+
+async def test_stream_project_events__resume_cursor_beats_tail() -> None:
+    """Last-Event-ID wins over tail — a reconnecting client must get the
+    events it missed, which is the entire point of the resume header."""
+    store = InMemoryTraceStore()
+    await store.upsert_run(_run(run_id="run_a", project_id="proj_a"))
+    await store.upsert_events(
+        [
+            _event(run_id="run_a", seq=0, event_id="evt_001"),
+            _event(run_id="run_a", seq=1, event_id="evt_002"),
+        ]
+    )
+
+    chunks = await _collect(
+        stream_project_events(
+            store,
+            "proj_a",
+            after_event_id="evt_001",
+            is_disconnected=_DisconnectAfterN(1),
+            tail=True,
+            poll_interval=0.01,
+        )
+    )
+
+    assert len(chunks) == 1
+    assert chunks[0].startswith("id: evt_002")
+
+
+async def test_latest_event_id__is_scoped_to_the_project_and_none_when_empty() -> None:
+    store = InMemoryTraceStore()
+    assert await store.latest_event_id(None) is None
+
+    await store.upsert_run(_run(run_id="run_a", project_id="proj_a"))
+    await store.upsert_run(_run(run_id="run_b", project_id="proj_b"))
+    await store.upsert_events(
+        [
+            _event(run_id="run_a", seq=0, event_id="evt_001"),
+            _event(run_id="run_b", seq=0, event_id="evt_009"),
+        ]
+    )
+
+    assert await store.latest_event_id("proj_a") == "evt_001"
+    assert await store.latest_event_id("proj_b") == "evt_009"
+    assert await store.latest_event_id(None) == "evt_009"
+    assert await store.latest_event_id("proj_missing") is None
+
+
 @pytest.fixture
 def trace_store() -> InMemoryTraceStore:
     return InMemoryTraceStore()

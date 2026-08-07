@@ -86,16 +86,29 @@ async def stream_run_events(
 
 async def stream_project_events(
     store: TraceStore,
-    project_id: str,
+    project_id: str | None,
     *,
     after_event_id: str | None,
     is_disconnected: Callable[[], Awaitable[bool]],
+    tail: bool = False,
     poll_interval: float = POLL_INTERVAL_SECONDS,
 ) -> AsyncIterator[str]:
     """Yields SSE messages for every event across every run in a project,
     ordered by event_id (ULID — globally sortable, unlike per-run seq).
-    Never terminates on its own; only a client disconnect ends it."""
+    ``project_id=None`` streams every project — what the dashboard's
+    Overview subscribes to when no project filter is set, so it updates
+    the instant an event lands rather than on a poll tick.
+    Never terminates on its own; only a client disconnect ends it.
+
+    ``tail`` starts the cursor at the current head, so the client is sent
+    only events that arrive after it connected. ``after_event_id`` always
+    wins over it: that carries the SSE ``Last-Event-ID`` resume position,
+    and silently skipping to the head on reconnect would drop exactly the
+    events the resume exists to recover.
+    """
     last_event_id = after_event_id
+    if last_event_id is None and tail:
+        last_event_id = await store.latest_event_id(project_id)
     while True:
         if await is_disconnected():
             return
@@ -136,9 +149,10 @@ async def live_run(
 
 @router.get("/live/firehose")
 async def live_firehose(
-    project: str,
     request: Request,
     store: Annotated[TraceStore, Depends(get_trace_store)],
+    project: str | None = None,
+    tail: bool = False,
 ) -> StreamingResponse:
     after_event_id = request.headers.get("last-event-id")
 
@@ -150,6 +164,7 @@ async def live_firehose(
                 project,
                 after_event_id=after_event_id,
                 is_disconnected=request.is_disconnected,
+                tail=tail,
             ):
                 yield chunk
         finally:
