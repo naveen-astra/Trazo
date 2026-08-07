@@ -91,22 +91,45 @@ class InMemoryTraceStore:
 
     async def get_project_events(
         self,
-        project_id: str,
+        project_id: str | None,
         *,
         after_event_id: str | None = None,
         limit: int = 100,
     ) -> list[EventRow]:
-        run_ids_in_project = {
-            run.run_id for run in self._runs.values() if run.project_id == project_id
-        }
+        run_ids_in_project = (
+            None
+            if project_id is None
+            else {
+                run.run_id
+                for run in self._runs.values()
+                if run.project_id == project_id
+            }
+        )
         rows = [
             event
             for (event_run_id, _seq), event in self._events.items()
-            if event_run_id in run_ids_in_project
+            if (run_ids_in_project is None or event_run_id in run_ids_in_project)
             and (after_event_id is None or event.event_id > after_event_id)
         ]
         rows.sort(key=lambda event: event.event_id)
         return rows[:limit]
+
+    async def latest_event_id(self, project_id: str | None) -> str | None:
+        run_ids_in_project = (
+            None
+            if project_id is None
+            else {
+                run.run_id
+                for run in self._runs.values()
+                if run.project_id == project_id
+            }
+        )
+        event_ids = [
+            event.event_id
+            for (event_run_id, _seq), event in self._events.items()
+            if run_ids_in_project is None or event_run_id in run_ids_in_project
+        ]
+        return max(event_ids) if event_ids else None
 
     async def append_event(
         self,
@@ -165,4 +188,19 @@ class InMemoryTraceStore:
         rows = sorted(
             self._policy_decisions.values(), key=lambda d: d.decided_at, reverse=True
         )
+        return rows[:limit]
+
+    async def list_recent_events(
+        self, *, kind: str | None = None, limit: int
+    ) -> list[EventRow]:
+        rows = [
+            event
+            for event in self._events.values()
+            if kind is None or event.kind == kind
+        ]
+        # event_id breaks ts ties. Fast agents emit many events inside one
+        # millisecond, and ts alone left the feed showing a run's events
+        # shuffled (…54, 52, 53, 50, 51…). event_id is a ULID, monotonic
+        # within a run, so it restores true emission order.
+        rows.sort(key=lambda e: (e.ts, e.event_id), reverse=True)
         return rows[:limit]

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Response
@@ -109,6 +109,17 @@ class StatsProjectCost(BaseModel):
     cost_usd: float
 
 
+class StatsDeltas(BaseModel):
+    """Percent change of this window against the immediately preceding
+    window of the same length. ``None`` where the previous window had
+    nothing to compare against — the UI shows "no prior data" rather
+    than a meaningless +100%."""
+
+    runs_pct: float | None
+    failed_runs_pct: float | None
+    cost_pct: float | None
+
+
 class StatsOut(BaseModel):
     total_runs: int
     failed_runs: int
@@ -117,10 +128,48 @@ class StatsOut(BaseModel):
     policy_denials: int
     total_detections: int
     window_runs: int
+    range_days: int | None
+    deltas: StatsDeltas
     daily: list[StatsDailyPoint]
     cost_by_project: list[StatsProjectCost]
     recent_detections: list[DetectionOut]
     recent_policy_decisions: list[PolicyDecisionOut]
+
+
+class ToolStat(BaseModel):
+    tool_name: str
+    calls: int
+    errors: int
+    avg_latency_ms: float
+    side_effect_class: str
+    last_used: str
+
+
+class ToolsPage(BaseModel):
+    tools: list[ToolStat]
+    window_events: int
+
+
+class AgentStat(BaseModel):
+    agent_id: str
+    events: int
+    runs: int
+    last_seen: str
+
+
+class AgentsPage(BaseModel):
+    agents: list[AgentStat]
+    window_events: int
+    unattributed_events: int
+
+
+class ProjectOut(BaseModel):
+    project_id: str
+    runs: int
+
+
+class ProjectsPage(BaseModel):
+    projects: list[ProjectOut]
 
 
 def _clamp_limit(limit: int) -> int:
@@ -338,14 +387,47 @@ _FAILED_RUN_STATUSES = frozenset({"error", "blocked"})
 _ACTIVE_RUN_STATUSES = frozenset({"running"})
 
 
+def _pct_change(current: float, previous: float) -> float | None:
+    """None when there's no prior window to compare against — the UI
+    renders "no prior data" rather than a meaningless +100%."""
+    if previous <= 0:
+        return None
+    return round(((current - previous) / previous) * 100, 1)
+
+
 @router.get("/stats", response_model=StatsOut)
 async def get_stats(
     store: Annotated[TraceStore, Depends(get_trace_store)],
+    days: int | None = None,
+    project: str | None = None,
 ) -> StatsOut:
     """Fleet-wide rollups for the dashboard Overview: run/failure/cost
-    counters, a per-day series, cost split by project, and the newest
-    detections across every run."""
-    runs = await store.list_runs(limit=_STATS_WINDOW_RUNS)
+    counters, a per-day series, cost split by project, the newest
+    detections across every run, and this window's change against the
+    one before it.
+
+    ``days`` restricts to runs started within the last N days (and
+    computes the deltas against the equally-long window before that);
+    omitted means the whole bounded scan with no delta baseline.
+    """
+    runs = await store.list_runs(project_id=project, limit=_STATS_WINDOW_RUNS)
+
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(days=days) if days else None
+    previous_start = now - timedelta(days=days * 2) if days else None
+
+    in_window: list[RunRow] = []
+    previous: list[RunRow] = []
+    for run in runs:
+        # Stored timestamps are tz-aware (timestamptz); guard anyway so a
+        # naive value from a fake store can't raise on comparison.
+        started = run.started_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        if window_start is None or started >= window_start:
+            in_window.append(run)
+        elif previous_start is not None and started >= previous_start:
+            previous.append(run)
 
     daily: dict[str, StatsDailyPoint] = {}
     by_project: dict[str, StatsProjectCost] = {}
@@ -353,7 +435,7 @@ async def get_stats(
     failed = 0
     active = 0
 
-    for run in runs:
+    for run in in_window:
         cost = float(run.totals.get("cost_usd", 0.0) or 0.0)
         total_cost += cost
         is_failed = run.status in _FAILED_RUN_STATUSES
@@ -380,19 +462,28 @@ async def get_stats(
             cost_usd=bucket.cost_usd + cost,
         )
 
+    prev_failed = sum(1 for r in previous if r.status in _FAILED_RUN_STATUSES)
+    prev_cost = sum(float(r.totals.get("cost_usd", 0.0) or 0.0) for r in previous)
+
     recent_detections = await store.list_recent_detections(
         limit=_STATS_RECENT_DETECTIONS
     )
     decisions = await store.list_recent_policy_decisions(limit=_STATS_POLICY_WINDOW)
 
     return StatsOut(
-        total_runs=len(runs),
+        total_runs=len(in_window),
         failed_runs=failed,
         active_runs=active,
         total_cost_usd=round(total_cost, 4),
         policy_denials=sum(1 for d in decisions if d.decision in ("deny", "escalate")),
         total_detections=len(recent_detections),
-        window_runs=len(runs),
+        window_runs=len(in_window),
+        range_days=days,
+        deltas=StatsDeltas(
+            runs_pct=_pct_change(len(in_window), len(previous)),
+            failed_runs_pct=_pct_change(failed, prev_failed),
+            cost_pct=_pct_change(total_cost, prev_cost),
+        ),
         daily=sorted(daily.values(), key=lambda p: p.date),
         cost_by_project=sorted(
             by_project.values(), key=lambda p: p.cost_usd, reverse=True
@@ -402,6 +493,130 @@ async def get_stats(
             _policy_decision_out(d) for d in decisions[:_STATS_RECENT_DECISIONS]
         ],
     )
+
+
+# Bounded event scans behind the Traces / Logs / Tools / Agents surfaces.
+# Same reasoning as the stats window above: one `list_recent_events` read
+# per request, aggregated here, rather than four bespoke GROUP BY queries
+# whose results would then have to agree with each other.
+_EVENT_FEED_LIMIT = 200
+_TOOL_WINDOW_EVENTS = 1000
+_AGENT_WINDOW_EVENTS = 1000
+
+
+@router.get("/events/recent", response_model=EventsPage)
+async def list_recent_events(
+    store: Annotated[TraceStore, Depends(get_trace_store)],
+    kind: str | None = None,
+    limit: int = _EVENT_FEED_LIMIT,
+) -> EventsPage:
+    """Newest events across every run — the raw trace feed, and (with
+    ``kind=sdk.diagnostic``) the SDK's own diagnostic log."""
+    rows = await store.list_recent_events(kind=kind, limit=_clamp_limit(limit))
+    return EventsPage(events=[_event_out(row) for row in rows], next_cursor=None)
+
+
+@router.get("/tools", response_model=ToolsPage)
+async def list_tools(
+    store: Annotated[TraceStore, Depends(get_trace_store)],
+) -> ToolsPage:
+    """Per-tool rollup derived from recent ``tool.call`` events: call
+    count, error count, mean latency, and when it was last used."""
+    rows = await store.list_recent_events(kind="tool.call", limit=_TOOL_WINDOW_EVENTS)
+
+    calls: dict[str, int] = {}
+    errors: dict[str, int] = {}
+    latency_total: dict[str, float] = {}
+    side_effect: dict[str, str] = {}
+    last_used: dict[str, str] = {}
+
+    for row in rows:
+        payload = row.payload
+        name = str(payload.get("tool_name") or "unknown")
+        calls[name] = calls.get(name, 0) + 1
+        if payload.get("status") not in (None, "ok"):
+            errors[name] = errors.get(name, 0) + 1
+        latency = payload.get("latency_ms")
+        if isinstance(latency, (int, float)):
+            latency_total[name] = latency_total.get(name, 0.0) + float(latency)
+        side_effect.setdefault(name, str(payload.get("side_effect_class") or "unknown"))
+        # rows arrive newest-first, so the first sighting is the latest.
+        last_used.setdefault(name, row.ts.isoformat())
+
+    tools = [
+        ToolStat(
+            tool_name=name,
+            calls=count,
+            errors=errors.get(name, 0),
+            avg_latency_ms=round(latency_total.get(name, 0.0) / count, 3),
+            side_effect_class=side_effect.get(name, "unknown"),
+            last_used=last_used.get(name, ""),
+        )
+        for name, count in calls.items()
+    ]
+    tools.sort(key=lambda t: t.calls, reverse=True)
+    return ToolsPage(tools=tools, window_events=len(rows))
+
+
+@router.get("/agents", response_model=AgentsPage)
+async def list_agents(
+    store: Annotated[TraceStore, Depends(get_trace_store)],
+) -> AgentsPage:
+    """Per-agent rollup from recent events' ``agent_id``.
+
+    ``unattributed_events`` is reported alongside on purpose: only an
+    adapter that can name the acting agent sets ``agent_id`` (CrewAI's
+    does, per-role; the LangGraph adapter leaves it null because a graph
+    node isn't an agent identity), so an empty list here means "nothing
+    attributed", not "nothing ran".
+    """
+    rows = await store.list_recent_events(limit=_AGENT_WINDOW_EVENTS)
+
+    events: dict[str, int] = {}
+    runs: dict[str, set[str]] = {}
+    last_seen: dict[str, str] = {}
+    unattributed = 0
+
+    for row in rows:
+        if not row.agent_id:
+            unattributed += 1
+            continue
+        events[row.agent_id] = events.get(row.agent_id, 0) + 1
+        runs.setdefault(row.agent_id, set()).add(row.run_id)
+        last_seen.setdefault(row.agent_id, row.ts.isoformat())
+
+    agents = [
+        AgentStat(
+            agent_id=agent_id,
+            events=count,
+            runs=len(runs.get(agent_id, set())),
+            last_seen=last_seen.get(agent_id, ""),
+        )
+        for agent_id, count in events.items()
+    ]
+    agents.sort(key=lambda a: a.events, reverse=True)
+    return AgentsPage(
+        agents=agents, window_events=len(rows), unattributed_events=unattributed
+    )
+
+
+@router.get("/projects", response_model=ProjectsPage)
+async def list_projects(
+    store: Annotated[TraceStore, Depends(get_trace_store)],
+) -> ProjectsPage:
+    """Projects that actually have runs — backs the dashboard's project
+    filter. Derived from the run window rather than the `projects` table
+    so the filter only ever offers values that will return something."""
+    runs = await store.list_runs(limit=_STATS_WINDOW_RUNS)
+    counts: dict[str, int] = {}
+    for run in runs:
+        counts[run.project_id] = counts.get(run.project_id, 0) + 1
+    projects = [
+        ProjectOut(project_id=project_id, runs=count)
+        for project_id, count in counts.items()
+    ]
+    projects.sort(key=lambda p: p.runs, reverse=True)
+    return ProjectsPage(projects=projects)
 
 
 _BUNDLE_PAGE_SIZE = 1000

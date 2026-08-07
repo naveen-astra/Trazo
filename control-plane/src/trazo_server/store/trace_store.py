@@ -76,7 +76,7 @@ class TraceStore(Protocol):
 
     async def get_project_events(
         self,
-        project_id: str,
+        project_id: str | None,
         *,
         after_event_id: str | None = None,
         limit: int = 100,
@@ -86,6 +86,23 @@ class TraceStore(Protocol):
         unlike ``seq`` which only orders events within one run). Backs the
         live firehose (TRZ-P2-06), where ``after_event_id`` is the resume
         cursor.
+        """
+        ...
+
+    async def latest_event_id(self, project_id: str | None) -> str | None:
+        """The greatest ``event_id`` currently stored for a project (or
+        across all projects when ``project_id`` is None), or None when
+        there are no events yet.
+
+        This is the firehose's "start at the head" cursor. A client that
+        only wants to know *that* something happened — the dashboard's
+        refresh trigger, which discards the payload — would otherwise be
+        served the entire event history before its first live message,
+        which gets slower the longer the deployment has been running.
+
+        Deliberately ``max(event_id)`` and not "newest by ``ts``": the
+        cursor is compared against ``event_id``, so seeding it from a
+        different ordering could skip or repeat events at the boundary.
         """
         ...
 
@@ -150,4 +167,19 @@ class TraceStore(Protocol):
     ) -> list[PolicyDecisionRow]:
         """Most recently decided policy decisions across *all* runs, same
         newest-N-only contract as ``list_recent_detections``."""
+        ...
+
+    async def list_recent_events(
+        self, *, kind: str | None = None, limit: int
+    ) -> list[EventRow]:
+        """Most recent events across *all* runs, newest first, optionally
+        filtered to one kind.
+
+        The cross-run counterpart to ``get_events``. One method backs
+        four read surfaces that are all "recent events, sliced
+        differently": the raw trace feed, the diagnostic log
+        (``kind='sdk.diagnostic'``), and the tool/agent rollups the API
+        derives from ``tool.call`` events — rather than four bespoke
+        aggregate queries whose results would then have to agree.
+        """
         ...

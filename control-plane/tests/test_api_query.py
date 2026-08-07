@@ -519,3 +519,165 @@ def test_get_stats__empty_store_reports_zeros_not_an_error(
     assert body["total_cost_usd"] == 0.0
     assert body["daily"] == []
     assert body["recent_detections"] == []
+
+
+async def test_get_stats__days_window_excludes_older_runs_and_computes_deltas(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    """`days` bounds the window AND defines the baseline: the delta is
+    against the equally-long window immediately before it."""
+    now = datetime.now(timezone.utc)
+    # 2 runs inside the last 7 days ...
+    await trace_store.upsert_run(
+        _run(run_id="recent_a", started_at=now - timedelta(days=1))
+    )
+    await trace_store.upsert_run(
+        _run(run_id="recent_b", started_at=now - timedelta(days=2))
+    )
+    # ... 1 run in the preceding 7-day window (the baseline) ...
+    await trace_store.upsert_run(
+        _run(run_id="prior", started_at=now - timedelta(days=9))
+    )
+    # ... and 1 far outside both, which must not count anywhere.
+    await trace_store.upsert_run(
+        _run(run_id="ancient", started_at=now - timedelta(days=90))
+    )
+
+    body = client.get("/v1/stats", params={"days": 7}).json()
+
+    assert body["total_runs"] == 2
+    assert body["range_days"] == 7
+    # 2 this window vs 1 the window before = +100%
+    assert body["deltas"]["runs_pct"] == 100.0
+
+
+def test_get_stats__delta_is_null_when_there_is_no_prior_window(
+    client: TestClient,
+) -> None:
+    """An empty baseline yields null, not a misleading +100%."""
+    body = client.get("/v1/stats", params={"days": 7}).json()
+
+    assert body["deltas"]["runs_pct"] is None
+    assert body["deltas"]["cost_pct"] is None
+
+
+async def test_get_stats__project_filter_scopes_every_counter(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    await trace_store.upsert_run(
+        _run(run_id="a", project_id="proj_1", totals={"cost_usd": 2.0})
+    )
+    await trace_store.upsert_run(
+        _run(run_id="b", project_id="proj_2", totals={"cost_usd": 5.0})
+    )
+
+    body = client.get("/v1/stats", params={"project": "proj_1"}).json()
+
+    assert body["total_runs"] == 1
+    assert body["total_cost_usd"] == 2.0
+
+
+async def test_list_recent_events__newest_first_across_runs_and_filters_by_kind(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    await trace_store.upsert_events(
+        [
+            _event(seq=0, kind="run.started", ts=_NOW),
+            _event(seq=1, kind="tool.call", ts=_NOW + timedelta(minutes=1)),
+        ]
+    )
+
+    body = client.get("/v1/events/recent").json()
+    assert [e["kind"] for e in body["events"]] == ["tool.call", "run.started"]
+
+    filtered = client.get("/v1/events/recent", params={"kind": "tool.call"}).json()
+    assert [e["kind"] for e in filtered["events"]] == ["tool.call"]
+
+
+async def test_list_recent_events__breaks_ts_ties_by_event_id(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    """A fast agent emits many events inside one millisecond, so ordering
+    on ts alone left the Traces feed showing a single run's events
+    shuffled. event_id is a ULID — monotonic within a run — so it is the
+    correct tiebreaker.
+    """
+    await trace_store.upsert_events(
+        [
+            _event(seq=n, event_id=f"evt_{n:02d}", kind="step.started", ts=_NOW)
+            for n in range(5)
+        ]
+    )
+
+    body = client.get("/v1/events/recent").json()
+
+    assert [e["seq"] for e in body["events"]] == [4, 3, 2, 1, 0]
+
+
+async def test_list_tools__rolls_up_calls_errors_and_mean_latency(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    def tool_event(seq: int, name: str, status: str, latency: float) -> EventRow:
+        return _event(
+            seq=seq,
+            kind="tool.call",
+            payload={
+                "tool_name": name,
+                "args": {},
+                "result": "",
+                "status": status,
+                "latency_ms": latency,
+                "side_effect_class": "external",
+            },
+        )
+
+    await trace_store.upsert_events(
+        [
+            tool_event(0, "web_search", "ok", 10.0),
+            tool_event(1, "web_search", "error", 20.0),
+            tool_event(2, "fetch_doc", "ok", 5.0),
+        ]
+    )
+
+    body = client.get("/v1/tools").json()
+
+    # busiest tool first
+    assert [t["tool_name"] for t in body["tools"]] == ["web_search", "fetch_doc"]
+    web_search = body["tools"][0]
+    assert web_search["calls"] == 2
+    assert web_search["errors"] == 1
+    assert web_search["avg_latency_ms"] == 15.0
+    assert web_search["side_effect_class"] == "external"
+
+
+async def test_list_agents__reports_unattributed_events_rather_than_hiding_them(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    """The LangGraph adapter leaves agent_id null, so "no agents" must be
+    distinguishable from "nothing ran"."""
+    await trace_store.upsert_events(
+        [
+            _event(seq=0, kind="run.started"),
+            _event(seq=1, kind="llm.call", agent_id="researcher"),
+        ]
+    )
+
+    body = client.get("/v1/agents").json()
+
+    assert [a["agent_id"] for a in body["agents"]] == ["researcher"]
+    assert body["agents"][0]["events"] == 1
+    assert body["agents"][0]["runs"] == 1
+    assert body["unattributed_events"] == 1
+
+
+async def test_list_projects__counts_runs_per_project_busiest_first(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    await trace_store.upsert_run(_run(run_id="a", project_id="proj_busy"))
+    await trace_store.upsert_run(_run(run_id="b", project_id="proj_busy"))
+    await trace_store.upsert_run(_run(run_id="c", project_id="proj_quiet"))
+
+    body = client.get("/v1/projects").json()
+
+    assert [p["project_id"] for p in body["projects"]] == ["proj_busy", "proj_quiet"]
+    assert body["projects"][0]["runs"] == 2

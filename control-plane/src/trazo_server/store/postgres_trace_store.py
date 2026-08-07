@@ -159,7 +159,7 @@ class PostgresTraceStore:
 
     async def get_project_events(
         self,
-        project_id: str,
+        project_id: str | None,
         *,
         after_event_id: str | None = None,
         limit: int = 100,
@@ -167,16 +167,33 @@ class PostgresTraceStore:
         stmt = (
             sa.select(events)
             .select_from(events.join(runs, events.c.run_id == runs.c.run_id))
-            .where(runs.c.project_id == project_id)
             .order_by(events.c.event_id)
             .limit(limit)
         )
+        if project_id is not None:
+            stmt = stmt.where(runs.c.project_id == project_id)
         if after_event_id is not None:
             stmt = stmt.where(events.c.event_id > after_event_id)
         async with self._engine.connect() as conn:
             result = await conn.execute(stmt)
             fetched = result.mappings().all()
         return [_event_row_from_mapping(row) for row in fetched]
+
+    async def latest_event_id(self, project_id: str | None) -> str | None:
+        # ORDER BY event_id DESC LIMIT 1 rather than max(): with a project
+        # filter the join makes an index-backed backwards scan the cheaper
+        # plan, and without one it degrades to the same thing max() does.
+        stmt = (
+            sa.select(events.c.event_id)
+            .select_from(events.join(runs, events.c.run_id == runs.c.run_id))
+            .order_by(events.c.event_id.desc())
+            .limit(1)
+        )
+        if project_id is not None:
+            stmt = stmt.where(runs.c.project_id == project_id)
+        async with self._engine.connect() as conn:
+            result = await conn.execute(stmt)
+            return result.scalar_one_or_none()
 
     async def append_event(
         self,
@@ -315,6 +332,29 @@ class PostgresTraceStore:
             result = await conn.execute(stmt)
             fetched = result.mappings().all()
         return [_policy_decision_row_from_mapping(row) for row in fetched]
+
+    async def list_recent_events(
+        self, *, kind: str | None = None, limit: int
+    ) -> list[EventRow]:
+        # event_id breaks ts ties. Fast agents emit many events inside one
+        # millisecond, and ts alone left the feed showing a run's events
+        # shuffled (…54, 52, 53, 50, 51…). event_id is a ULID, monotonic
+        # within a run, so it restores true emission order.
+        stmt = (
+            sa.select(events)
+            .order_by(events.c.ts.desc(), events.c.event_id.desc())
+            .limit(limit)
+        )
+        if kind is not None:
+            # events_kind is (run_id, kind, seq); a cross-run kind filter
+            # doesn't hit it, so this leans on the ts ordering + LIMIT.
+            # Fine at the bounded sizes these feeds ask for; revisit with
+            # a (kind, ts) index if a measured page load says to.
+            stmt = stmt.where(events.c.kind == kind)
+        async with self._engine.connect() as conn:
+            result = await conn.execute(stmt)
+            fetched = result.mappings().all()
+        return [_event_row_from_mapping(row) for row in fetched]
 
 
 def _run_row_from_mapping(row: sa.RowMapping) -> RunRow:
