@@ -3,11 +3,13 @@ import { Link } from "react-router-dom";
 import type { DetectionOut } from "../api/runApi";
 import CostDonut from "../components/charts/CostDonut";
 import RunsOverTimeChart from "../components/charts/RunsOverTimeChart";
-import { IconAlert, IconArrowRight } from "../components/Icons";
+import { IconAlert, IconArrowRight, IconChevronDown } from "../components/Icons";
+import LiveBadge from "../components/LiveBadge";
 import StatTile from "../components/StatTile";
 import StatusBadge from "../components/StatusBadge";
 import { useRuns } from "../hooks/useRuns";
 import { useStats } from "../hooks/useStats";
+import { RANGE_OPTIONS, useFilters } from "../lib/filters";
 
 const SEVERITY_COLOR: Record<string, string> = {
   info: "var(--text-muted)",
@@ -35,11 +37,34 @@ function detectionTitle(detection: DetectionOut): string {
   return named[detection.detector] ?? `${detection.detector} detected`;
 }
 
-export default function OverviewPage() {
-  const { data: stats, isLoading, isError, error } = useStats();
-  const { data: runsPage } = useRuns();
+function RangePicker() {
+  const { range, setRange } = useFilters();
+  return (
+    <label className="select-wrap select-wrap--sm">
+      <select
+        className="select select--sm"
+        value={range.label}
+        onChange={(event) =>
+          setRange(RANGE_OPTIONS.find((r) => r.label === event.target.value) ?? range)
+        }
+      >
+        {RANGE_OPTIONS.map((option) => (
+          <option key={option.label} value={option.label}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <IconChevronDown size={12} />
+    </label>
+  );
+}
 
-  if (isLoading) {
+export default function OverviewPage() {
+  const { project, range } = useFilters();
+  const { data: stats, isLoading, isError, error } = useStats({ days: range.days, project });
+  const { data: runsPage } = useRuns(project ? { project } : {});
+
+  if (isLoading && !stats) {
     return (
       <div className="page">
         <p className="muted">Loading overview&hellip;</p>
@@ -61,15 +86,17 @@ export default function OverviewPage() {
   const dailyRuns = stats.daily.map((d) => d.runs);
   const dailyFailed = stats.daily.map((d) => d.failed_runs);
   const dailyCost = stats.daily.map((d) => d.cost_usd);
-  const windowNote = `across the last ${stats.window_runs} run${
-    stats.window_runs === 1 ? "" : "s"
-  }`;
 
   return (
     <div className="page">
       <div className="page__head">
         <h1 className="page__title">Overview</h1>
-        <span className="page__sub">{windowNote}</span>
+        <span className="page__sub">
+          {stats.window_runs} run{stats.window_runs === 1 ? "" : "s"}
+          {project ? ` in ${project}` : ""} · {range.label.toLowerCase()}
+        </span>
+        <span style={{ marginLeft: "auto" }} />
+        <RangePicker />
       </div>
 
       <div className="stat-grid">
@@ -78,22 +105,29 @@ export default function OverviewPage() {
           value={String(stats.total_runs)}
           trend={dailyRuns}
           trendColor="var(--series-1)"
+          delta={stats.deltas.runs_pct}
+          foot="no prior window"
         />
         <StatTile
           label="Failed Runs"
           value={String(stats.failed_runs)}
           trend={dailyFailed}
           trendColor="var(--status-critical)"
+          delta={stats.deltas.failed_runs_pct}
+          riseIsGood={false}
+          foot="no prior window"
         />
-        {/* No sparkline: "active" is an instantaneous count with no
-            per-day series behind it — inventing one would imply history
-            the API never measured. */}
+        {/* No sparkline or delta: "active" is an instantaneous count with
+            no per-day series behind it. */}
         <StatTile label="Active Runs" value={String(stats.active_runs)} foot="currently running" />
         <StatTile
           label="Total Cost"
           value={`$${stats.total_cost_usd.toFixed(2)}`}
           trend={dailyCost}
           trendColor="var(--series-3)"
+          delta={stats.deltas.cost_pct}
+          riseIsGood={false}
+          foot="no prior window"
         />
         <StatTile
           label="Policy Denials"
@@ -104,8 +138,14 @@ export default function OverviewPage() {
 
       <div className="grid-2">
         <div className="card">
+          {/* No range picker here: the one in the page head already drives
+              this chart's window, and a second control bound to the same
+              state reads as an independent filter that doesn't work. */}
           <div className="card__head">
             <h2 className="card__title">Runs over time</h2>
+            <span className="muted" style={{ fontSize: 12 }}>
+              {range.label.toLowerCase()}
+            </span>
           </div>
           <RunsOverTimeChart daily={stats.daily} />
         </div>
@@ -136,23 +176,26 @@ export default function OverviewPage() {
                 <thead>
                   <tr>
                     <th>Run ID</th>
-                    <th>Framework</th>
+                    <th>Project</th>
                     <th>Status</th>
                     <th className="table__num">Events</th>
                     <th className="table__num">Cost</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {runs.slice(0, 6).map((run) => (
+                  {runs.slice(0, 7).map((run) => (
                     <tr key={run.run_id}>
                       <td>
                         <Link className="table__mono" to={`/runs/${run.run_id}`}>
-                          {run.run_id.slice(0, 20)}…
+                          {run.run_id.slice(0, 18)}…
                         </Link>
                       </td>
-                      <td>{run.framework}</td>
+                      <td className="muted">{run.project_id}</td>
                       <td>
-                        <StatusBadge status={run.status} />
+                        <span className="row" style={{ gap: 6 }}>
+                          <StatusBadge status={run.status} />
+                          {run.status === "running" && <LiveBadge />}
+                        </span>
                       </td>
                       <td className="table__num">
                         {typeof run.totals.events === "number" ? run.totals.events : "—"}
