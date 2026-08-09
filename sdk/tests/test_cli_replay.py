@@ -7,6 +7,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
+import httpx
 import pytest
 
 from trazo import replay as replay_module
@@ -226,7 +227,11 @@ def test_run_verify__reports_boundary_and_state_fidelity(tmp_path: Path) -> None
     out = io.StringIO()
 
     exit_code = run_verify(
-        "run_1", endpoint="http://example.test", cache_dir=tmp_path, out=out
+        "run_1",
+        endpoint="http://example.test",
+        cache_dir=tmp_path,
+        out=out,
+        submit=False,  # submission itself is covered separately below
     )
 
     assert exit_code == 0
@@ -271,9 +276,87 @@ def test_run_verify__lenient_even_on_divergence_still_reports_full_stats(
         cache_dir=tmp_path,
         out=out,
         as_json=True,
+        submit=False,  # submission itself is covered separately below
     )
 
     assert exit_code == 1  # divergence present, but the run still completed
     body = json.loads(out.getvalue())
     assert len(body["divergences"]) == 1
     assert body["boundary_fidelity"] == 0.0
+
+
+def test_run_verify__submits_the_report_to_the_control_plane(tmp_path: Path) -> None:
+    """The whole point of submission: a real `trazo verify` run's report
+    must reach POST /v1/runs/{run_id}/replay-report so the dashboard's
+    Replay Studio can show it — not just print to stdout and vanish."""
+    _write_bundle_cache(
+        tmp_path,
+        [
+            _event(0, "run.started", {"entry_input": None}),
+            _event(1, "llm.call", _LLM_PAYLOAD),
+            _event(2, "run.finished", {"totals": {"duration_ms": 100.0}}),
+        ],
+    )
+    replay_module.entrypoint(_run_to_llm_call, framework="langgraph")
+
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(204)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    exit_code = run_verify(
+        "run_1",
+        endpoint="http://example.test",
+        api_key="test-key",
+        cache_dir=tmp_path,
+        out=io.StringIO(),
+        submit_client=client,
+    )
+
+    assert exit_code == 0
+    [request] = requests
+    assert request.method == "POST"
+    assert request.url.path == "/v1/runs/run_1/replay-report"
+    assert request.headers["authorization"] == "Bearer test-key"
+    body = json.loads(request.content)
+    assert body["boundary_fidelity"] == 1.0
+    assert body["state_fidelity"] == 1.0
+    assert body["divergences"] == []
+    assert "replay_overhead" in body
+
+
+def test_run_verify__submission_failure_does_not_fail_the_command(
+    tmp_path: Path,
+) -> None:
+    """Best-effort: an unreachable control plane must not turn a
+    successful verification into a failed command — the report was
+    already computed and printed regardless."""
+    _write_bundle_cache(
+        tmp_path,
+        [
+            _event(0, "run.started", {"entry_input": None}),
+            _event(1, "llm.call", _LLM_PAYLOAD),
+            _event(2, "run.finished", {"totals": {"duration_ms": 100.0}}),
+        ],
+    )
+    replay_module.entrypoint(_run_to_llm_call, framework="langgraph")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    out = io.StringIO()
+
+    exit_code = run_verify(
+        "run_1",
+        endpoint="http://example.test",
+        cache_dir=tmp_path,
+        out=out,
+        submit_client=client,
+    )
+
+    assert exit_code == 0
+    assert "boundary fidelity: 100.00%" in out.getvalue()

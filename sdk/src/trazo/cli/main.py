@@ -51,6 +51,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     verify_parser.add_argument("run_id")
     verify_parser.add_argument("--json", action="store_true", dest="as_json")
+    verify_parser.add_argument(
+        "--no-submit",
+        action="store_false",
+        dest="submit",
+        default=True,
+        help="don't persist the report to the control plane (local-only check)",
+    )
 
     return parser
 
@@ -81,6 +88,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             endpoint=args.endpoint,
             api_key=os.environ.get("TRAZO_API_KEY"),
             as_json=args.as_json,
+            submit=args.submit,
         )
 
     return run_doctor(endpoint=args.endpoint)

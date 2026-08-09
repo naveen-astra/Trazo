@@ -114,6 +114,15 @@ def test_build_parser__verify_requires_run_id() -> None:
     assert args.command == "verify"
     assert args.run_id == "run_1"
     assert args.as_json is False
+    assert args.submit is True  # submits by default
+
+
+def test_build_parser__verify_no_submit_flag() -> None:
+    parser = _build_parser()
+
+    args = parser.parse_args(["verify", "run_1", "--no-submit"])
+
+    assert args.submit is False
 
 
 def test_main__replay_dispatches_to_run_replay(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -149,6 +158,25 @@ def test_main__verify_dispatches_to_run_verify(monkeypatch: pytest.MonkeyPatch) 
     assert exit_code == 0
     assert called["run_id"] == "run_1"
     assert called["as_json"] is True
+    assert called["submit"] is True
+
+
+def test_main__verify_no_submit_dispatches_submit_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called: dict[str, object] = {}
+
+    def fake_run_verify(run_id: str, **kwargs: object) -> int:
+        called["run_id"] = run_id
+        called.update(kwargs)
+        return 0
+
+    monkeypatch.setattr("trazo.cli.main.run_verify", fake_run_verify)
+
+    exit_code = main(["verify", "run_1", "--no-submit"])
+
+    assert exit_code == 0
+    assert called["submit"] is False
 
 
 def test_main__tail_keyboard_interrupt_returns_130(

@@ -19,12 +19,15 @@ import time
 from pathlib import Path
 from typing import Any, TextIO
 
+import httpx
+
 from trazo import replay as replay_module
 from trazo.core.bundle_loader import BundleFetchError
 from trazo.core.replay_bundle import ReplayBundle
 from trazo.core.replay_report import ReplayDivergence, ReplayReport
 
 _DEFAULT_CACHE_DIR = Path(".trazo/cache")
+_SUBMIT_TIMEOUT_SECONDS = 10.0
 
 
 def _divergence_summary(divergence: ReplayDivergence) -> dict[str, Any]:
@@ -47,6 +50,38 @@ def _report_summary(report: ReplayReport) -> dict[str, Any]:
         "reordered": report.reordered_count,
         "divergences": [_divergence_summary(d) for d in report.divergences],
     }
+
+
+def _submit_report(
+    summary: dict[str, Any],
+    *,
+    run_id: str,
+    endpoint: str,
+    api_key: str | None,
+    client: httpx.Client | None = None,
+    out: TextIO,
+) -> None:
+    """Persists the fidelity report to the control plane so the
+    dashboard's Replay Studio can show it for this run (POST
+    /v1/runs/{run_id}/replay-report, ingest.py) — best-effort: a
+    submission failure must not fail `trazo verify` itself, since the
+    report was already computed and printed/returned either way. This is
+    additive, matching PolicyHook's fail-open posture toward an
+    unreachable control plane rather than a hard requirement.
+    """
+    owns_client = client is None
+    http_client = client or httpx.Client(timeout=_SUBMIT_TIMEOUT_SECONDS)
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    try:
+        response = http_client.post(
+            f"{endpoint}/v1/runs/{run_id}/replay-report", json=summary, headers=headers
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        print(f"trazo verify: warning: failed to submit report: {exc}", file=sys.stderr)
+    finally:
+        if owns_client:
+            http_client.close()
 
 
 def _print_report(
@@ -157,11 +192,21 @@ def run_verify(
     cache_dir: Path = _DEFAULT_CACHE_DIR,
     out: TextIO = sys.stdout,
     as_json: bool = False,
+    submit: bool = True,
+    submit_client: httpx.Client | None = None,
 ) -> int:
     """Fidelity report: boundary fidelity, state fidelity, replay overhead
     (REPLAY_ENGINE.md §5). Always re-drives leniently internally — a
     verification run needs the full picture even when something no
-    longer matches, not just the first place it broke."""
+    longer matches, not just the first place it broke.
+
+    ``submit`` (default True) additionally persists the report to the
+    control plane (POST /v1/runs/{run_id}/replay-report) so the
+    dashboard's Replay Studio can show it — the only way that view is
+    ever backed by a real replay instead of nothing, since fidelity data
+    can't be derived from stored events alone (it requires actually
+    re-driving the entrypoint, which only this command does).
+    """
     try:
         session = replay_module.load(
             run_id,
@@ -189,6 +234,16 @@ def run_verify(
 
     summary = _report_summary(report)
     summary["replay_overhead"] = overhead
+
+    if submit:
+        _submit_report(
+            summary,
+            run_id=run_id,
+            endpoint=endpoint,
+            api_key=api_key,
+            client=submit_client,
+            out=out,
+        )
 
     if as_json:
         print(json_module.dumps(summary, indent=2), file=out)
