@@ -11,18 +11,22 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterator
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from trazo_server.api.deps import get_event_bus
+from trazo_server.api.deps import get_event_bus, get_trace_store
 from trazo_server.app import create_app
 from trazo_server.bus.memory import InMemoryEventBus
 from trazo_server.config import Settings
+from trazo_server.store.memory_trace_store import InMemoryTraceStore
+from trazo_server.store.rows import RunRow
 from trazo_server.topics import EVENTS_STREAM
 
 _API_KEY = "test-key"
+_NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 
 @pytest.fixture
@@ -31,7 +35,14 @@ def bus() -> InMemoryEventBus:
 
 
 @pytest.fixture
-def client(tmp_path: Path, bus: InMemoryEventBus) -> Iterator[TestClient]:
+def trace_store() -> InMemoryTraceStore:
+    return InMemoryTraceStore()
+
+
+@pytest.fixture
+def client(
+    tmp_path: Path, bus: InMemoryEventBus, trace_store: InMemoryTraceStore
+) -> Iterator[TestClient]:
     settings = Settings(
         api_key=_API_KEY,
         blob_root=str(tmp_path / "blobs"),
@@ -42,6 +53,7 @@ def client(tmp_path: Path, bus: InMemoryEventBus) -> Iterator[TestClient]:
     )
     app = create_app(settings)
     app.dependency_overrides[get_event_bus] = lambda: bus
+    app.dependency_overrides[get_trace_store] = lambda: trace_store
     with TestClient(app) as test_client:
         yield test_client
 
@@ -208,3 +220,118 @@ def test_ingest_blobs__rejects_request_without_auth(client: TestClient) -> None:
     )
 
     assert response.status_code == 401
+
+
+def _report_body(**overrides: object) -> dict:
+    body: dict = {
+        "boundary_fidelity": 1.0,
+        "state_fidelity": 1.0,
+        "matched": 2,
+        "reordered": 0,
+        "divergences": [],
+        "replay_overhead": 0.42,
+    }
+    body.update(overrides)
+    return body
+
+
+async def test_submit_replay_report__persists_and_is_readable_back(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    """The exact round trip `trazo verify` -> POST -> GET depends on: a
+    real replay result submitted by the SDK shows up for the dashboard's
+    Replay Studio, not a fixture."""
+    await trace_store.upsert_run(
+        RunRow(
+            run_id="run_1",
+            project_id="proj_1",
+            framework="langgraph",
+            status="ok",
+            started_at=_NOW,
+            finished_at=None,
+            tags={},
+            totals={},
+        )
+    )
+
+    response = client.post(
+        "/v1/runs/run_1/replay-report",
+        json=_report_body(),
+        headers=_auth_headers(),
+    )
+    assert response.status_code == 204
+
+    fetched = client.get("/v1/runs/run_1/replay-report")
+    assert fetched.status_code == 200
+    body = fetched.json()
+    assert body["boundary_fidelity"] == 1.0
+    assert body["replay_overhead"] == 0.42
+    assert body["divergences"] == []
+
+
+def test_submit_replay_report__404_for_unknown_run(client: TestClient) -> None:
+    response = client.post(
+        "/v1/runs/run_does_not_exist/replay-report",
+        json=_report_body(),
+        headers=_auth_headers(),
+    )
+
+    assert response.status_code == 404
+    assert response.headers["content-type"] == "application/problem+json"
+
+
+def test_submit_replay_report__rejects_request_without_auth(client: TestClient) -> None:
+    response = client.post("/v1/runs/run_1/replay-report", json=_report_body())
+
+    assert response.status_code == 401
+
+
+def test_get_replay_report__404_when_never_verified(client: TestClient) -> None:
+    response = client.get("/v1/runs/run_never_verified/replay-report")
+
+    assert response.status_code == 404
+    assert response.headers["content-type"] == "application/problem+json"
+
+
+async def test_submit_replay_report__resubmission_replaces_not_accumulates(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    await trace_store.upsert_run(
+        RunRow(
+            run_id="run_1",
+            project_id="proj_1",
+            framework="langgraph",
+            status="ok",
+            started_at=_NOW,
+            finished_at=None,
+            tags={},
+            totals={},
+        )
+    )
+
+    client.post(
+        "/v1/runs/run_1/replay-report",
+        json=_report_body(
+            boundary_fidelity=0.5,
+            divergences=[
+                {
+                    "kind": "tool.call",
+                    "reason": "fingerprint mismatch",
+                    "expected_seq": 1,
+                    "expected_event_id": "evt_1",
+                    "expected_fingerprint": "sha256:" + "a" * 64,
+                    "live_fingerprint": "sha256:" + "b" * 64,
+                }
+            ],
+        ),
+        headers=_auth_headers(),
+    )
+    client.post(
+        "/v1/runs/run_1/replay-report",
+        json=_report_body(boundary_fidelity=1.0, divergences=[]),
+        headers=_auth_headers(),
+    )
+
+    fetched = client.get("/v1/runs/run_1/replay-report").json()
+    assert fetched["boundary_fidelity"] == 1.0
+    assert fetched["divergences"] == []
