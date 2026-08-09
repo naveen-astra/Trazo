@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { IconAlert } from "../components/Icons";
-import { useStats } from "../hooks/useStats";
+import { useDetectionsFeed } from "../hooks/useCatalog";
+import { useFilters } from "../lib/filters";
 
 const SEVERITY_COLOR: Record<string, string> = {
   info: "var(--text-muted)",
@@ -9,15 +11,29 @@ const SEVERITY_COLOR: Record<string, string> = {
   critical: "var(--status-critical)",
 };
 
-// Fleet-wide detection feed, straight off GET /v1/stats' cross-run
-// `recent_detections` (the same feed the Overview card shows). Bounded
-// to the newest N by the endpoint itself rather than paginated: an
-// incident feed answers "what is going wrong now", and older detections
-// are reachable per-run from that run's own page.
-export default function IncidentsPage() {
-  const { data: stats, isLoading, isError, error } = useStats();
+// The known detector set (EVENTS.md's detection.raised.detector enum) —
+// drift is listed there but has no implementation yet, so it will simply
+// never match anything, same as any other detector with zero detections.
+const DETECTOR_OPTIONS = ["loop", "budget", "thrash", "drift"];
+const SEVERITY_OPTIONS = ["info", "warn", "critical"];
+const FEED_LIMIT = 100;
 
-  if (isLoading) {
+// Fleet-wide detection feed, GET /v1/detections — distinct from the
+// Overview's mini-widget (StatsOut.recent_detections, fixed at 8): this
+// page's whole job is incident review, so it needs more rows and real
+// filters, which is exactly what /v1/detections adds over reusing /v1/stats.
+export default function IncidentsPage() {
+  const { project } = useFilters();
+  const [detector, setDetector] = useState("");
+  const [severity, setSeverity] = useState("");
+  const { data, isLoading, isError, error } = useDetectionsFeed({
+    project: project || undefined,
+    detector: detector || undefined,
+    severity: severity || undefined,
+    limit: FEED_LIMIT,
+  });
+
+  if (isLoading && !data) {
     return (
       <div className="page">
         <p className="muted">Loading incidents&hellip;</p>
@@ -25,7 +41,7 @@ export default function IncidentsPage() {
     );
   }
 
-  if (isError || !stats) {
+  if (isError || !data) {
     return (
       <div className="page">
         <p style={{ color: "var(--status-critical)" }}>
@@ -35,13 +51,44 @@ export default function IncidentsPage() {
     );
   }
 
-  const detections = stats.recent_detections;
+  const detections = data.detections;
 
   return (
     <div className="page">
       <div className="page__head">
         <h1 className="page__title">Incidents</h1>
-        <span className="page__sub">detections raised across every run, newest first</span>
+        <span className="page__sub">
+          {detections.length} detection{detections.length === 1 ? "" : "s"}, newest first
+        </span>
+        <span style={{ marginLeft: "auto" }} />
+        <label className="select-wrap select-wrap--sm">
+          <select
+            className="select select--sm"
+            value={detector}
+            onChange={(event) => setDetector(event.target.value)}
+          >
+            <option value="">All detectors</option>
+            {DETECTOR_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="select-wrap select-wrap--sm">
+          <select
+            className="select select--sm"
+            value={severity}
+            onChange={(event) => setSeverity(event.target.value)}
+          >
+            <option value="">All severities</option>
+            {SEVERITY_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div className="card">
