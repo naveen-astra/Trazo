@@ -469,6 +469,15 @@ a:hover {
   overflow-x: auto;
 }
 
+/* Settings → Appearance → Density. A data attribute on <html>, same
+   mechanism as [data-theme], so both persist and apply the same way. */
+[data-density="compact"] .table th {
+  padding: 4px 10px;
+}
+[data-density="compact"] .table td {
+  padding: 5px 10px;
+}
+
 /* A capped, internally-scrolling variant for the long feeds (Traces,
    Logs), which return up to 200 rows. Unbounded, the page grows to
    several thousand pixels and the sidebar/topbar scroll away from the
@@ -1593,4 +1602,125 @@ a:hover {
 .copy-btn:hover {
   color: var(--text-primary);
   border-color: var(--border-strong);
+}
+
+/* ---------- settings ---------- */
+
+.settings-layout {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1080px) {
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: 66px;
+}
+@media (max-width: 1080px) {
+  .settings-nav {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+  }
+}
+.settings-nav__item {
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.settings-nav__item:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+.settings-nav__item--active {
+  background: var(--surface-3);
+  color: var(--text-primary);
+  font-weight: 550;
+}
+
+/* ---------- segmented control ---------- */
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  background: var(--surface-2);
+  width: fit-content;
+}
+.segmented__btn {
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 5px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.segmented__btn:hover {
+  color: var(--text-primary);
+}
+.segmented__btn--active {
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-weight: 550;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* ---------- toggle switch ---------- */
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.toggle {
+  position: relative;
+  flex: none;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-3);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.12s ease;
+}
+.toggle--on {
+  background: var(--series-1);
+  border-color: var(--series-1);
+}
+.toggle__thumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.12s ease;
+}
+.toggle--on .toggle__thumb {
+  transform: translateX(16px);
 }
