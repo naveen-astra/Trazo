@@ -130,6 +130,103 @@
         }
       }
     },
+    "/v1/runs/{run_id}/replay-report": {
+      "post": {
+        "summary": "Submit Replay Report",
+        "description": "Persists the fidelity report a real ``trazo verify <run_id>`` run\ncomputed, so the dashboard's Replay Studio can show it for this run\ninstead of nothing. Upserts on run_id \u2014 only the latest verification\nagainst the current code is meaningful, so re-verifying replaces\nrather than accumulates (ReplayReportRow's docstring).",
+        "operationId": "submit_replay_report_v1_runs__run_id__replay_report_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplayReportIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Get Replay Report",
+        "description": "The most recent ``trazo verify <run_id>`` result for this run.\n\n404 when it has never been verified \u2014 an honest \"not yet checked\"\nrather than a fabricated report (there is no way to compute fidelity\nfrom stored events alone; it requires actually re-driving the\noriginal entrypoint, which only the SDK's ReplaySession can do, and\nthat result reaches here only via POST /v1/runs/{run_id}/replay-report\nwhen a caller chooses to submit it \u2014 see ingest.py).",
+        "operationId": "get_replay_report_v1_runs__run_id__replay_report_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplayReportOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/runs": {
       "get": {
         "summary": "List Runs",
@@ -557,7 +654,7 @@
     "/v1/tools": {
       "get": {
         "summary": "List Tools",
-        "description": "Per-tool rollup derived from recent ``tool.call`` events: call\ncount, error count, mean latency, and when it was last used.",
+        "description": "Per-tool rollup derived from recent ``tool.call`` events: call\ncount, error count, latency (mean + p50/p95), and when it was last\nused.",
         "operationId": "list_tools_v1_tools_get",
         "responses": {
           "200": {
@@ -592,6 +689,25 @@
         }
       }
     },
+    "/v1/models": {
+      "get": {
+        "summary": "List Models",
+        "description": "Per-(provider, model) rollup derived from recent ``llm.call``\nevents \u2014 the standard LLM-ops \"where is the money going\" view, sorted\nby spend rather than volume since cost is what this page exists to\nanswer.",
+        "operationId": "list_models_v1_models_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelsPage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/projects": {
       "get": {
         "summary": "List Projects",
@@ -604,6 +720,184 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProjectsPage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/detections": {
+      "get": {
+        "summary": "List Detections Feed",
+        "description": "Cross-run, filterable detection feed for the Incidents page.\n\nDistinct from StatsOut.recent_detections (fixed at 8, for the\nOverview's glanceable summary) and from GET /runs/{id}/detections\n(one run, unfiltered) \u2014 this is the \"show me more than a handful,\nnarrowed down\" surface neither of those is meant to be.",
+        "operationId": "list_detections_feed_v1_detections_get",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project"
+            }
+          },
+          {
+            "name": "detector",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detector"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetectionsFeedPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/policy-decisions": {
+      "get": {
+        "summary": "List Policy Decisions Feed",
+        "description": "Cross-run, filterable policy-decision feed for the Policy page \u2014\nsame relationship to StatsOut.recent_policy_decisions and\nGET /runs/{id}/policy-decisions as list_detections_feed has above.",
+        "operationId": "list_policy_decisions_feed_v1_policy_decisions_get",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project"
+            }
+          },
+          {
+            "name": "decision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Decision"
+            }
+          },
+          {
+            "name": "policy_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Policy Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyDecisionsFeedPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -981,6 +1275,28 @@
         ],
         "title": "DetectionOut"
       },
+      "DetectionsFeedPage": {
+        "properties": {
+          "detections": {
+            "items": {
+              "$ref": "#/components/schemas/DetectionOut"
+            },
+            "type": "array",
+            "title": "Detections"
+          },
+          "window_scanned": {
+            "type": "integer",
+            "title": "Window Scanned"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detections",
+          "window_scanned"
+        ],
+        "title": "DetectionsFeedPage",
+        "description": "A dedicated, filterable, cross-run feed for the Incidents page \u2014\ndistinct from DetectionsPage (one run's detections, unfiltered,\nunbounded) and from StatsOut.recent_detections (fixed-size, for the\nOverview's glanceable summary only)."
+      },
       "DetectionsPage": {
         "properties": {
           "detections": {
@@ -996,6 +1312,100 @@
           "detections"
         ],
         "title": "DetectionsPage"
+      },
+      "DetectorCount": {
+        "properties": {
+          "detector": {
+            "type": "string",
+            "title": "Detector"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detector",
+          "count"
+        ],
+        "title": "DetectorCount"
+      },
+      "DivergenceIn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "expected_seq": {
+            "type": "integer",
+            "title": "Expected Seq"
+          },
+          "expected_event_id": {
+            "type": "string",
+            "title": "Expected Event Id"
+          },
+          "expected_fingerprint": {
+            "type": "string",
+            "title": "Expected Fingerprint"
+          },
+          "live_fingerprint": {
+            "type": "string",
+            "title": "Live Fingerprint"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "reason",
+          "expected_seq",
+          "expected_event_id",
+          "expected_fingerprint",
+          "live_fingerprint"
+        ],
+        "title": "DivergenceIn"
+      },
+      "DivergenceOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "expected_seq": {
+            "type": "integer",
+            "title": "Expected Seq"
+          },
+          "expected_event_id": {
+            "type": "string",
+            "title": "Expected Event Id"
+          },
+          "expected_fingerprint": {
+            "type": "string",
+            "title": "Expected Fingerprint"
+          },
+          "live_fingerprint": {
+            "type": "string",
+            "title": "Live Fingerprint"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "reason",
+          "expected_seq",
+          "expected_event_id",
+          "expected_fingerprint",
+          "live_fingerprint"
+        ],
+        "title": "DivergenceOut"
       },
       "EventOut": {
         "properties": {
@@ -1160,6 +1570,85 @@
         ],
         "title": "IngestEventsResponse"
       },
+      "ModelStat": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "calls": {
+            "type": "integer",
+            "title": "Calls"
+          },
+          "cost_usd": {
+            "type": "number",
+            "title": "Cost Usd"
+          },
+          "tokens_in": {
+            "type": "integer",
+            "title": "Tokens In"
+          },
+          "tokens_out": {
+            "type": "integer",
+            "title": "Tokens Out"
+          },
+          "avg_latency_ms": {
+            "type": "number",
+            "title": "Avg Latency Ms"
+          },
+          "p50_latency_ms": {
+            "type": "number",
+            "title": "P50 Latency Ms"
+          },
+          "p95_latency_ms": {
+            "type": "number",
+            "title": "P95 Latency Ms"
+          },
+          "last_used": {
+            "type": "string",
+            "title": "Last Used"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "model",
+          "calls",
+          "cost_usd",
+          "tokens_in",
+          "tokens_out",
+          "avg_latency_ms",
+          "p50_latency_ms",
+          "p95_latency_ms",
+          "last_used"
+        ],
+        "title": "ModelStat"
+      },
+      "ModelsPage": {
+        "properties": {
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelStat"
+            },
+            "type": "array",
+            "title": "Models"
+          },
+          "window_events": {
+            "type": "integer",
+            "title": "Window Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "models",
+          "window_events"
+        ],
+        "title": "ModelsPage"
+      },
       "PolicyActionIn": {
         "properties": {
           "kind": {
@@ -1288,6 +1777,28 @@
         ],
         "title": "PolicyDecisionOut"
       },
+      "PolicyDecisionsFeedPage": {
+        "properties": {
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyDecisionOut"
+            },
+            "type": "array",
+            "title": "Decisions"
+          },
+          "window_scanned": {
+            "type": "integer",
+            "title": "Window Scanned"
+          }
+        },
+        "type": "object",
+        "required": [
+          "decisions",
+          "window_scanned"
+        ],
+        "title": "PolicyDecisionsFeedPage",
+        "description": "Same relationship to PolicyDecisionsPage/StatsOut.recent_policy_decisions\nas DetectionsFeedPage has to detections above."
+      },
       "PolicyDecisionsPage": {
         "properties": {
           "decisions": {
@@ -1303,6 +1814,24 @@
           "decisions"
         ],
         "title": "PolicyDecisionsPage"
+      },
+      "PolicyDenialCount": {
+        "properties": {
+          "policy_id": {
+            "type": "string",
+            "title": "Policy Id"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "policy_id",
+          "count"
+        ],
+        "title": "PolicyDenialCount"
       },
       "PolicyEvaluateRequest": {
         "properties": {
@@ -1444,6 +1973,112 @@
           "reason"
         ],
         "title": "RejectedEvent"
+      },
+      "ReplayReportIn": {
+        "properties": {
+          "boundary_fidelity": {
+            "type": "number",
+            "title": "Boundary Fidelity"
+          },
+          "state_fidelity": {
+            "type": "number",
+            "title": "State Fidelity"
+          },
+          "matched": {
+            "type": "integer",
+            "title": "Matched"
+          },
+          "reordered": {
+            "type": "integer",
+            "title": "Reordered"
+          },
+          "divergences": {
+            "items": {
+              "$ref": "#/components/schemas/DivergenceIn"
+            },
+            "type": "array",
+            "title": "Divergences",
+            "default": []
+          },
+          "replay_overhead": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replay Overhead"
+          }
+        },
+        "type": "object",
+        "required": [
+          "boundary_fidelity",
+          "state_fidelity",
+          "matched",
+          "reordered"
+        ],
+        "title": "ReplayReportIn",
+        "description": "Exactly the shape `trazo verify <run_id> --json` prints\n(`sdk/src/trazo/cli/replay.py`'s `_report_summary`) \u2014 the CLI submits\nthis same dict as the request body after computing it, rather than\nthe control plane ever re-deriving it."
+      },
+      "ReplayReportOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "boundary_fidelity": {
+            "type": "number",
+            "title": "Boundary Fidelity"
+          },
+          "state_fidelity": {
+            "type": "number",
+            "title": "State Fidelity"
+          },
+          "matched": {
+            "type": "integer",
+            "title": "Matched"
+          },
+          "reordered": {
+            "type": "integer",
+            "title": "Reordered"
+          },
+          "divergences": {
+            "items": {
+              "$ref": "#/components/schemas/DivergenceOut"
+            },
+            "type": "array",
+            "title": "Divergences"
+          },
+          "replay_overhead": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replay Overhead"
+          },
+          "verified_at": {
+            "type": "string",
+            "title": "Verified At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "boundary_fidelity",
+          "state_fidelity",
+          "matched",
+          "reordered",
+          "divergences",
+          "replay_overhead",
+          "verified_at"
+        ],
+        "title": "ReplayReportOut"
       },
       "RunOut": {
         "properties": {
@@ -1674,6 +2309,64 @@
             },
             "type": "array",
             "title": "Recent Policy Decisions"
+          },
+          "success_rate_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Success Rate Pct"
+          },
+          "avg_cost_per_run_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Cost Per Run Usd"
+          },
+          "duration_p50_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration P50 Ms"
+          },
+          "duration_p95_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration P95 Ms"
+          },
+          "detections_by_detector": {
+            "items": {
+              "$ref": "#/components/schemas/DetectorCount"
+            },
+            "type": "array",
+            "title": "Detections By Detector"
+          },
+          "denials_by_policy": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyDenialCount"
+            },
+            "type": "array",
+            "title": "Denials By Policy"
           }
         },
         "type": "object",
@@ -1690,7 +2383,13 @@
           "daily",
           "cost_by_project",
           "recent_detections",
-          "recent_policy_decisions"
+          "recent_policy_decisions",
+          "success_rate_pct",
+          "avg_cost_per_run_usd",
+          "duration_p50_ms",
+          "duration_p95_ms",
+          "detections_by_detector",
+          "denials_by_policy"
         ],
         "title": "StatsOut"
       },
@@ -1735,6 +2434,14 @@
             "type": "number",
             "title": "Avg Latency Ms"
           },
+          "p50_latency_ms": {
+            "type": "number",
+            "title": "P50 Latency Ms"
+          },
+          "p95_latency_ms": {
+            "type": "number",
+            "title": "P95 Latency Ms"
+          },
           "side_effect_class": {
             "type": "string",
             "title": "Side Effect Class"
@@ -1750,6 +2457,8 @@
           "calls",
           "errors",
           "avg_latency_ms",
+          "p50_latency_ms",
+          "p95_latency_ms",
           "side_effect_class",
           "last_used"
         ],

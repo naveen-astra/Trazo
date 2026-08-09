@@ -20,8 +20,13 @@ export type ToolStat = components["schemas"]["ToolStat"];
 export type ToolsPage = components["schemas"]["ToolsPage"];
 export type AgentStat = components["schemas"]["AgentStat"];
 export type AgentsPage = components["schemas"]["AgentsPage"];
+export type ModelStat = components["schemas"]["ModelStat"];
+export type ModelsPage = components["schemas"]["ModelsPage"];
 export type ProjectOut = components["schemas"]["ProjectOut"];
 export type ProjectsPage = components["schemas"]["ProjectsPage"];
+export type DetectionsFeedPage = components["schemas"]["DetectionsFeedPage"];
+export type PolicyDecisionsFeedPage = components["schemas"]["PolicyDecisionsFeedPage"];
+export type ReplayReportOut = components["schemas"]["ReplayReportOut"];
 
 const BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8420";
@@ -91,8 +96,55 @@ export function listAgents(): Promise<AgentsPage> {
   return fetchJson<AgentsPage>("/v1/agents");
 }
 
+export function listModels(): Promise<ModelsPage> {
+  return fetchJson<ModelsPage>("/v1/models");
+}
+
 export function listProjects(): Promise<ProjectsPage> {
   return fetchJson<ProjectsPage>("/v1/projects");
+}
+
+export interface ListDetectionsFeedParams {
+  project?: string;
+  detector?: string;
+  severity?: string;
+  limit?: number;
+}
+
+/** Cross-run, filterable detection feed for the Incidents page — distinct
+ * from StatsOut.recent_detections, which stays fixed-size for the
+ * Overview's glanceable summary. */
+export function listDetectionsFeed(
+  params: ListDetectionsFeedParams = {},
+): Promise<DetectionsFeedPage> {
+  const query = new URLSearchParams();
+  if (params.project) query.set("project", params.project);
+  if (params.detector) query.set("detector", params.detector);
+  if (params.severity) query.set("severity", params.severity);
+  if (params.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return fetchJson<DetectionsFeedPage>(`/v1/detections${qs ? `?${qs}` : ""}`);
+}
+
+export interface ListPolicyDecisionsFeedParams {
+  project?: string;
+  decision?: string;
+  policyId?: string;
+  limit?: number;
+}
+
+/** Same relationship to StatsOut.recent_policy_decisions as
+ * listDetectionsFeed has to recent_detections, for the Policy page. */
+export function listPolicyDecisionsFeed(
+  params: ListPolicyDecisionsFeedParams = {},
+): Promise<PolicyDecisionsFeedPage> {
+  const query = new URLSearchParams();
+  if (params.project) query.set("project", params.project);
+  if (params.decision) query.set("decision", params.decision);
+  if (params.policyId) query.set("policy_id", params.policyId);
+  if (params.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return fetchJson<PolicyDecisionsFeedPage>(`/v1/policy-decisions${qs ? `?${qs}` : ""}`);
 }
 
 export interface ListRunEventsParams {
@@ -117,6 +169,19 @@ export function listRunDetections(runId: string): Promise<DetectionsPage> {
 
 export function listRunPolicyDecisions(runId: string): Promise<PolicyDecisionsPage> {
   return fetchJson<PolicyDecisionsPage>(`/v1/runs/${encodeURIComponent(runId)}/policy-decisions`);
+}
+
+/** The fidelity report `trazo verify <run_id>` computed and submitted —
+ * `null` when the run has never been verified (the endpoint's 404),
+ * which is the ordinary case, not an error to surface as one. */
+export async function getReplayReport(runId: string): Promise<ReplayReportOut | null> {
+  const path = `/v1/runs/${encodeURIComponent(runId)}/replay-report`;
+  const response = await fetch(`${BASE_URL}${path}`);
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(`${path} -> HTTP ${response.status}`);
+  }
+  return (await response.json()) as ReplayReportOut;
 }
 
 // The replay-bundle endpoint returns raw NDJSON (application/x-ndjson,
@@ -184,6 +249,16 @@ export function firehoseUrl(project?: string): string {
 
 export function liveRunUrl(runId: string): string {
   return `${BASE_URL}/v1/live/runs/${encodeURIComponent(runId)}`;
+}
+
+export interface Healthz {
+  status: string;
+  version: string;
+}
+
+/** Settings → Application's "control plane version" row. */
+export function getHealthz(): Promise<Healthz> {
+  return fetchJson<Healthz>("/healthz");
 }
 
 /** True if a payload value is an offloaded-blob reference (EVENTS.md §1). */

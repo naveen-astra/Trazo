@@ -38,6 +38,41 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/runs/{run_id}/replay-report": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Replay Report
+     * @description The most recent ``trazo verify <run_id>`` result for this run.
+     *
+     *     404 when it has never been verified — an honest "not yet checked"
+     *     rather than a fabricated report (there is no way to compute fidelity
+     *     from stored events alone; it requires actually re-driving the
+     *     original entrypoint, which only the SDK's ReplaySession can do, and
+     *     that result reaches here only via POST /v1/runs/{run_id}/replay-report
+     *     when a caller chooses to submit it — see ingest.py).
+     */
+    get: operations["get_replay_report_v1_runs__run_id__replay_report_get"];
+    put?: never;
+    /**
+     * Submit Replay Report
+     * @description Persists the fidelity report a real ``trazo verify <run_id>`` run
+     *     computed, so the dashboard's Replay Studio can show it for this run
+     *     instead of nothing. Upserts on run_id — only the latest verification
+     *     against the current code is meaningful, so re-verifying replaces
+     *     rather than accumulates (ReplayReportRow's docstring).
+     */
+    post: operations["submit_replay_report_v1_runs__run_id__replay_report_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/runs": {
     parameters: {
       query?: never;
@@ -192,7 +227,8 @@ export interface paths {
     /**
      * List Tools
      * @description Per-tool rollup derived from recent ``tool.call`` events: call
-     *     count, error count, mean latency, and when it was last used.
+     *     count, error count, latency (mean + p50/p95), and when it was last
+     *     used.
      */
     get: operations["list_tools_v1_tools_get"];
     put?: never;
@@ -229,6 +265,29 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/models": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Models
+     * @description Per-(provider, model) rollup derived from recent ``llm.call``
+     *     events — the standard LLM-ops "where is the money going" view, sorted
+     *     by spend rather than volume since cost is what this page exists to
+     *     answer.
+     */
+    get: operations["list_models_v1_models_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/projects": {
     parameters: {
       query?: never;
@@ -243,6 +302,53 @@ export interface paths {
      *     so the filter only ever offers values that will return something.
      */
     get: operations["list_projects_v1_projects_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/detections": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Detections Feed
+     * @description Cross-run, filterable detection feed for the Incidents page.
+     *
+     *     Distinct from StatsOut.recent_detections (fixed at 8, for the
+     *     Overview's glanceable summary) and from GET /runs/{id}/detections
+     *     (one run, unfiltered) — this is the "show me more than a handful,
+     *     narrowed down" surface neither of those is meant to be.
+     */
+    get: operations["list_detections_feed_v1_detections_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/policy-decisions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Policy Decisions Feed
+     * @description Cross-run, filterable policy-decision feed for the Policy page —
+     *     same relationship to StatsOut.recent_policy_decisions and
+     *     GET /runs/{id}/policy-decisions as list_detections_feed has above.
+     */
+    get: operations["list_policy_decisions_feed_v1_policy_decisions_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -431,10 +537,60 @@ export interface components {
         [key: string]: unknown;
       };
     };
+    /**
+     * DetectionsFeedPage
+     * @description A dedicated, filterable, cross-run feed for the Incidents page —
+     *     distinct from DetectionsPage (one run's detections, unfiltered,
+     *     unbounded) and from StatsOut.recent_detections (fixed-size, for the
+     *     Overview's glanceable summary only).
+     */
+    DetectionsFeedPage: {
+      /** Detections */
+      detections: components["schemas"]["DetectionOut"][];
+      /** Window Scanned */
+      window_scanned: number;
+    };
     /** DetectionsPage */
     DetectionsPage: {
       /** Detections */
       detections: components["schemas"]["DetectionOut"][];
+    };
+    /** DetectorCount */
+    DetectorCount: {
+      /** Detector */
+      detector: string;
+      /** Count */
+      count: number;
+    };
+    /** DivergenceIn */
+    DivergenceIn: {
+      /** Kind */
+      kind: string;
+      /** Reason */
+      reason: string;
+      /** Expected Seq */
+      expected_seq: number;
+      /** Expected Event Id */
+      expected_event_id: string;
+      /** Expected Fingerprint */
+      expected_fingerprint: string;
+      /** Live Fingerprint */
+      live_fingerprint: string;
+    };
+    /** DivergenceOut */
+    DivergenceOut: {
+      /** Kind */
+      kind: string;
+      /** Reason */
+      reason: string;
+      /** Expected Seq */
+      expected_seq: number;
+      /** Expected Event Id */
+      expected_event_id: string;
+      /** Expected Fingerprint */
+      expected_fingerprint: string;
+      /** Live Fingerprint */
+      live_fingerprint: string;
     };
     /** EventOut */
     EventOut: {
@@ -488,6 +644,36 @@ export interface components {
       accepted: number;
       /** Rejected */
       rejected: components["schemas"]["RejectedEvent"][];
+    };
+    /** ModelStat */
+    ModelStat: {
+      /** Provider */
+      provider: string;
+      /** Model */
+      model: string;
+      /** Calls */
+      calls: number;
+      /** Cost Usd */
+      cost_usd: number;
+      /** Tokens In */
+      tokens_in: number;
+      /** Tokens Out */
+      tokens_out: number;
+      /** Avg Latency Ms */
+      avg_latency_ms: number;
+      /** P50 Latency Ms */
+      p50_latency_ms: number;
+      /** P95 Latency Ms */
+      p95_latency_ms: number;
+      /** Last Used */
+      last_used: string;
+    };
+    /** ModelsPage */
+    ModelsPage: {
+      /** Models */
+      models: components["schemas"]["ModelStat"][];
+      /** Window Events */
+      window_events: number;
     };
     /** PolicyActionIn */
     PolicyActionIn: {
@@ -549,10 +735,28 @@ export interface components {
       /** Eval Ms */
       eval_ms: number;
     };
+    /**
+     * PolicyDecisionsFeedPage
+     * @description Same relationship to PolicyDecisionsPage/StatsOut.recent_policy_decisions
+     *     as DetectionsFeedPage has to detections above.
+     */
+    PolicyDecisionsFeedPage: {
+      /** Decisions */
+      decisions: components["schemas"]["PolicyDecisionOut"][];
+      /** Window Scanned */
+      window_scanned: number;
+    };
     /** PolicyDecisionsPage */
     PolicyDecisionsPage: {
       /** Decisions */
       decisions: components["schemas"]["PolicyDecisionOut"][];
+    };
+    /** PolicyDenialCount */
+    PolicyDenialCount: {
+      /** Policy Id */
+      policy_id: string;
+      /** Count */
+      count: number;
     };
     /** PolicyEvaluateRequest */
     PolicyEvaluateRequest: {
@@ -609,6 +813,49 @@ export interface components {
       index: number;
       /** Reason */
       reason: string;
+    };
+    /**
+     * ReplayReportIn
+     * @description Exactly the shape `trazo verify <run_id> --json` prints
+     *     (`sdk/src/trazo/cli/replay.py`'s `_report_summary`) — the CLI submits
+     *     this same dict as the request body after computing it, rather than
+     *     the control plane ever re-deriving it.
+     */
+    ReplayReportIn: {
+      /** Boundary Fidelity */
+      boundary_fidelity: number;
+      /** State Fidelity */
+      state_fidelity: number;
+      /** Matched */
+      matched: number;
+      /** Reordered */
+      reordered: number;
+      /**
+       * Divergences
+       * @default []
+       */
+      divergences: components["schemas"]["DivergenceIn"][];
+      /** Replay Overhead */
+      replay_overhead?: number | null;
+    };
+    /** ReplayReportOut */
+    ReplayReportOut: {
+      /** Run Id */
+      run_id: string;
+      /** Boundary Fidelity */
+      boundary_fidelity: number;
+      /** State Fidelity */
+      state_fidelity: number;
+      /** Matched */
+      matched: number;
+      /** Reordered */
+      reordered: number;
+      /** Divergences */
+      divergences: components["schemas"]["DivergenceOut"][];
+      /** Replay Overhead */
+      replay_overhead: number | null;
+      /** Verified At */
+      verified_at: string;
     };
     /** RunOut */
     RunOut: {
@@ -693,6 +940,18 @@ export interface components {
       recent_detections: components["schemas"]["DetectionOut"][];
       /** Recent Policy Decisions */
       recent_policy_decisions: components["schemas"]["PolicyDecisionOut"][];
+      /** Success Rate Pct */
+      success_rate_pct: number | null;
+      /** Avg Cost Per Run Usd */
+      avg_cost_per_run_usd: number | null;
+      /** Duration P50 Ms */
+      duration_p50_ms: number | null;
+      /** Duration P95 Ms */
+      duration_p95_ms: number | null;
+      /** Detections By Detector */
+      detections_by_detector: components["schemas"]["DetectorCount"][];
+      /** Denials By Policy */
+      denials_by_policy: components["schemas"]["PolicyDenialCount"][];
     };
     /** StatsProjectCost */
     StatsProjectCost: {
@@ -713,6 +972,10 @@ export interface components {
       errors: number;
       /** Avg Latency Ms */
       avg_latency_ms: number;
+      /** P50 Latency Ms */
+      p50_latency_ms: number;
+      /** P95 Latency Ms */
+      p95_latency_ms: number;
       /** Side Effect Class */
       side_effect_class: string;
       /** Last Used */
@@ -805,6 +1068,72 @@ export interface operations {
             [key: string]: string;
           };
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_replay_report_v1_runs__run_id__replay_report_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReplayReportOut"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  submit_replay_report_v1_runs__run_id__replay_report_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        authorization?: string | null;
+      };
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReplayReportIn"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Validation Error */
       422: {
@@ -1084,6 +1413,26 @@ export interface operations {
       };
     };
   };
+  list_models_v1_models_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelsPage"];
+        };
+      };
+    };
+  };
   list_projects_v1_projects_get: {
     parameters: {
       query?: never;
@@ -1100,6 +1449,74 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ProjectsPage"];
+        };
+      };
+    };
+  };
+  list_detections_feed_v1_detections_get: {
+    parameters: {
+      query?: {
+        project?: string | null;
+        detector?: string | null;
+        severity?: string | null;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DetectionsFeedPage"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_policy_decisions_feed_v1_policy_decisions_get: {
+    parameters: {
+      query?: {
+        project?: string | null;
+        decision?: string | null;
+        policy_id?: string | null;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PolicyDecisionsFeedPage"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
         };
       };
     };
