@@ -22,7 +22,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from trazo_server.config import Settings
 from trazo_server.store.engine import create_engine
 from trazo_server.store.postgres_trace_store import PostgresTraceStore
-from trazo_server.store.rows import DetectionRow, EventRow, PolicyDecisionRow, RunRow
+from trazo_server.store.rows import (
+    DetectionRow,
+    EventRow,
+    PolicyDecisionRow,
+    ReplayReportRow,
+    RunRow,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _NOW = datetime(2026, 7, 18, 9, 30, tzinfo=timezone.utc)
@@ -385,3 +391,83 @@ async def test_postgres_store__insert_policy_decision_is_idempotent_on_decision_
     await store.insert_policy_decision(decision)  # simulates a bus redelivery
 
     assert len(await store.list_policy_decisions(run_id)) == 1
+
+
+async def test_postgres_store__get_replay_report_is_none_before_any_verify(
+    engine: AsyncEngine, ids: tuple[str, str]
+) -> None:
+    _project_id, run_id = ids
+    store = PostgresTraceStore(engine)
+
+    assert await store.get_replay_report(run_id) is None
+
+
+async def test_postgres_store__upsert_replay_report_then_get_round_trips(
+    engine: AsyncEngine, ids: tuple[str, str]
+) -> None:
+    project_id, run_id = ids
+    store = PostgresTraceStore(engine)
+    await store.ensure_project(project_id, f"test-{project_id}")
+    await store.upsert_run(_run_row(project_id, run_id))
+    report = ReplayReportRow(
+        run_id=run_id,
+        boundary_fidelity=1.0,
+        state_fidelity=1.0,
+        matched=2,
+        reordered=0,
+        divergences=[],
+        replay_overhead=0.42,
+        verified_at=_NOW,
+    )
+
+    await store.upsert_replay_report(report)
+    fetched = await store.get_replay_report(run_id)
+
+    assert fetched is not None
+    assert fetched.boundary_fidelity == 1.0
+    assert fetched.state_fidelity == 1.0
+    assert fetched.matched == 2
+    assert fetched.replay_overhead == 0.42
+    assert fetched.divergences == []
+
+
+async def test_postgres_store__upsert_replay_report_replaces_not_accumulates(
+    engine: AsyncEngine, ids: tuple[str, str]
+) -> None:
+    """A re-verify overwrites the previous report — only the latest
+    result against the current code is meaningful (ReplayReportRow's
+    docstring), so this must never grow a history."""
+    project_id, run_id = ids
+    store = PostgresTraceStore(engine)
+    await store.ensure_project(project_id, f"test-{project_id}")
+    await store.upsert_run(_run_row(project_id, run_id))
+    await store.upsert_replay_report(
+        ReplayReportRow(
+            run_id=run_id,
+            boundary_fidelity=0.5,
+            state_fidelity=0.5,
+            matched=1,
+            reordered=0,
+            divergences=[{"kind": "tool.call", "reason": "fingerprint mismatch"}],
+            replay_overhead=None,
+            verified_at=_NOW,
+        )
+    )
+
+    await store.upsert_replay_report(
+        ReplayReportRow(
+            run_id=run_id,
+            boundary_fidelity=1.0,
+            state_fidelity=1.0,
+            matched=2,
+            reordered=0,
+            divergences=[],
+            replay_overhead=0.3,
+            verified_at=_NOW,
+        )
+    )
+
+    fetched = await store.get_replay_report(run_id)
+    assert fetched is not None
+    assert fetched.boundary_fidelity == 1.0
+    assert fetched.divergences == []

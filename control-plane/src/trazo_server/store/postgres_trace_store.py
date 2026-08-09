@@ -15,9 +15,16 @@ from trazo_server.store.models import (
     events,
     policy_decisions,
     projects,
+    replay_reports,
     runs,
 )
-from trazo_server.store.rows import DetectionRow, EventRow, PolicyDecisionRow, RunRow
+from trazo_server.store.rows import (
+    DetectionRow,
+    EventRow,
+    PolicyDecisionRow,
+    ReplayReportRow,
+    RunRow,
+)
 
 
 class PostgresTraceStore:
@@ -362,6 +369,39 @@ class PostgresTraceStore:
             fetched = result.mappings().all()
         return [_event_row_from_mapping(row) for row in fetched]
 
+    async def upsert_replay_report(self, report: ReplayReportRow) -> None:
+        insert_stmt = pg_insert(replay_reports).values(
+            run_id=report.run_id,
+            boundary_fidelity=report.boundary_fidelity,
+            state_fidelity=report.state_fidelity,
+            matched=report.matched,
+            reordered=report.reordered,
+            divergences=report.divergences,
+            replay_overhead=report.replay_overhead,
+            verified_at=report.verified_at,
+        )
+        stmt = insert_stmt.on_conflict_do_update(
+            index_elements=[replay_reports.c.run_id],
+            set_={
+                "boundary_fidelity": insert_stmt.excluded.boundary_fidelity,
+                "state_fidelity": insert_stmt.excluded.state_fidelity,
+                "matched": insert_stmt.excluded.matched,
+                "reordered": insert_stmt.excluded.reordered,
+                "divergences": insert_stmt.excluded.divergences,
+                "replay_overhead": insert_stmt.excluded.replay_overhead,
+                "verified_at": insert_stmt.excluded.verified_at,
+            },
+        )
+        async with self._engine.begin() as conn:
+            await conn.execute(stmt)
+
+    async def get_replay_report(self, run_id: str) -> ReplayReportRow | None:
+        stmt = sa.select(replay_reports).where(replay_reports.c.run_id == run_id)
+        async with self._engine.connect() as conn:
+            result = await conn.execute(stmt)
+            row = result.mappings().one_or_none()
+        return None if row is None else _replay_report_row_from_mapping(row)
+
 
 def _run_row_from_mapping(row: sa.RowMapping) -> RunRow:
     return RunRow(
@@ -415,4 +455,17 @@ def _policy_decision_row_from_mapping(row: sa.RowMapping) -> PolicyDecisionRow:
         reasons=row["reasons"],
         decided_at=row["decided_at"],
         eval_ms=float(row["eval_ms"]),
+    )
+
+
+def _replay_report_row_from_mapping(row: sa.RowMapping) -> ReplayReportRow:
+    return ReplayReportRow(
+        run_id=row["run_id"],
+        boundary_fidelity=row["boundary_fidelity"],
+        state_fidelity=row["state_fidelity"],
+        matched=row["matched"],
+        reordered=row["reordered"],
+        divergences=row["divergences"],
+        replay_overhead=row["replay_overhead"],
+        verified_at=row["verified_at"],
     )
