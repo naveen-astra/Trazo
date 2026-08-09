@@ -5,9 +5,11 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 
 import App from "./App";
 import { FiltersProvider } from "./lib/filters";
+import { PreferencesProvider } from "./lib/preferences";
 import AgentsPage from "./pages/AgentsPage";
 import IncidentsPage from "./pages/IncidentsPage";
 import LogsPage from "./pages/LogsPage";
+import ModelsPage from "./pages/ModelsPage";
 import OverviewPage from "./pages/OverviewPage";
 import PolicyPage from "./pages/PolicyPage";
 import ReplayIndexPage from "./pages/ReplayIndexPage";
@@ -33,6 +35,7 @@ const router = createBrowserRouter([
       { path: "traces", element: <TracesPage /> },
       { path: "agents", element: <AgentsPage /> },
       { path: "tools", element: <ToolsPage /> },
+      { path: "models", element: <ModelsPage /> },
       { path: "replay", element: <ReplayIndexPage /> },
       { path: "logs", element: <LogsPage /> },
       { path: "incidents", element: <IncidentsPage /> },
@@ -50,11 +53,15 @@ if (!rootElement) {
 createRoot(rootElement).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      {/* Filters live above the router so the topbar's project selector
-          and every page share one source of truth. */}
-      <FiltersProvider>
-        <RouterProvider router={router} />
-      </FiltersProvider>
+      {/* Preferences outermost: FiltersProvider reads its persisted
+          defaultProject/defaultRangeLabel to seed the live filter state
+          below it. Both live above the router so the topbar's project
+          selector and every page share one source of truth. */}
+      <PreferencesProvider>
+        <FiltersProvider>
+          <RouterProvider router={router} />
+        </FiltersProvider>
+      </PreferencesProvider>
     </QueryClientProvider>
   </StrictMode>,
 );
