@@ -46,10 +46,10 @@ function arcPath(startAngle: number, endAngle: number): string {
   ].join(" ");
 }
 
-function toSlices(costs: StatsProjectCost[]): Slice[] {
+function toSlices(costs: StatsProjectCost[], labelFor: (projectId: string) => string): Slice[] {
   const spending = costs.filter((c) => c.cost_usd > 0);
   const head = spending.slice(0, MAX_COLORED_SLICES).map((c, i) => ({
-    label: c.project_id,
+    label: labelFor(c.project_id),
     value: c.cost_usd,
     // slice() above already bounds i to the validated slots; the fallback
     // only satisfies the compiler's index check.
@@ -69,11 +69,15 @@ function toSlices(costs: StatsProjectCost[]): Slice[] {
 interface Props {
   costs: StatsProjectCost[];
   total: number;
+  /** Resolves a project_id to the name the SDK was configured with.
+   * Defaults to identity so callers that don't have the lookup handy
+   * (tests, storybook) still get a label instead of a crash. */
+  labelFor?: (projectId: string) => string;
 }
 
-export default function CostDonut({ costs, total }: Props) {
+export default function CostDonut({ costs, total, labelFor = (id) => id }: Props) {
   const [hover, setHover] = useState<number | null>(null);
-  const slices = toSlices(costs);
+  const slices = toSlices(costs, labelFor);
 
   if (slices.length === 0) {
     return (

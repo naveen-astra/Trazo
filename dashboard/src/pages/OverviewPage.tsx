@@ -1,15 +1,15 @@
 import { Link } from "react-router-dom";
 
-import type { DetectionOut } from "../api/runApi";
 import CostDonut from "../components/charts/CostDonut";
 import RunsOverTimeChart from "../components/charts/RunsOverTimeChart";
 import { IconAlert, IconArrowRight, IconChevronDown } from "../components/Icons";
 import LiveBadge from "../components/LiveBadge";
 import StatTile from "../components/StatTile";
 import StatusBadge from "../components/StatusBadge";
-import { useProjectName } from "../hooks/useCatalog";
+import { useModels, useProjectName, useTools } from "../hooks/useCatalog";
 import { useRuns } from "../hooks/useRuns";
 import { useStats } from "../hooks/useStats";
+import { detectionTitle } from "../lib/detectionTitle";
 import { RANGE_OPTIONS, useFilters } from "../lib/filters";
 
 const SEVERITY_COLOR: Record<string, string> = {
@@ -17,6 +17,9 @@ const SEVERITY_COLOR: Record<string, string> = {
   warn: "var(--status-warning)",
   critical: "var(--status-critical)",
 };
+
+const TOP_MODELS_SHOWN = 5;
+const TOP_TOOL_ERRORS_SHOWN = 5;
 
 function relativeTime(iso: string): string {
   const deltaMs = Date.now() - new Date(iso).getTime();
@@ -26,16 +29,6 @@ function relativeTime(iso: string): string {
   const hours = Math.round(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.round(hours / 24)}d ago`;
-}
-
-function detectionTitle(detection: DetectionOut): string {
-  const named: Record<string, string> = {
-    loop: "Agent loop detected",
-    budget: "Budget limit exceeded",
-    thrash: "Tool thrashing detected",
-    drift: "Goal drift detected",
-  };
-  return named[detection.detector] ?? `${detection.detector} detected`;
 }
 
 function RangePicker() {
@@ -64,6 +57,8 @@ export default function OverviewPage() {
   const { project, range } = useFilters();
   const { data: stats, isLoading, isError, error } = useStats({ days: range.days, project });
   const { data: runsPage } = useRuns(project ? { project } : {});
+  const { data: modelsPage } = useModels();
+  const { data: toolsPage } = useTools();
   const projectName = useProjectName();
 
   if (isLoading && !stats) {
@@ -88,6 +83,11 @@ export default function OverviewPage() {
   const dailyRuns = stats.daily.map((d) => d.runs);
   const dailyFailed = stats.daily.map((d) => d.failed_runs);
   const dailyCost = stats.daily.map((d) => d.cost_usd);
+  const topModels = (modelsPage?.models ?? []).slice(0, TOP_MODELS_SHOWN);
+  const toolsWithErrors = (toolsPage?.tools ?? [])
+    .filter((t) => t.errors > 0)
+    .sort((a, b) => b.errors - a.errors)
+    .slice(0, TOP_TOOL_ERRORS_SHOWN);
 
   return (
     <div className="page">
@@ -110,6 +110,15 @@ export default function OverviewPage() {
           delta={stats.deltas.runs_pct}
           foot="no prior window"
         />
+        {/* No sparkline: the daily series has runs/failed_runs per day,
+            not a per-day rate, so a trend here would have to be derived
+            client-side from two other series — exactly the kind of
+            dashboard-computed rollup ARCHITECTURE.md §2.3 rules out. */}
+        <StatTile
+          label="Success Rate"
+          value={stats.success_rate_pct === null ? "—" : `${stats.success_rate_pct.toFixed(1)}%`}
+          foot={`${stats.failed_runs} failed of ${stats.total_runs}`}
+        />
         <StatTile
           label="Failed Runs"
           value={String(stats.failed_runs)}
@@ -130,6 +139,13 @@ export default function OverviewPage() {
           delta={stats.deltas.cost_pct}
           riseIsGood={false}
           foot="no prior window"
+        />
+        <StatTile
+          label="Avg Cost / Run"
+          value={
+            stats.avg_cost_per_run_usd === null ? "—" : `$${stats.avg_cost_per_run_usd.toFixed(4)}`
+          }
+          foot="unit economics"
         />
         <StatTile
           label="Policy Denials"
@@ -156,7 +172,83 @@ export default function OverviewPage() {
           <div className="card__head">
             <h2 className="card__title">Cost by project</h2>
           </div>
-          <CostDonut costs={stats.cost_by_project} total={stats.total_cost_usd} />
+          <CostDonut
+            costs={stats.cost_by_project}
+            total={stats.total_cost_usd}
+            labelFor={projectName}
+          />
+        </div>
+      </div>
+
+      <div className="grid-2">
+        <div className="card">
+          <div className="card__head">
+            <h2 className="card__title">Top models by spend</h2>
+            <Link to="/models" className="chip">
+              View all <IconArrowRight />
+            </Link>
+          </div>
+          {topModels.length === 0 ? (
+            <div className="empty-state">No LLM calls recorded yet.</div>
+          ) : (
+            <div className="table-scroll">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Model</th>
+                    <th className="table__num">Calls</th>
+                    <th className="table__num">Cost</th>
+                    <th className="table__num">Avg latency</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topModels.map((model) => (
+                    <tr key={`${model.provider}/${model.model}`}>
+                      <td className="table__mono">{model.model}</td>
+                      <td className="table__num">{model.calls}</td>
+                      <td className="table__num">${model.cost_usd.toFixed(4)}</td>
+                      <td className="table__num">{model.avg_latency_ms.toFixed(0)}ms</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="card__head">
+            <h2 className="card__title">Tools with errors</h2>
+            <Link to="/tools" className="chip">
+              View all <IconArrowRight />
+            </Link>
+          </div>
+          {toolsWithErrors.length === 0 ? (
+            <div className="empty-state">No tool errors — all clear.</div>
+          ) : (
+            <div className="table-scroll">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Tool</th>
+                    <th className="table__num">Calls</th>
+                    <th className="table__num">Errors</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {toolsWithErrors.map((tool) => (
+                    <tr key={tool.tool_name}>
+                      <td className="table__mono">{tool.tool_name}</td>
+                      <td className="table__num">{tool.calls}</td>
+                      <td className="table__num" style={{ color: "var(--status-critical)" }}>
+                        {tool.errors}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
 
@@ -237,7 +329,7 @@ export default function OverviewPage() {
                     <IconAlert size={14} />
                   </span>
                   <span style={{ minWidth: 0 }}>
-                    <div className="incident__title">{detectionTitle(detection)}</div>
+                    <div className="incident__title">{detectionTitle(detection.detector)}</div>
                     <div className="incident__meta">
                       <Link to={`/runs/${detection.run_id}`}>{detection.run_id.slice(0, 18)}…</Link>{" "}
                       · {detection.severity}
