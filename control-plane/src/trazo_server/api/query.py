@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 
@@ -23,7 +24,13 @@ from trazo_server.api.problem_details import ProblemDetailsError
 from trazo_server.api.projects import resolve_project_id
 from trazo_server.errors import BlobNotFoundError
 from trazo_server.store.blob_store import BlobStore
-from trazo_server.store.rows import DetectionRow, EventRow, PolicyDecisionRow, RunRow
+from trazo_server.store.rows import (
+    DetectionRow,
+    EventRow,
+    PolicyDecisionRow,
+    ReplayReportRow,
+    RunRow,
+)
 from trazo_server.store.trace_store import TraceStore
 
 router = APIRouter(prefix="/v1")
@@ -121,6 +128,16 @@ class StatsDeltas(BaseModel):
     cost_pct: float | None
 
 
+class DetectorCount(BaseModel):
+    detector: str
+    count: int
+
+
+class PolicyDenialCount(BaseModel):
+    policy_id: str
+    count: int
+
+
 class StatsOut(BaseModel):
     total_runs: int
     failed_runs: int
@@ -135,6 +152,17 @@ class StatsOut(BaseModel):
     cost_by_project: list[StatsProjectCost]
     recent_detections: list[DetectionOut]
     recent_policy_decisions: list[PolicyDecisionOut]
+    # Unit-economics/quality framing the Overview leads with — every field
+    # below is a ratio or percentile over numbers this handler already has
+    # in memory, never a second authoritative source of truth for the same
+    # count (ARCHITECTURE.md §2.3: the dashboard stays a pure API consumer,
+    # so this handler does the arithmetic once instead of every client).
+    success_rate_pct: float | None
+    avg_cost_per_run_usd: float | None
+    duration_p50_ms: float | None
+    duration_p95_ms: float | None
+    detections_by_detector: list[DetectorCount]
+    denials_by_policy: list[PolicyDenialCount]
 
 
 class ToolStat(BaseModel):
@@ -142,6 +170,10 @@ class ToolStat(BaseModel):
     calls: int
     errors: int
     avg_latency_ms: float
+    # Mean latency alone hides how bad the tail gets; p95 is what actually
+    # answers "should I be worried about this tool" the way avg cannot.
+    p50_latency_ms: float
+    p95_latency_ms: float
     side_effect_class: str
     last_used: str
 
@@ -164,6 +196,24 @@ class AgentsPage(BaseModel):
     unattributed_events: int
 
 
+class ModelStat(BaseModel):
+    provider: str
+    model: str
+    calls: int
+    cost_usd: float
+    tokens_in: int
+    tokens_out: int
+    avg_latency_ms: float
+    p50_latency_ms: float
+    p95_latency_ms: float
+    last_used: str
+
+
+class ModelsPage(BaseModel):
+    models: list[ModelStat]
+    window_events: int
+
+
 class ProjectOut(BaseModel):
     project_id: str
     # The name the SDK was configured with ("research-assistant"), which
@@ -177,12 +227,43 @@ class ProjectsPage(BaseModel):
     projects: list[ProjectOut]
 
 
-def _clamp_limit(limit: int) -> int:
-    if not (1 <= limit <= _MAX_LIMIT):
+class DetectionsFeedPage(BaseModel):
+    """A dedicated, filterable, cross-run feed for the Incidents page —
+    distinct from DetectionsPage (one run's detections, unfiltered,
+    unbounded) and from StatsOut.recent_detections (fixed-size, for the
+    Overview's glanceable summary only)."""
+
+    detections: list[DetectionOut]
+    window_scanned: int
+
+
+class PolicyDecisionsFeedPage(BaseModel):
+    """Same relationship to PolicyDecisionsPage/StatsOut.recent_policy_decisions
+    as DetectionsFeedPage has to detections above."""
+
+    decisions: list[PolicyDecisionOut]
+    window_scanned: int
+
+
+def _percentile(sorted_values: list[float], pct: float) -> float:
+    """Nearest-rank percentile over an already-sorted (ascending) list.
+
+    Not interpolated — this deployment's windows are small enough (a few
+    hundred to a thousand samples) that nearest-rank is both simpler and
+    exactly reproducible without a floating-point interpolation step.
+    """
+    if not sorted_values:
+        return 0.0
+    index = max(0, math.ceil(pct / 100 * len(sorted_values)) - 1)
+    return sorted_values[min(index, len(sorted_values) - 1)]
+
+
+def _clamp_limit(limit: int, max_limit: int = _MAX_LIMIT) -> int:
+    if not (1 <= limit <= max_limit):
         raise ProblemDetailsError(
             status=400,
             title="Invalid Limit",
-            detail=f"limit must be between 1 and {_MAX_LIMIT}, got {limit}",
+            detail=f"limit must be between 1 and {max_limit}, got {limit}",
         )
     return limit
 
@@ -369,6 +450,61 @@ async def list_policy_decisions(
     return PolicyDecisionsPage(decisions=[_policy_decision_out(d) for d in decisions])
 
 
+class DivergenceOut(BaseModel):
+    kind: str
+    reason: str
+    expected_seq: int
+    expected_event_id: str
+    expected_fingerprint: str
+    live_fingerprint: str
+
+
+class ReplayReportOut(BaseModel):
+    run_id: str
+    boundary_fidelity: float
+    state_fidelity: float
+    matched: int
+    reordered: int
+    divergences: list[DivergenceOut]
+    replay_overhead: float | None
+    verified_at: str
+
+
+def _replay_report_out(report: ReplayReportRow) -> ReplayReportOut:
+    return ReplayReportOut(
+        run_id=report.run_id,
+        boundary_fidelity=report.boundary_fidelity,
+        state_fidelity=report.state_fidelity,
+        matched=report.matched,
+        reordered=report.reordered,
+        divergences=[DivergenceOut(**d) for d in report.divergences],
+        replay_overhead=report.replay_overhead,
+        verified_at=report.verified_at.isoformat(),
+    )
+
+
+@router.get("/runs/{run_id}/replay-report", response_model=ReplayReportOut)
+async def get_replay_report(
+    run_id: str, store: Annotated[TraceStore, Depends(get_trace_store)]
+) -> ReplayReportOut:
+    """The most recent ``trazo verify <run_id>`` result for this run.
+
+    404 when it has never been verified — an honest "not yet checked"
+    rather than a fabricated report (there is no way to compute fidelity
+    from stored events alone; it requires actually re-driving the
+    original entrypoint, which only the SDK's ReplaySession can do, and
+    that result reaches here only via POST /v1/runs/{run_id}/replay-report
+    when a caller chooses to submit it — see ingest.py)."""
+    report = await store.get_replay_report(run_id)
+    if report is None:
+        raise ProblemDetailsError(
+            status=404,
+            title="Not Found",
+            detail=f"run {run_id} has not been verified — run `trazo verify {run_id}`",
+        )
+    return _replay_report_out(report)
+
+
 # The dashboard's Overview is a pure API consumer (ARCHITECTURE.md §2.3:
 # "anything the dashboard computes that matters -- e.g. cost rollups --
 # must come from the API instead"), so every number it shows is computed
@@ -390,6 +526,11 @@ _STATS_POLICY_WINDOW = 500
 # The denial *count* above is over the whole policy window; this is just
 # how many of those decisions the feed itself renders.
 _STATS_RECENT_DECISIONS = 12
+# A separate, larger detections scan for total_detections/
+# detections_by_detector: _STATS_RECENT_DETECTIONS (8) is sized for the
+# Overview's glanceable list, not for an accurate count — reusing it for
+# both made total_detections silently mean "min(actual count, 8)".
+_STATS_DETECTIONS_WINDOW = 500
 
 _FAILED_RUN_STATUSES = frozenset({"error", "blocked"})
 _ACTIVE_RUN_STATUSES = frozenset({"running"})
@@ -476,22 +617,48 @@ async def get_stats(
     prev_failed = sum(1 for r in previous if r.status in _FAILED_RUN_STATUSES)
     prev_cost = sum(float(r.totals.get("cost_usd", 0.0) or 0.0) for r in previous)
 
-    recent_detections = await store.list_recent_detections(
-        limit=_STATS_RECENT_DETECTIONS
+    # Sized for an accurate total, not for display — recent_detections
+    # below stays capped at _STATS_RECENT_DETECTIONS for the Overview's
+    # glanceable list; this larger scan backs total_detections and the
+    # by-detector breakdown, which need the real count, not the display cap.
+    detections_in_window = await store.list_recent_detections(
+        limit=_STATS_DETECTIONS_WINDOW
     )
+    recent_detections = detections_in_window[:_STATS_RECENT_DETECTIONS]
     decisions = await store.list_recent_policy_decisions(limit=_STATS_POLICY_WINDOW)
 
+    durations = sorted(
+        float(r.totals["duration_ms"])
+        for r in in_window
+        if isinstance(r.totals.get("duration_ms"), (int, float))
+    )
+
+    detector_counts: dict[str, int] = {}
+    for detection in detections_in_window:
+        detector_counts[detection.detector] = (
+            detector_counts.get(detection.detector, 0) + 1
+        )
+
+    denial_counts: dict[str, int] = {}
+    for decision in decisions:
+        if decision.decision in ("deny", "escalate"):
+            denial_counts[decision.policy_id] = (
+                denial_counts.get(decision.policy_id, 0) + 1
+            )
+
+    window_runs = len(in_window)
+
     return StatsOut(
-        total_runs=len(in_window),
+        total_runs=window_runs,
         failed_runs=failed,
         active_runs=active,
         total_cost_usd=round(total_cost, 4),
         policy_denials=sum(1 for d in decisions if d.decision in ("deny", "escalate")),
-        total_detections=len(recent_detections),
-        window_runs=len(in_window),
+        total_detections=len(detections_in_window),
+        window_runs=window_runs,
         range_days=days,
         deltas=StatsDeltas(
-            runs_pct=_pct_change(len(in_window), len(previous)),
+            runs_pct=_pct_change(window_runs, len(previous)),
             failed_runs_pct=_pct_change(failed, prev_failed),
             cost_pct=_pct_change(total_cost, prev_cost),
         ),
@@ -503,6 +670,26 @@ async def get_stats(
         recent_policy_decisions=[
             _policy_decision_out(d) for d in decisions[:_STATS_RECENT_DECISIONS]
         ],
+        success_rate_pct=(
+            round(100 * (window_runs - failed) / window_runs, 1)
+            if window_runs > 0
+            else None
+        ),
+        avg_cost_per_run_usd=(
+            round(total_cost / window_runs, 4) if window_runs > 0 else None
+        ),
+        duration_p50_ms=round(_percentile(durations, 50), 1) if durations else None,
+        duration_p95_ms=round(_percentile(durations, 95), 1) if durations else None,
+        detections_by_detector=sorted(
+            (DetectorCount(detector=k, count=v) for k, v in detector_counts.items()),
+            key=lambda d: d.count,
+            reverse=True,
+        ),
+        denials_by_policy=sorted(
+            (PolicyDenialCount(policy_id=k, count=v) for k, v in denial_counts.items()),
+            key=lambda d: d.count,
+            reverse=True,
+        ),
     )
 
 
@@ -513,6 +700,18 @@ async def get_stats(
 _EVENT_FEED_LIMIT = 200
 _TOOL_WINDOW_EVENTS = 1000
 _AGENT_WINDOW_EVENTS = 1000
+_MODEL_WINDOW_EVENTS = 1000
+# The Incidents/Policy pages' dedicated feeds: scanned wider than they're
+# ever returned so a project/detector/severity filter still has enough
+# rows to draw from, distinct from _STATS_DETECTIONS_WINDOW/_STATS_POLICY_
+# WINDOW above (those back StatsOut's counts, not these pages' listings).
+_DETECTIONS_FEED_SCAN = 500
+_DETECTIONS_FEED_DEFAULT_LIMIT = 50
+_DETECTIONS_FEED_MAX_LIMIT = 200
+_POLICY_FEED_SCAN = 500
+_POLICY_FEED_DEFAULT_LIMIT = 50
+_POLICY_FEED_MAX_LIMIT = 200
+_PROJECT_JOIN_RUNS = 500
 
 
 @router.get("/events/recent", response_model=EventsPage)
@@ -532,12 +731,13 @@ async def list_tools(
     store: Annotated[TraceStore, Depends(get_trace_store)],
 ) -> ToolsPage:
     """Per-tool rollup derived from recent ``tool.call`` events: call
-    count, error count, mean latency, and when it was last used."""
+    count, error count, latency (mean + p50/p95), and when it was last
+    used."""
     rows = await store.list_recent_events(kind="tool.call", limit=_TOOL_WINDOW_EVENTS)
 
     calls: dict[str, int] = {}
     errors: dict[str, int] = {}
-    latency_total: dict[str, float] = {}
+    latencies: dict[str, list[float]] = {}
     side_effect: dict[str, str] = {}
     last_used: dict[str, str] = {}
 
@@ -549,22 +749,28 @@ async def list_tools(
             errors[name] = errors.get(name, 0) + 1
         latency = payload.get("latency_ms")
         if isinstance(latency, (int, float)):
-            latency_total[name] = latency_total.get(name, 0.0) + float(latency)
+            latencies.setdefault(name, []).append(float(latency))
         side_effect.setdefault(name, str(payload.get("side_effect_class") or "unknown"))
         # rows arrive newest-first, so the first sighting is the latest.
         last_used.setdefault(name, row.ts.isoformat())
 
-    tools = [
-        ToolStat(
-            tool_name=name,
-            calls=count,
-            errors=errors.get(name, 0),
-            avg_latency_ms=round(latency_total.get(name, 0.0) / count, 3),
-            side_effect_class=side_effect.get(name, "unknown"),
-            last_used=last_used.get(name, ""),
+    tools = []
+    for name, count in calls.items():
+        tool_latencies = sorted(latencies.get(name, []))
+        tools.append(
+            ToolStat(
+                tool_name=name,
+                calls=count,
+                errors=errors.get(name, 0),
+                avg_latency_ms=round(sum(tool_latencies) / len(tool_latencies), 3)
+                if tool_latencies
+                else 0.0,
+                p50_latency_ms=round(_percentile(tool_latencies, 50), 3),
+                p95_latency_ms=round(_percentile(tool_latencies, 95), 3),
+                side_effect_class=side_effect.get(name, "unknown"),
+                last_used=last_used.get(name, ""),
+            )
         )
-        for name, count in calls.items()
-    ]
     tools.sort(key=lambda t: t.calls, reverse=True)
     return ToolsPage(tools=tools, window_events=len(rows))
 
@@ -611,6 +817,64 @@ async def list_agents(
     )
 
 
+@router.get("/models", response_model=ModelsPage)
+async def list_models(
+    store: Annotated[TraceStore, Depends(get_trace_store)],
+) -> ModelsPage:
+    """Per-(provider, model) rollup derived from recent ``llm.call``
+    events — the standard LLM-ops "where is the money going" view, sorted
+    by spend rather than volume since cost is what this page exists to
+    answer."""
+    rows = await store.list_recent_events(kind="llm.call", limit=_MODEL_WINDOW_EVENTS)
+
+    calls: dict[tuple[str, str], int] = {}
+    cost: dict[tuple[str, str], float] = {}
+    tokens_in: dict[tuple[str, str], int] = {}
+    tokens_out: dict[tuple[str, str], int] = {}
+    latencies: dict[tuple[str, str], list[float]] = {}
+    last_used: dict[tuple[str, str], str] = {}
+
+    for row in rows:
+        payload = row.payload
+        key = (
+            str(payload.get("provider") or "unknown"),
+            str(payload.get("model") or "unknown"),
+        )
+        calls[key] = calls.get(key, 0) + 1
+        cost[key] = cost.get(key, 0.0) + float(payload.get("cost_usd", 0.0) or 0.0)
+        tokens_in[key] = tokens_in.get(key, 0) + int(payload.get("tokens_in", 0) or 0)
+        tokens_out[key] = tokens_out.get(key, 0) + int(
+            payload.get("tokens_out", 0) or 0
+        )
+        latency = payload.get("latency_ms")
+        if isinstance(latency, (int, float)):
+            latencies.setdefault(key, []).append(float(latency))
+        last_used.setdefault(key, row.ts.isoformat())
+
+    models = []
+    for key, count in calls.items():
+        provider, model = key
+        key_latencies = sorted(latencies.get(key, []))
+        models.append(
+            ModelStat(
+                provider=provider,
+                model=model,
+                calls=count,
+                cost_usd=round(cost.get(key, 0.0), 4),
+                tokens_in=tokens_in.get(key, 0),
+                tokens_out=tokens_out.get(key, 0),
+                avg_latency_ms=round(sum(key_latencies) / len(key_latencies), 3)
+                if key_latencies
+                else 0.0,
+                p50_latency_ms=round(_percentile(key_latencies, 50), 3),
+                p95_latency_ms=round(_percentile(key_latencies, 95), 3),
+                last_used=last_used.get(key, ""),
+            )
+        )
+    models.sort(key=lambda m: m.cost_usd, reverse=True)
+    return ModelsPage(models=models, window_events=len(rows))
+
+
 @router.get("/projects", response_model=ProjectsPage)
 async def list_projects(
     store: Annotated[TraceStore, Depends(get_trace_store)],
@@ -633,6 +897,83 @@ async def list_projects(
     ]
     projects.sort(key=lambda p: p.runs, reverse=True)
     return ProjectsPage(projects=projects)
+
+
+async def _run_ids_for_project(store: TraceStore, project_id: str) -> set[str]:
+    """Detections/policy decisions only carry ``run_id``, not
+    ``project_id`` — narrowing either feed to one project means joining
+    against that project's runs first, the same technique
+    ``get_project_events`` already uses at the store layer."""
+    runs = await store.list_runs(project_id=project_id, limit=_PROJECT_JOIN_RUNS)
+    return {r.run_id for r in runs}
+
+
+@router.get("/detections", response_model=DetectionsFeedPage)
+async def list_detections_feed(
+    store: Annotated[TraceStore, Depends(get_trace_store)],
+    project: str | None = None,
+    detector: str | None = None,
+    severity: str | None = None,
+    limit: int = _DETECTIONS_FEED_DEFAULT_LIMIT,
+) -> DetectionsFeedPage:
+    """Cross-run, filterable detection feed for the Incidents page.
+
+    Distinct from StatsOut.recent_detections (fixed at 8, for the
+    Overview's glanceable summary) and from GET /runs/{id}/detections
+    (one run, unfiltered) — this is the "show me more than a handful,
+    narrowed down" surface neither of those is meant to be.
+    """
+    limit = _clamp_limit(limit, _DETECTIONS_FEED_MAX_LIMIT)
+    rows = await store.list_recent_detections(limit=_DETECTIONS_FEED_SCAN)
+
+    run_ids: set[str] | None = None
+    if project is not None:
+        resolved = await resolve_project_id(store, project)
+        run_ids = await _run_ids_for_project(store, resolved) if resolved else set()
+
+    filtered = [
+        d
+        for d in rows
+        if (run_ids is None or d.run_id in run_ids)
+        and (detector is None or d.detector == detector)
+        and (severity is None or d.severity == severity)
+    ]
+    return DetectionsFeedPage(
+        detections=[_detection_out(d) for d in filtered[:limit]],
+        window_scanned=len(rows),
+    )
+
+
+@router.get("/policy-decisions", response_model=PolicyDecisionsFeedPage)
+async def list_policy_decisions_feed(
+    store: Annotated[TraceStore, Depends(get_trace_store)],
+    project: str | None = None,
+    decision: str | None = None,
+    policy_id: str | None = None,
+    limit: int = _POLICY_FEED_DEFAULT_LIMIT,
+) -> PolicyDecisionsFeedPage:
+    """Cross-run, filterable policy-decision feed for the Policy page —
+    same relationship to StatsOut.recent_policy_decisions and
+    GET /runs/{id}/policy-decisions as list_detections_feed has above."""
+    limit = _clamp_limit(limit, _POLICY_FEED_MAX_LIMIT)
+    rows = await store.list_recent_policy_decisions(limit=_POLICY_FEED_SCAN)
+
+    run_ids: set[str] | None = None
+    if project is not None:
+        resolved = await resolve_project_id(store, project)
+        run_ids = await _run_ids_for_project(store, resolved) if resolved else set()
+
+    filtered = [
+        d
+        for d in rows
+        if (run_ids is None or d.run_id in run_ids)
+        and (decision is None or d.decision == decision)
+        and (policy_id is None or d.policy_id == policy_id)
+    ]
+    return PolicyDecisionsFeedPage(
+        decisions=[_policy_decision_out(d) for d in filtered[:limit]],
+        window_scanned=len(rows),
+    )
 
 
 _BUNDLE_PAGE_SIZE = 1000

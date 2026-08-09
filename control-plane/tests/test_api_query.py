@@ -312,6 +312,58 @@ def test_list_policy_decisions__404_for_unknown_run(client: TestClient) -> None:
     assert response.headers["content-type"] == "application/problem+json"
 
 
+async def test_get_replay_report__returns_the_submitted_report(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    """GET only reads back what was actually submitted via POST
+    /v1/runs/{run_id}/replay-report (ingest.py) — there is no code path
+    that computes or fabricates a report here."""
+    from trazo_server.store.rows import ReplayReportRow
+
+    await trace_store.upsert_run(_run())
+    await trace_store.upsert_replay_report(
+        ReplayReportRow(
+            run_id="run_1",
+            boundary_fidelity=0.75,
+            state_fidelity=0.5,
+            matched=3,
+            reordered=1,
+            divergences=[
+                {
+                    "kind": "tool.call",
+                    "reason": "fingerprint mismatch beyond lookahead",
+                    "expected_seq": 5,
+                    "expected_event_id": "evt_5",
+                    "expected_fingerprint": "sha256:" + "f" * 64,
+                    "live_fingerprint": "sha256:" + "0" * 64,
+                }
+            ],
+            replay_overhead=1.3,
+            verified_at=_NOW,
+        )
+    )
+
+    response = client.get("/v1/runs/run_1/replay-report")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["boundary_fidelity"] == 0.75
+    assert body["reordered"] == 1
+    assert body["replay_overhead"] == 1.3
+    [divergence] = body["divergences"]
+    assert divergence["kind"] == "tool.call"
+    assert divergence["expected_event_id"] == "evt_5"
+
+
+def test_get_replay_report__404_when_the_run_has_never_been_verified(
+    client: TestClient,
+) -> None:
+    response = client.get("/v1/runs/run_never_verified/replay-report")
+
+    assert response.status_code == 404
+    assert response.headers["content-type"] == "application/problem+json"
+
+
 async def test_get_replay_bundle__manifest_then_events_in_seq_order(
     client: TestClient, trace_store: InMemoryTraceStore
 ) -> None:
@@ -729,3 +781,267 @@ async def test_list_projects__exposes_the_human_name(
 
     assert project["project_id"] == "proj_hashed"
     assert project["name"] == "research-assistant"
+
+
+async def test_get_stats__total_detections_is_not_capped_by_the_display_list(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    """total_detections used to be len(recent_detections), silently
+    capped at 8 (the Overview list's own display size) -- so a fleet with
+    20 real detections reported "8" as if that were the true count.
+    """
+    for i in range(12):
+        await trace_store.insert_detection(
+            _detection(detection_id=f"det_{i}", run_id="run_1", raised_at=_NOW)
+        )
+
+    body = client.get("/v1/stats").json()
+
+    assert body["total_detections"] == 12
+    assert len(body["recent_detections"]) == 8  # display list stays small
+
+
+async def test_get_stats__success_rate_and_avg_cost_per_run(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    await trace_store.upsert_run(
+        _run(run_id="a", status="ok", totals={"cost_usd": 1.0})
+    )
+    await trace_store.upsert_run(
+        _run(run_id="b", status="ok", totals={"cost_usd": 3.0})
+    )
+    await trace_store.upsert_run(
+        _run(run_id="c", status="error", totals={"cost_usd": 0.0})
+    )
+
+    body = client.get("/v1/stats").json()
+
+    # 2 of 3 runs ok
+    assert body["success_rate_pct"] == pytest.approx(66.7, abs=0.1)
+    assert body["avg_cost_per_run_usd"] == pytest.approx(4.0 / 3, abs=0.001)
+
+
+def test_get_stats__success_rate_and_avg_cost_are_null_when_empty(
+    client: TestClient,
+) -> None:
+    body = client.get("/v1/stats").json()
+
+    assert body["success_rate_pct"] is None
+    assert body["avg_cost_per_run_usd"] is None
+    assert body["duration_p50_ms"] is None
+    assert body["duration_p95_ms"] is None
+
+
+async def test_get_stats__duration_percentiles_over_finished_runs(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    for i, ms in enumerate([100, 200, 300, 400, 500]):
+        await trace_store.upsert_run(
+            _run(run_id=f"run_{i}", status="ok", totals={"duration_ms": ms})
+        )
+    # A still-running run has no duration_ms and must not skew the percentiles.
+    await trace_store.upsert_run(_run(run_id="run_live", status="running", totals={}))
+
+    body = client.get("/v1/stats").json()
+
+    assert body["duration_p50_ms"] == 300  # nearest-rank median of 5 values
+    assert body["duration_p95_ms"] == 500
+
+
+async def test_get_stats__detections_by_detector_and_denials_by_policy(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    await trace_store.insert_detection(
+        _detection(detection_id="det_a", run_id="run_1", detector="loop")
+    )
+    await trace_store.insert_detection(
+        _detection(detection_id="det_b", run_id="run_1", detector="loop")
+    )
+    await trace_store.insert_detection(
+        _detection(detection_id="det_c", run_id="run_1", detector="budget")
+    )
+    await trace_store.insert_policy_decision(
+        _policy_decision(decision_id="dec_a", policy_id="cost_cap", decision="deny")
+    )
+    await trace_store.insert_policy_decision(
+        _policy_decision(decision_id="dec_b", policy_id="cost_cap", decision="deny")
+    )
+    await trace_store.insert_policy_decision(
+        _policy_decision(
+            decision_id="dec_c", policy_id="tool_blocklist", decision="allow"
+        )
+    )
+
+    body = client.get("/v1/stats").json()
+
+    assert body["detections_by_detector"] == [
+        {"detector": "loop", "count": 2},
+        {"detector": "budget", "count": 1},
+    ]
+    assert body["denials_by_policy"] == [{"policy_id": "cost_cap", "count": 2}]
+
+
+async def test_list_tools__reports_latency_percentiles(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    def tool_event(seq: int, latency: float) -> EventRow:
+        return _event(
+            seq=seq,
+            kind="tool.call",
+            payload={
+                "tool_name": "web_search",
+                "args": {},
+                "result": "",
+                "status": "ok",
+                "latency_ms": latency,
+                "side_effect_class": "external",
+            },
+        )
+
+    await trace_store.upsert_events(
+        [tool_event(i, latency) for i, latency in enumerate([10, 20, 30, 40, 100])]
+    )
+
+    body = client.get("/v1/tools").json()
+    [web_search] = body["tools"]
+
+    assert web_search["p50_latency_ms"] == 30
+    assert web_search["p95_latency_ms"] == 100
+
+
+async def test_list_models__rolls_up_calls_cost_tokens_and_sorts_by_spend(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    def llm_event(
+        seq: int, provider: str, model: str, cost: float, latency: float
+    ) -> EventRow:
+        return _event(
+            seq=seq,
+            kind="llm.call",
+            payload={
+                "provider": provider,
+                "model": model,
+                "params": {},
+                "messages_in": [],
+                "response": {},
+                "tokens_in": 100,
+                "tokens_out": 50,
+                "cost_usd": cost,
+                "latency_ms": latency,
+            },
+        )
+
+    await trace_store.upsert_events(
+        [
+            llm_event(0, "openai", "gpt-4o-mini", 0.01, 200),
+            llm_event(1, "openai", "gpt-4o-mini", 0.02, 300),
+            llm_event(2, "anthropic", "claude-sonnet", 0.50, 400),
+        ]
+    )
+
+    body = client.get("/v1/models").json()
+
+    # Costliest model first, even though it has fewer calls.
+    assert [m["provider"] + "/" + m["model"] for m in body["models"]] == [
+        "anthropic/claude-sonnet",
+        "openai/gpt-4o-mini",
+    ]
+    gpt = body["models"][1]
+    assert gpt["calls"] == 2
+    assert gpt["cost_usd"] == pytest.approx(0.03)
+    assert gpt["tokens_in"] == 200
+    assert gpt["tokens_out"] == 100
+    assert gpt["avg_latency_ms"] == 250
+
+
+async def test_list_detections_feed__filters_by_severity_and_detector(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    await trace_store.insert_detection(
+        _detection(
+            detection_id="det_a", run_id="run_1", detector="loop", severity="warn"
+        )
+    )
+    await trace_store.insert_detection(
+        _detection(
+            detection_id="det_b",
+            run_id="run_1",
+            detector="budget",
+            severity="critical",
+        )
+    )
+
+    by_severity = client.get("/v1/detections", params={"severity": "critical"}).json()
+    assert [d["detection_id"] for d in by_severity["detections"]] == ["det_b"]
+
+    by_detector = client.get("/v1/detections", params={"detector": "loop"}).json()
+    assert [d["detection_id"] for d in by_detector["detections"]] == ["det_a"]
+
+
+async def test_list_detections_feed__not_capped_at_the_overview_display_size(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    """The whole point of this endpoint: StatsOut.recent_detections caps
+    at 8 for the Overview widget, but the Incidents page needs to show
+    more than that."""
+    for i in range(20):
+        await trace_store.insert_detection(
+            _detection(detection_id=f"det_{i}", run_id="run_1")
+        )
+
+    body = client.get("/v1/detections", params={"limit": 20}).json()
+
+    assert len(body["detections"]) == 20
+
+
+async def test_list_detections_feed__project_filter_joins_through_runs(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    await trace_store.upsert_run(_run(run_id="run_a", project_id="proj_a"))
+    await trace_store.upsert_run(_run(run_id="run_b", project_id="proj_b"))
+    await trace_store.insert_detection(_detection(detection_id="det_a", run_id="run_a"))
+    await trace_store.insert_detection(_detection(detection_id="det_b", run_id="run_b"))
+
+    body = client.get("/v1/detections", params={"project": "proj_a"}).json()
+
+    assert [d["detection_id"] for d in body["detections"]] == ["det_a"]
+
+
+def test_list_detections_feed__invalid_limit_returns_400(client: TestClient) -> None:
+    response = client.get("/v1/detections", params={"limit": 0})
+
+    assert response.status_code == 400
+
+
+async def test_list_policy_decisions_feed__filters_by_decision_and_policy_id(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    await trace_store.insert_policy_decision(
+        _policy_decision(decision_id="dec_a", policy_id="cost_cap", decision="deny")
+    )
+    await trace_store.insert_policy_decision(
+        _policy_decision(
+            decision_id="dec_b", policy_id="tool_blocklist", decision="allow"
+        )
+    )
+
+    by_decision = client.get("/v1/policy-decisions", params={"decision": "deny"}).json()
+    assert [d["decision_id"] for d in by_decision["decisions"]] == ["dec_a"]
+
+    by_policy = client.get(
+        "/v1/policy-decisions", params={"policy_id": "tool_blocklist"}
+    ).json()
+    assert [d["decision_id"] for d in by_policy["decisions"]] == ["dec_b"]
+
+
+async def test_list_policy_decisions_feed__not_capped_at_the_overview_display_size(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    for i in range(20):
+        await trace_store.insert_policy_decision(
+            _policy_decision(decision_id=f"dec_{i}", run_id="run_1")
+        )
+
+    body = client.get("/v1/policy-decisions", params={"limit": 20}).json()
+
+    assert len(body["decisions"]) == 20
