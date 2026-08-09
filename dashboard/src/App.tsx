@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import {
@@ -6,22 +6,23 @@ import {
   IconBell,
   IconBrain,
   IconChevronDown,
+  IconCoin,
   IconGraph,
   IconGrid,
   IconList,
-  IconMoon,
   IconPlay,
   IconSearch,
   IconShield,
   IconSliders,
-  IconSun,
   IconUsers,
   IconWrench,
 } from "./components/Icons";
 import { useProjects } from "./hooks/useCatalog";
-import { useLiveRefresh } from "./hooks/useLiveRefresh";
+import { useLiveRefresh, type LiveEvent } from "./hooks/useLiveRefresh";
 import { useStats } from "./hooks/useStats";
+import { detectionTitle } from "./lib/detectionTitle";
 import { useFilters } from "./lib/filters";
+import { usePreferences } from "./lib/preferences";
 
 // Nav lists only surfaces this control plane actually serves. Sections a
 // product like this often has but Trazo records no data for (datasets,
@@ -36,6 +37,7 @@ const NAV = [
       { to: "/traces", label: "Traces", icon: <IconGraph />, end: false },
       { to: "/agents", label: "Agents", icon: <IconUsers />, end: false },
       { to: "/tools", label: "Tools", icon: <IconWrench />, end: false },
+      { to: "/models", label: "Models", icon: <IconCoin />, end: false },
     ],
   },
   {
@@ -58,34 +60,71 @@ const NAV = [
   },
 ];
 
-type Theme = "dark" | "light";
+/** Fires a desktop notification for the two event kinds worth
+ * interrupting someone for, gated by Settings → Notifications. Lives
+ * outside the component so its identity is stable across renders and it
+ * has no reason to be a hook itself — it's a plain reaction to one value. */
+function maybeNotify(
+  event: LiveEvent,
+  prefs: {
+    desktopNotificationsEnabled: boolean;
+    notifyOnCriticalDetection: boolean;
+    notifyOnPolicyDenial: boolean;
+  },
+): void {
+  if (!prefs.desktopNotificationsEnabled) return;
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
 
-function useTheme(): [Theme, () => void] {
-  const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem("trazo-theme") as Theme | null) ?? "dark",
-  );
+  let title: string | null = null;
+  let body = `Run ${event.run_id.slice(0, 18)}…`;
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem("trazo-theme", theme);
-  }, [theme]);
+  if (
+    event.kind === "detection.raised" &&
+    prefs.notifyOnCriticalDetection &&
+    event.payload.severity === "critical"
+  ) {
+    title = detectionTitle(String(event.payload.detector ?? ""));
+  } else if (
+    event.kind === "policy.decision" &&
+    prefs.notifyOnPolicyDenial &&
+    event.payload.decision === "deny"
+  ) {
+    title = "Policy denial";
+    body = `${String(event.payload.policy_id ?? "a policy")} denied an action on this run`;
+  }
 
-  return [theme, () => setTheme((t) => (t === "dark" ? "light" : "dark"))];
+  if (!title) return;
+
+  const notification = new Notification(title, { body, tag: event.event_id });
+  notification.onclick = () => {
+    window.focus();
+    window.location.assign(`/runs/${event.run_id}`);
+  };
 }
 
 export default function App() {
-  const [theme, toggleTheme] = useTheme();
   const { project, setProject } = useFilters();
+  const preferences = usePreferences();
   const { data: stats } = useStats({ project });
   const { data: projectsPage } = useProjects();
   // One SSE subscription for the whole app: every list/aggregate view
-  // re-reads the moment events land (see useLiveRefresh).
-  const { connected, streaming } = useLiveRefresh(project);
+  // re-reads the moment events land (see useLiveRefresh), and it also
+  // drives desktop notifications below.
+  const { connected, streaming, lastEvent } = useLiveRefresh(project, {
+    enabled: preferences.liveUpdatesEnabled,
+  });
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
 
   const openIncidents = stats?.recent_detections.length ?? 0;
   const projects = projectsPage?.projects ?? [];
+
+  const notifiedEventId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!lastEvent || lastEvent.event_id === notifiedEventId.current) return;
+    notifiedEventId.current = lastEvent.event_id;
+    maybeNotify(lastEvent, preferences);
+  }, [lastEvent, preferences]);
 
   return (
     <div className="app">
@@ -187,16 +226,6 @@ export default function App() {
             <IconBell />
             {openIncidents > 0 && <span className="icon-button__badge">{openIncidents}</span>}
           </NavLink>
-
-          <button
-            type="button"
-            className="icon-button"
-            onClick={toggleTheme}
-            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-            title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-          >
-            {theme === "dark" ? <IconSun /> : <IconMoon />}
-          </button>
         </header>
         <Outlet />
       </div>

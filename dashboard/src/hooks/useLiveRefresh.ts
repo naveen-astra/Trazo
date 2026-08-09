@@ -10,11 +10,30 @@ const IDLE_MS = 2500;
 // visible benefit.
 const COALESCE_MS = 400;
 
+/** The subset of a streamed event this hook exposes to callers that want
+ * to react to *what* happened, not just *that* something happened
+ * (e.g. firing a desktop notification on a critical detection). */
+export interface LiveEvent {
+  kind: string;
+  run_id: string;
+  event_id: string;
+  payload: Record<string, unknown>;
+}
+
 export interface LiveRefreshState {
   connected: boolean;
   /** Briefly true right after events land — drives the "live" pulse. */
   streaming: boolean;
   lastEventAt: number | null;
+  /** The most recently streamed event, best-effort parsed. `null` until
+   * the first message arrives, or if `enabled` is false. */
+  lastEvent: LiveEvent | null;
+}
+
+export interface UseLiveRefreshOptions {
+  /** Settings → Preferences → Live updates. When false, no EventSource
+   * is opened at all — views only refresh on navigation. Default true. */
+  enabled?: boolean;
 }
 
 /** Subscribes to the fleet-wide (or per-project) SSE firehose and
@@ -28,19 +47,36 @@ export interface LiveRefreshState {
  * a dropped connection degrades to "stale until the next manual action"
  * rather than breaking the page.
  */
-export function useLiveRefresh(project?: string): LiveRefreshState {
+export function useLiveRefresh(
+  project?: string,
+  options: UseLiveRefreshOptions = {},
+): LiveRefreshState {
+  const { enabled = true } = options;
   const queryClient = useQueryClient();
   const [connected, setConnected] = useState(false);
   const [lastEventAt, setLastEventAt] = useState<number | null>(null);
+  const [lastEvent, setLastEvent] = useState<LiveEvent | null>(null);
   const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (!enabled) {
+      setConnected(false);
+      return;
+    }
+
     const source = new EventSource(firehoseUrl(project));
 
     source.onopen = () => setConnected(true);
     source.onerror = () => setConnected(false);
-    source.onmessage = () => {
+    source.onmessage = (event) => {
       setLastEventAt(Date.now());
+      // Best-effort: a parse failure must not break the invalidation
+      // path below, which doesn't depend on the message's content.
+      try {
+        setLastEvent(JSON.parse(event.data) as LiveEvent);
+      } catch {
+        // leave lastEvent as it was
+      }
       if (pending.current) return;
       pending.current = setTimeout(() => {
         pending.current = null;
@@ -52,6 +88,9 @@ export function useLiveRefresh(project?: string): LiveRefreshState {
         void queryClient.invalidateQueries({ queryKey: ["tools"] });
         void queryClient.invalidateQueries({ queryKey: ["agents"] });
         void queryClient.invalidateQueries({ queryKey: ["projects"] });
+        void queryClient.invalidateQueries({ queryKey: ["models"] });
+        void queryClient.invalidateQueries({ queryKey: ["detections-feed"] });
+        void queryClient.invalidateQueries({ queryKey: ["policy-decisions-feed"] });
       }, COALESCE_MS);
     };
 
@@ -62,8 +101,8 @@ export function useLiveRefresh(project?: string): LiveRefreshState {
         pending.current = null;
       }
     };
-  }, [project, queryClient]);
+  }, [project, queryClient, enabled]);
 
   const streaming = lastEventAt !== null && Date.now() - lastEventAt < IDLE_MS;
-  return { connected, streaming, lastEventAt };
+  return { connected, streaming, lastEventAt, lastEvent };
 }
