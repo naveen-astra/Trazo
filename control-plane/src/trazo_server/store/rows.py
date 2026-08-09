@@ -68,3 +68,21 @@ class PolicyDecisionRow:
     reasons: list[str]
     decided_at: datetime
     eval_ms: float
+
+
+@dataclass(frozen=True)
+class ReplayReportRow:
+    """One row of ``replay_reports`` — the fidelity report ``trazo
+    verify <run_id>`` computes, submitted by the SDK's CLI after a real
+    replay against the run's own recorded history. Keyed by run_id and
+    upserted: only the latest verification against the current code is
+    meaningful, so re-verifying replaces rather than accumulates."""
+
+    run_id: str
+    boundary_fidelity: float
+    state_fidelity: float
+    matched: int
+    reordered: int
+    divergences: list[dict[str, Any]]
+    replay_overhead: float | None
+    verified_at: datetime
