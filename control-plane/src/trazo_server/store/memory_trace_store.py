@@ -11,7 +11,13 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
-from trazo_server.store.rows import DetectionRow, EventRow, PolicyDecisionRow, RunRow
+from trazo_server.store.rows import (
+    DetectionRow,
+    EventRow,
+    PolicyDecisionRow,
+    ReplayReportRow,
+    RunRow,
+)
 
 
 class InMemoryTraceStore:
@@ -25,6 +31,7 @@ class InMemoryTraceStore:
         self._events: dict[tuple[str, int], EventRow] = {}
         self._detections: dict[str, DetectionRow] = {}
         self._policy_decisions: dict[str, PolicyDecisionRow] = {}
+        self._replay_reports: dict[str, ReplayReportRow] = {}
 
     async def list_project_names(self) -> dict[str, str]:
         return dict(self._projects)
@@ -207,3 +214,9 @@ class InMemoryTraceStore:
         # within a run, so it restores true emission order.
         rows.sort(key=lambda e: (e.ts, e.event_id), reverse=True)
         return rows[:limit]
+
+    async def upsert_replay_report(self, report: ReplayReportRow) -> None:
+        self._replay_reports[report.run_id] = report
+
+    async def get_replay_report(self, run_id: str) -> ReplayReportRow | None:
+        return self._replay_reports.get(run_id)

@@ -7,7 +7,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from trazo_server.store.memory_trace_store import InMemoryTraceStore
-from trazo_server.store.rows import DetectionRow, EventRow, PolicyDecisionRow, RunRow
+from trazo_server.store.rows import (
+    DetectionRow,
+    EventRow,
+    PolicyDecisionRow,
+    ReplayReportRow,
+    RunRow,
+)
 
 _NOW = datetime(2026, 7, 18, 9, 30, tzinfo=timezone.utc)
 
@@ -362,3 +368,51 @@ async def test_trace_store__list_policy_decisions_orders_most_recent_first() -> 
 
     fetched = await store.list_policy_decisions("run_1")
     assert [d.decision_id for d in fetched] == ["dec_newer", "dec_older"]
+
+
+def _replay_report(**overrides: object) -> ReplayReportRow:
+    defaults: dict[str, object] = {
+        "run_id": "run_1",
+        "boundary_fidelity": 1.0,
+        "state_fidelity": 1.0,
+        "matched": 2,
+        "reordered": 0,
+        "divergences": [],
+        "replay_overhead": 0.4,
+        "verified_at": _NOW,
+    }
+    defaults.update(overrides)
+    return ReplayReportRow(**defaults)  # type: ignore[arg-type]
+
+
+async def test_trace_store__get_replay_report_is_none_before_any_verify() -> None:
+    store = InMemoryTraceStore()
+
+    assert await store.get_replay_report("run_1") is None
+
+
+async def test_trace_store__upsert_replay_report_then_get_round_trips() -> None:
+    store = InMemoryTraceStore()
+    report = _replay_report()
+
+    await store.upsert_replay_report(report)
+
+    assert await store.get_replay_report("run_1") == report
+
+
+async def test_trace_store__upsert_replay_report_replaces_not_accumulates() -> None:
+    """A re-verify overwrites the previous report for the same run —
+    only the latest result against the current code is meaningful."""
+    store = InMemoryTraceStore()
+    await store.upsert_replay_report(
+        _replay_report(boundary_fidelity=0.5, matched=1, divergences=[{"kind": "x"}])
+    )
+
+    await store.upsert_replay_report(
+        _replay_report(boundary_fidelity=1.0, matched=2, divergences=[])
+    )
+
+    fetched = await store.get_replay_report("run_1")
+    assert fetched is not None
+    assert fetched.boundary_fidelity == 1.0
+    assert fetched.divergences == []
