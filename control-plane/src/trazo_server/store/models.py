@@ -119,3 +119,21 @@ policy_decisions = sa.Table(
     sa.Column("eval_ms", sa.Integer),
     sa.Index("policy_decisions_run", "run_id"),
 )
+
+replay_reports = sa.Table(
+    "replay_reports",
+    metadata,
+    # One row per run, upserted: only the latest `trazo verify` result
+    # against the current code is meaningful, so a re-verify replaces
+    # rather than accumulates (see ReplayReportRow's docstring).
+    sa.Column("run_id", sa.Text, sa.ForeignKey("runs.run_id"), primary_key=True),
+    sa.Column("boundary_fidelity", sa.Float, nullable=False),
+    sa.Column("state_fidelity", sa.Float, nullable=False),
+    sa.Column("matched", sa.Integer, nullable=False),
+    sa.Column("reordered", sa.Integer, nullable=False),
+    sa.Column(
+        "divergences", JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")
+    ),
+    sa.Column("replay_overhead", sa.Float),
+    sa.Column("verified_at", sa.DateTime(timezone=True), nullable=False),
+)
