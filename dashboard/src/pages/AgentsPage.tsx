@@ -1,13 +1,26 @@
+import { useState } from "react";
+
+import type { AgentStat } from "../api/runApi";
 import { useAgents } from "../hooks/useCatalog";
+
+type SortKey = "events" | "runs";
+
+function sortIndicator(active: boolean, direction: "asc" | "desc"): string {
+  if (!active) return "";
+  return direction === "desc" ? " ▼" : " ▲";
+}
 
 // Per-agent rollup from GET /v1/agents. The endpoint reports
 // `unattributed_events` alongside on purpose: only an adapter that can
 // name the acting agent sets agent_id (CrewAI's does, per role; the
 // LangGraph adapter leaves it null because a graph node isn't an agent
 // identity), so an empty table means "nothing attributed", not "nothing
-// ran" — and this page says so rather than looking broken.
+// ran" — and this page says so rather than looking broken. Sortable
+// client-side: the endpoint's whole window comes back in one response.
 export default function AgentsPage() {
   const { data, isLoading, isError, error } = useAgents();
+  const [sortKey, setSortKey] = useState<SortKey>("events");
+  const [direction, setDirection] = useState<"asc" | "desc">("desc");
 
   if (isLoading && !data) {
     return (
@@ -26,6 +39,20 @@ export default function AgentsPage() {
     );
   }
 
+  function toggleSort(key: SortKey) {
+    if (key === sortKey) {
+      setDirection((d) => (d === "desc" ? "asc" : "desc"));
+    } else {
+      setSortKey(key);
+      setDirection("desc");
+    }
+  }
+
+  const agents: AgentStat[] = [...data.agents].sort((a, b) => {
+    const delta = a[sortKey] - b[sortKey];
+    return direction === "desc" ? -delta : delta;
+  });
+
   return (
     <div className="page">
       <div className="page__head">
@@ -37,7 +64,7 @@ export default function AgentsPage() {
       </div>
 
       <div className="card">
-        {data.agents.length === 0 ? (
+        {agents.length === 0 ? (
           <div className="empty-state">
             No events carry an <code className="mono">agent_id</code> yet.
             {data.unattributed_events > 0 && (
@@ -56,13 +83,25 @@ export default function AgentsPage() {
               <thead>
                 <tr>
                   <th>Agent</th>
-                  <th className="table__num">Events</th>
-                  <th className="table__num">Runs</th>
+                  <th
+                    className="table__num"
+                    onClick={() => toggleSort("events")}
+                    style={{ cursor: "pointer" }}
+                  >
+                    Events{sortIndicator(sortKey === "events", direction)}
+                  </th>
+                  <th
+                    className="table__num"
+                    onClick={() => toggleSort("runs")}
+                    style={{ cursor: "pointer" }}
+                  >
+                    Runs{sortIndicator(sortKey === "runs", direction)}
+                  </th>
                   <th>Last seen</th>
                 </tr>
               </thead>
               <tbody>
-                {data.agents.map((agent) => (
+                {agents.map((agent) => (
                   <tr key={agent.agent_id}>
                     <td className="table__mono">{agent.agent_id}</td>
                     <td className="table__num">{agent.events}</td>
@@ -78,7 +117,7 @@ export default function AgentsPage() {
         )}
       </div>
 
-      {data.agents.length > 0 && data.unattributed_events > 0 && (
+      {agents.length > 0 && data.unattributed_events > 0 && (
         <p className="muted" style={{ fontSize: 12.5 }}>
           {data.unattributed_events} of the last {data.window_events} events carried no agent_id and
           are not counted above.
