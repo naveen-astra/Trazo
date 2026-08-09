@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { isBlobRef } from "../api/runApi";
+import CopyButton from "../components/CopyButton";
 import DivergenceReport from "../components/DivergenceReport";
 import {
   IconPause,
@@ -13,9 +14,9 @@ import {
 } from "../components/Icons";
 import { BlobField } from "../components/PayloadDrawer";
 import { useReplayBundle } from "../hooks/useReplayBundle";
+import { useReplayReport } from "../hooks/useReplayReport";
 import { eventKindChipColor } from "../lib/eventKind";
 import { buildStepNodes, type StepNode } from "../lib/runGraph";
-import sampleDivergenceReport from "../replayFixtures/sample-divergence-report.json";
 
 const AUTOPLAY_INTERVAL_MS = 1100;
 
@@ -126,6 +127,7 @@ function StepStateDiff({ node }: { node: StepNode }) {
 export default function ReplayStepperPage() {
   const { runId } = useParams<{ runId: string }>();
   const { data: bundle, isLoading, isError, error } = useReplayBundle(runId ?? "");
+  const { data: report, isLoading: reportLoading } = useReplayReport(runId ?? "");
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
 
@@ -360,15 +362,34 @@ export default function ReplayStepperPage() {
 
       <div className="card">
         <div className="card__head">
-          <h2 className="card__title">Divergence report (sample)</h2>
+          <h2 className="card__title">Divergence report</h2>
+          {report && (
+            <span className="muted" style={{ fontSize: 12 }}>
+              verified {new Date(report.verified_at).toLocaleString()}
+            </span>
+          )}
         </div>
-        <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
-          No endpoint serves a live divergence report yet — a replay session runs inside the
-          SDK&apos;s own Python process (<code className="mono">trazo verify &lt;run_id&gt;</code>),
-          not behind this API. Fixture data, shown here to demonstrate the view (TRZ-P6-07) — see
-          src/replayFixtures/README.md.
-        </p>
-        <DivergenceReport report={sampleDivergenceReport} />
+        {reportLoading ? (
+          <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
+            Loading&hellip;
+          </p>
+        ) : report ? (
+          <DivergenceReport report={report} />
+        ) : (
+          <div>
+            <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
+              This run hasn&apos;t been verified yet. Fidelity is computed by actually re-driving
+              the run&apos;s registered entrypoint — that only happens inside the SDK&apos;s own
+              process, never in the browser — so run this locally and the result will show up here:
+            </p>
+            <div className="row" style={{ gap: 8 }}>
+              <code className="code-block" style={{ flex: 1, margin: 0 }}>
+                trazo verify {runId}
+              </code>
+              <CopyButton value={`trazo verify ${runId}`} label="Copy command" />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
