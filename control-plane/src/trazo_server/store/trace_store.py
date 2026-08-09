@@ -14,7 +14,13 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, Protocol
 
-from trazo_server.store.rows import DetectionRow, EventRow, PolicyDecisionRow, RunRow
+from trazo_server.store.rows import (
+    DetectionRow,
+    EventRow,
+    PolicyDecisionRow,
+    ReplayReportRow,
+    RunRow,
+)
 
 
 class TraceStore(Protocol):
@@ -194,4 +200,16 @@ class TraceStore(Protocol):
         derives from ``tool.call`` events — rather than four bespoke
         aggregate queries whose results would then have to agree.
         """
+        ...
+
+    async def upsert_replay_report(self, report: ReplayReportRow) -> None:
+        """Insert-or-update the stored fidelity report for a run, keyed
+        by run_id — a re-verify replaces the previous report rather than
+        accumulating history, since only the latest verification against
+        the current code is meaningful."""
+        ...
+
+    async def get_replay_report(self, run_id: str) -> ReplayReportRow | None:
+        """The most recently submitted ``trazo verify`` report for a
+        run, or None if it has never been verified."""
         ...
