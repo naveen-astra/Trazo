@@ -90,13 +90,15 @@ The two research questions this raises — how to define and measure "replay fid
 No PyPI package is published yet (`v0.1.0` is the first tagged release, once
 [TRZ-P7-02](.github/workflows/release.yml) actually cuts one — see
 [Project status](#project-status)) — until then, install the SDK editable
-from a clone. Everything below is real, working code, run for real against
-`docker compose up` as part of this repo's own CI/smoke checks
-(`scripts/smoke/phase2.sh`) — not a design sketch. The one thing not
-independently re-verified in *this* environment specifically is wall-clock
-time end to end (no Docker daemon here — see [Project status](#project-status));
-budget roughly 10-15 minutes on a machine with Docker already installed,
-most of it image pulls/builds the first time.
+from a clone. Every command below was re-run live end to end against a real
+`docker compose up` while finishing Phase 7 — not just exercised by CI, but
+typed and watched: `make up` → run the demo agent → query it back → verify
+its replay fidelity, all producing exactly the output shown. On a machine
+with Docker images and `uv`/`npm` caches already warm, `make up` itself
+takes well under a minute; budget the full 10-15 minutes for a genuinely
+cold machine pulling images and installing dependencies for the first
+time, which this pass didn't independently re-measure (nothing here had
+an empty cache to pull into).
 
 ```bash
 git clone https://github.com/naveen-astra/Trazo.git
@@ -110,13 +112,14 @@ or just watch `curl http://localhost:8420/healthz`), then run a real
 instrumented LangGraph agent against it:
 
 ```bash
-uv run --project sdk --extra langgraph python scripts/smoke/run_toy_agent.py
+uv run --project sdk --extra langgraph --extra demos \
+    python demos/research-assistant/run.py --endpoint http://localhost:8420
 ```
 
-That's `sdk/tests/agents/research_assistant.py` — a small but real LangGraph
-graph (plan → search → retrieve → synthesize) — wrapped in
-`trazo.integrations.langgraph.instrument()` exactly the way your own agent
-would be:
+That's a small but real LangGraph graph (plan → search → retrieve →
+synthesize) — wrapped in `trazo.integrations.langgraph.instrument()` exactly
+the way your own agent would be — and it prints the run id it just recorded
+(`TRAZO_RUN_ID=run_01...`) for the next two steps:
 
 ```python
 from trazo.integrations.langgraph import instrument
@@ -160,10 +163,23 @@ for step in session.steps():
     # from the original run — not freshly generated ones
 ```
 
-Or from the CLI: `trazo verify run_01J...` reports boundary/state fidelity
-and any divergence, in the same JSON shape TrazoBench's fidelity harness
-scores third-party replay tools against
-([benchmark/README.md](benchmark/README.md)).
+Or from the CLI — `trazo verify` re-drives the run for real and reports
+boundary/state fidelity and any divergence, in the same JSON shape
+TrazoBench's fidelity harness scores third-party replay tools against
+([benchmark/README.md](benchmark/README.md)). It needs the run's
+*registered entrypoint* in the same process (`replay.entrypoint(fn)`,
+one decorator call — how else would it know which function to re-invoke
+for an arbitrary run?), which is exactly what each demo's own
+`replay_entrypoint.py` wraps around it:
+
+```bash
+TRAZO_API_KEY=dev-change-me uv run --project sdk --extra langgraph --extra demos \
+    python demos/research-assistant/replay_entrypoint.py run_01J...
+```
+
+That both prints the fidelity report and — with `TRAZO_API_KEY` set —
+persists it, so the same report shows up on the dashboard's Replay Studio
+for that run instead of "not yet verified."
 
 A policy that blocks a governed action inline, before it executes, is just
 a `.rego` file mounted into the OPA sidecar
@@ -184,16 +200,21 @@ deny contains {"policy_id": "send_email_cap", "reason": msg} if {
 ## Project status
 
 Every component below is real, running code with passing tests, not a
-design sketch — Phases 0 through 6 are functionally complete; Phase 7
-(benchmark packaging, release engineering) is in progress. No `v0.1.0` has
-been tagged yet, so there is no PyPI/npm package and no GitHub Release —
-build from source per [Quickstart](#quickstart) until there is. Live-browser
-verification of the dashboard, and end-to-end verification against a real
-`docker compose up`, were both done in whatever environment last built each
-piece — not independently re-run in the environment that wrote this
-sentence (no Docker daemon here); [ROADMAP.md](ROADMAP.md)'s own footnotes
-are the honest, per-phase record of exactly what was and wasn't
-re-verified, and where.
+design sketch — all seven phases are code-complete. No `v0.1.0` has been
+tagged yet, so there is no PyPI/npm package and no GitHub Release — build
+from source per [Quickstart](#quickstart) until there is.
+[ROADMAP.md](ROADMAP.md)'s own footnotes are the honest, per-phase record of
+what was verified and where; this pass added a live re-run of the
+quickstart itself end to end (agent run → query → dashboard → replay
+verify, against a real `docker compose up`), the benchmark suite
+regenerating byte-identical detection numbers from its committed corpus,
+and the MASTER_PLAN §4.3 six-step demo rehearsed live twice
+([DEMO_RUNBOOK.md](DEMO_RUNBOOK.md), real run_ids and command output,
+2026-08-10) — which caught and fixed two genuine bugs along the way (an
+OPA `sprintf` formatting artifact leaking into a policy denial message,
+and two documented commands that didn't actually work as written), exactly
+the kind of thing a rehearsal that's actually run catches and a rehearsal
+that's only written down cannot.
 
 | Component | Status |
 |---|---|
@@ -210,7 +231,8 @@ re-verified, and where.
 | Memory inspector + dashboard | Done (Phases 2 and 6) — timeline, memory inspector, replay stepper |
 | TrazoBench v0 (detection + replay adapter interfaces, baseline numbers) | Done (Phase 7) — [benchmark/README.md](benchmark/README.md) |
 | Release engineering (`release.yml`, version stamping, schema cross-check) | Done (Phase 7) — no tag pushed yet |
-| Tagged release, PyPI/npm packages, rehearsed demo script | Not yet — remaining Phase 7 work |
+| MVP demo rehearsal (MASTER_PLAN §4.3, six steps, live) | Done (Phase 7) — rehearsed twice, real evidence in [DEMO_RUNBOOK.md](DEMO_RUNBOOK.md) |
+| Tagged release, PyPI/npm packages | Not yet — the tag itself is the one thing left |
 | AutoGen adapter, TypeScript SDK, Kafka, ClickHouse, hosted tier | Deliberately deferred post-MVP ([ROADMAP.md](ROADMAP.md)) |
 
 ## Roadmap
@@ -224,7 +246,7 @@ The roadmap is ordered by dependency, not by calendar. Each phase produces somet
 5. **P4 — Replay engine (done, parallel lane, three weeks).** Record-and-substitute replay with divergence detection and a fidelity harness — this is the milestone the rest of the project's credibility rests on.
 6. **P5 — Failure injection + detection (done).** A chaos harness induces loops, budget overruns, thrash, and drift; rule-based detectors scored honestly against the labeled corpus.
 7. **P6 — Policy, memory inspector, dashboard v2 (done).** A cost-cap policy blocks a live tool call before it executes; retrieval results inspectable per step; replay stepper in the UI.
-8. **P7 — Benchmark + release (in progress).** TrazoBench v0 regenerates from scripts (done); `v0.1.0` tagging, release engineering, and the rehearsed demo script are what's left.
+8. **P7 — Benchmark + release (code complete, tag pending).** TrazoBench v0 regenerates from scripts; release engineering is wired up; the MASTER_PLAN §4.3 demo has been rehearsed live, twice, with real evidence. Only `v0.1.0` tagging itself is left.
 
 ## Research direction
 
