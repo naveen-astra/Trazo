@@ -33,7 +33,7 @@ EVENTS = [
         "fingerprint": None, "blobs": [],
         "payload": {
             "framework": "langgraph", "framework_version": "0.2.0",
-            "sdk_version": "0.1.0.dev0",
+            "sdk_version": "0.1.0",
             "entry_input": {"messages": [{"content": "find me something", "type": "human"}], "search_result": ""},
             "tags": {},
         },
@@ -145,7 +145,7 @@ class Handler(BaseHTTPRequestHandler):
         query = parse_qs(parsed.query)
 
         if path == "/healthz":
-            self._send_json({"status": "ok", "version": "0.1.0.dev0"})
+            self._send_json({"status": "ok", "version": "0.1.0"})
         elif path == "/v1/runs":
             self._send_json({"runs": [RUN], "next_cursor": None})
         elif path == f"/v1/runs/{RUN_ID}":
