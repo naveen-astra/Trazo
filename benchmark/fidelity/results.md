@@ -2,5 +2,5 @@
 
 | Project | Runs | Boundary fidelity | State fidelity | Replay overhead | Divergences |
 |---|---|---|---|---|---|
-| research-assistant | 2 | 100.00% | 100.00% | 7.16x | 0 |
-| **all** | 2 | 100.00% | 100.00% | 7.16x | 0 |
+| research-assistant | 2 | 100.00% | 100.00% | 4.67x | 0 |
+| **all** | 2 | 100.00% | 100.00% | 4.67x | 0 |

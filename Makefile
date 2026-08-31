@@ -5,7 +5,7 @@ COMPOSE := docker compose --project-name trazo --env-file deploy/.env -f deploy/
 PHASE ?= 0
 AGENT ?= research-assistant
 
-.PHONY: up down nuke seed dev-server dev-dash test test-int lint fmt smoke demo gen-api-types
+.PHONY: up down nuke seed dev-server dev-dash test test-int lint fmt smoke demo gen-api-types benchmark
 
 up:
 	$(COMPOSE) up -d --build
@@ -66,6 +66,16 @@ demo:
 	esac; \
 	uv run --project sdk --extra "$$EXTRA" --extra demos \
 		python demos/$(AGENT)/run.py --endpoint http://localhost:8420
+
+benchmark:
+	# TRZ-P7-01/checkpoint (scripts/smoke/phase7.sh): regenerates RESEARCH.md's
+	# RQ1 (fidelity) and RQ2/RQ3 (detection) tables from the committed corpus
+	# manifests -- offline, no compose stack needed (each script replays
+	# cached bundles in-process). Both scripts' own docstrings document the
+	# exact invocation this wires; see benchmark/README.md for what the
+	# numbers mean.
+	uv run --project sdk python benchmark/detection/runner.py
+	uv run --project sdk python benchmark/fidelity/run_harness.py
 
 gen-api-types:
 	# CODING_STANDARDS.md §2: "hand-written API types are a bug" -- this is
