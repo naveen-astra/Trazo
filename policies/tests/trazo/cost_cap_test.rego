@@ -39,3 +39,20 @@ test_allow_when_projected_cost_stays_under_cap if {
 	})
 	decision == "allow" with input as fine
 }
+
+# Regression: OPA's sprintf mis-formats a *whole*-valued number under
+# %.2f as the literal Go fmt escape "%!f(int=N)" -- reproduced live by a
+# demo chaos run whose fixture cost landed on an exact whole dollar
+# figure (81), which leaked straight into the denial reason a human
+# reads. Every other test above happens to use fractional dollar
+# amounts, which is exactly how this shipped uncaught. `contains` here
+# is process.exit's own null-terminated-string-style substring check.
+test_deny_reason_has_no_go_fmt_artifact_for_a_whole_dollar_amount if {
+	whole := object.union(_cost_cap_input, {"run_context": {"cost_usd_so_far": 81, "active_detections": []}})
+	decision == "deny" with input as whole
+	whole_reasons := reasons with input as whole
+	every r in whole_reasons {
+		not contains(r, "%!f")
+		not contains(r, "%!d")
+	}
+}
