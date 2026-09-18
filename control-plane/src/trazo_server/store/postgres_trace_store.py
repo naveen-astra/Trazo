@@ -48,12 +48,15 @@ class PostgresTraceStore:
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
 
-    async def upsert_run(self, run: RunRow) -> None:
+    async def upsert_run(self, run: RunRow, *, authoritative: bool = False) -> None:
         # run_id/project_id/framework/started_at/tags are set once, at
         # creation; only status/finished_at/totals are legitimate rollup
         # updates (DATABASE.md §2). A caller updating an existing run does
         # not need to know the original tags — passing any value for the
         # fields below on a conflict is safe because they're never applied.
+        # `authoritative` (run.started only) additionally reclaims those
+        # creation fields from whatever placeholder may have created the
+        # row first — see TraceStore.upsert_run for why that happens.
         insert_stmt = pg_insert(runs).values(
             run_id=run.run_id,
             project_id=run.project_id,
@@ -64,13 +67,21 @@ class PostgresTraceStore:
             tags=run.tags,
             totals=run.totals,
         )
+        updates: dict[str, Any] = {
+            "status": insert_stmt.excluded.status,
+            "finished_at": insert_stmt.excluded.finished_at,
+            "totals": insert_stmt.excluded.totals,
+        }
+        if authoritative:
+            updates |= {
+                "project_id": insert_stmt.excluded.project_id,
+                "framework": insert_stmt.excluded.framework,
+                "started_at": insert_stmt.excluded.started_at,
+                "tags": insert_stmt.excluded.tags,
+            }
         stmt = insert_stmt.on_conflict_do_update(
             index_elements=[runs.c.run_id],
-            set_={
-                "status": insert_stmt.excluded.status,
-                "finished_at": insert_stmt.excluded.finished_at,
-                "totals": insert_stmt.excluded.totals,
-            },
+            set_=updates,
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)

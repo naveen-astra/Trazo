@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from trazo_server.config import Settings
@@ -118,6 +119,74 @@ async def test_postgres_store__upsert_run_twice_updates_rollup_in_place(
     assert fetched is not None
     assert fetched.status == "ok"
     assert fetched.totals == {"events": 9, "llm_calls": 1}
+
+
+async def test_postgres_store__upsert_run_authoritative_reclaims_creation_fields(
+    engine: AsyncEngine, ids: tuple[str, str]
+) -> None:
+    """A placeholder row can legitimately be created before ``run.started``
+    lands -- the synchronous policy endpoint does exactly that so its
+    ``policy.decision`` event has a run to hang off (events.run_id is a FK).
+    Without `authoritative`, that placeholder's stand-in framework and
+    timestamp would be permanent, because run.started would then only ever
+    be a conflicting update, and ON CONFLICT DO UPDATE deliberately does not
+    touch the creation fields.
+    """
+    project_id, run_id = ids
+    store = PostgresTraceStore(engine)
+    await store.ensure_project(project_id, f"test-{project_id}")
+    placeholder_started = datetime(2026, 7, 18, 8, 0, tzinfo=timezone.utc)
+    await store.upsert_run(
+        _run_row(
+            project_id,
+            run_id,
+            framework="unknown",
+            started_at=placeholder_started,
+            tags={},
+        )
+    )
+
+    await store.upsert_run(
+        _run_row(
+            project_id,
+            run_id,
+            framework="langgraph",
+            started_at=_NOW,
+            tags={"injected_failure": {"class": "budget"}},
+        ),
+        authoritative=True,
+    )
+
+    fetched = await store.get_run(run_id)
+    assert fetched is not None
+    assert fetched.framework == "langgraph"
+    assert fetched.started_at == _NOW
+    assert fetched.tags == {"injected_failure": {"class": "budget"}}
+
+
+async def test_postgres_store__append_event_rejects_an_unknown_run(
+    engine: AsyncEngine, ids: tuple[str, str]
+) -> None:
+    """``events.run_id`` is a foreign key, so an event for a run that has no
+    row cannot be written -- this is the constraint that forces the
+    synchronous policy endpoint to create a placeholder run before
+    recording its decision (see test_api_policy_postgres.py). Pinned here
+    because the in-memory store has no FK and so silently accepts it, which
+    is exactly how the endpoint shipped without the placeholder write.
+    """
+    project_id, run_id = ids
+    store = PostgresTraceStore(engine)
+    await store.ensure_project(project_id, f"test-{project_id}")
+
+    with pytest.raises(IntegrityError):
+        await store.append_event(
+            run_id=run_id,  # never upsert_run'd
+            event_id=f"evt_{run_id}",
+            kind="policy.decision",
+            ts=_NOW,
+            fingerprint=None,
+            payload={"decision": "deny", "policy_id": "cost_cap"},
+        )
 
 
 async def test_postgres_store__upsert_events_idempotent_on_run_id_and_seq(

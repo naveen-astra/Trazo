@@ -13,7 +13,6 @@ blocking the consumer group (ARCHITECTURE.md §7).
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 from collections.abc import Callable
 from dataclasses import replace
@@ -25,6 +24,7 @@ from pydantic import ValidationError
 from trazo_server.bus.protocol import BUS_BLOCK_MS, BusMessage, EventBus
 from trazo_server.events import Event, EventAdapter
 from trazo_server.metrics import BUS_DLQ_DEPTH_MESSAGES, BUS_LAG_MESSAGES
+from trazo_server.project_id import derive_project_id
 from trazo_server.store.blob_store import BlobStore
 from trazo_server.store.rows import DetectionRow, EventRow, PolicyDecisionRow, RunRow
 from trazo_server.store.trace_store import TraceStore
@@ -47,18 +47,6 @@ _OFFLOADABLE_FIELDS_BY_KIND: dict[str, frozenset[str]] = {
     "plan.updated": frozenset({"plan"}),
     "human.checkpoint": frozenset({"response"}),
 }
-
-
-def _derive_project_id(project_name: str) -> str:
-    """Stable project_id from the logical project name.
-
-    The event envelope carries ``project`` (a name like
-    "research-assistant"), never a ULID (EVENTS.md §1) — hashing the name
-    gives every worker/replica the same id for the same name without a
-    lookup-then-create round trip or a race on first sight of a project.
-    """
-    digest = hashlib.sha1(project_name.encode("utf-8")).hexdigest()[:20]
-    return f"proj_{digest}"
 
 
 def _detection_id_from_event(event_id: str) -> str:
@@ -296,7 +284,7 @@ class StoreWorker:
 
     async def _apply_rollup(self, event: Event) -> None:
         if event.kind == "run.started":
-            project_id = _derive_project_id(event.project)
+            project_id = derive_project_id(event.project)
             await self._trace_store.ensure_project(project_id, event.project)
             await self._trace_store.upsert_run(
                 RunRow(
@@ -308,7 +296,12 @@ class StoreWorker:
                     finished_at=None,
                     tags=event.payload.tags,
                     totals={},
-                )
+                ),
+                # This event *is* the run's creation record, so it owns the
+                # creation fields even when something else had to create the
+                # row first (a policy.decision for a run still in flight, or
+                # an out-of-order run.finished).
+                authoritative=True,
             )
         elif event.kind == "run.finished":
             # project_id/framework/started_at/tags below are placeholders:
@@ -316,7 +309,7 @@ class StoreWorker:
             # conflict (the normal case, since run.started already exists).
             # They matter only if run.finished is somehow the first event
             # TraceStore sees for this run_id (out-of-order delivery).
-            project_id = _derive_project_id(event.project)
+            project_id = derive_project_id(event.project)
             await self._trace_store.ensure_project(project_id, event.project)
             await self._trace_store.upsert_run(
                 RunRow(

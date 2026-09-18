@@ -42,16 +42,29 @@ class TraceStore(Protocol):
         """Insert the project if it doesn't exist yet; a no-op otherwise."""
         ...
 
-    async def upsert_run(self, run: RunRow) -> None:
+    async def upsert_run(self, run: RunRow, *, authoritative: bool = False) -> None:
         """Insert-or-update one run row, keyed by run_id.
 
-        Used both for the initial insert (on ``run.started``, where every
-        field is taken as given) and for rollup updates (on ``run.finished``
-        or a stale-run sweep) — but a rollup update only ever applies
-        ``status``, ``finished_at``, and ``totals``. ``project_id``,
-        ``framework``, ``started_at``, and ``tags`` are set once at
-        creation and never overwritten by a later call, so callers doing a
-        rollup-only update may pass placeholder values for those fields.
+        Used both for the initial insert (on ``run.started``) and for
+        rollup updates (on ``run.finished`` or a stale-run sweep) — but a
+        rollup update only ever applies ``status``, ``finished_at``, and
+        ``totals``. ``project_id``, ``framework``, ``started_at``, and
+        ``tags`` are otherwise set once at creation and never overwritten,
+        so callers doing a rollup-only update may pass placeholder values
+        for those fields.
+
+        ``authoritative=True`` says "this call carries the run's real
+        creation metadata", and applies those four fields on conflict too.
+        Only ``run.started`` should pass it. It exists because a run row
+        can legitimately be *created* by a writer that doesn't know that
+        metadata: ``run.finished`` arriving first under out-of-order bus
+        delivery, or the synchronous policy endpoint recording a
+        ``policy.decision`` for a run whose ``run.started`` is still in
+        flight through the async ingest path. Without it, whichever
+        placeholder happened to win the race would pin ``framework`` to
+        "unknown" and ``started_at`` to the wrong timestamp permanently,
+        since ``run.started`` would then only ever be a conflicting
+        update.
         """
         ...
 

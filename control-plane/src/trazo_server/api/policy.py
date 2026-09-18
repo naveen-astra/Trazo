@@ -33,6 +33,8 @@ from trazo_server.errors import OpaUnavailableError
 from trazo_server.events import Event, EventAdapter, EventKind, PolicyMode, Sha256Ref
 from trazo_server.metrics import POLICY_EVAL_LATENCY_SECONDS
 from trazo_server.policy.opa_client import OpaClient
+from trazo_server.project_id import derive_project_id
+from trazo_server.store.rows import RunRow
 from trazo_server.store.trace_store import TraceStore
 from trazo_server.topics import EVENTS_STREAM
 from trazo_server.ulid import new_event_id
@@ -110,6 +112,31 @@ async def evaluate_policy(
         "eval_latency_ms": eval_ms,
         "mode": body.mode,
     }
+
+    # The run row has to exist before its first event: `events.run_id` is a
+    # foreign key, and this endpoint is synchronous while `run.started`
+    # reaches the store asynchronously (SDK -> batch POST -> Redis Streams
+    # -> StoreWorker). For the very first governed action of a run, this
+    # write routinely wins that race -- which used to raise a FK violation,
+    # 500 the endpoint, and make the SDK fail *open*: governance silently
+    # stopped governing exactly when a run was new. Create a placeholder
+    # row so the decision is still recorded; `run.started` reclaims every
+    # creation field when it lands (upsert_run's `authoritative`), so the
+    # placeholder's stand-in framework/timestamp never survives.
+    project_id = derive_project_id(body.project)
+    await trace_store.ensure_project(project_id, body.project)
+    await trace_store.upsert_run(
+        RunRow(
+            run_id=body.run_id,
+            project_id=project_id,
+            framework="unknown",
+            status="running",
+            started_at=ts,
+            finished_at=None,
+            tags={},
+            totals={},
+        )
+    )
 
     # Durable write first (this is what "before responding" means, ADR-006
     # -- the decision is recorded no matter what happens next), then

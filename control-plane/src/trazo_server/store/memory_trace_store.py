@@ -39,13 +39,14 @@ class InMemoryTraceStore:
     async def ensure_project(self, project_id: str, name: str) -> None:
         self._projects.setdefault(project_id, name)
 
-    async def upsert_run(self, run: RunRow) -> None:
+    async def upsert_run(self, run: RunRow, *, authoritative: bool = False) -> None:
         # Mirrors PostgresTraceStore's ON CONFLICT semantics: run_id/
         # project_id/framework/started_at/tags are set once at creation;
         # only status/finished_at/totals are legitimate rollup updates
-        # (DATABASE.md §2) — see that store's upsert_run for why.
+        # (DATABASE.md §2) — see that store's upsert_run for why, including
+        # what `authoritative` reclaims.
         existing = self._runs.get(run.run_id)
-        if existing is None:
+        if existing is None or authoritative:
             self._runs[run.run_id] = run
             return
         self._runs[run.run_id] = replace(

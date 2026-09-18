@@ -170,6 +170,32 @@ def test_evaluate__503_when_opa_is_unavailable(
     assert trace_store._events == {}  # type: ignore[attr-defined]
 
 
+def test_evaluate__creates_the_run_row_when_run_started_has_not_landed_yet(
+    client: TestClient, opa: FakeOpaClient, trace_store: InMemoryTraceStore
+) -> None:
+    """`events.run_id` is a foreign key, and this endpoint is synchronous
+    while `run.started` reaches the store asynchronously -- so for a run's
+    first governed action, the decision write routinely arrives first. It
+    has to create the run row itself or the insert violates the FK, 500s,
+    and the SDK fails open: governance silently off exactly when a run is
+    new. (The FK itself only exists in Postgres, so the assertion here is
+    on the fix's contract -- that the row gets created -- with
+    test_trace_store_postgres.py covering the constraint for real.)
+    """
+    opa.next_result = {"decision": "deny", "policy_id": "cost_cap", "reasons": ["x"]}
+
+    response = client.post(
+        "/v1/policy/evaluate", json=_request_body(), headers=_auth_headers()
+    )
+
+    assert response.status_code == 200
+    run = trace_store._runs["run_1"]  # type: ignore[attr-defined]
+    assert run.project_id in trace_store._projects  # type: ignore[attr-defined]
+    # A stand-in until run.started lands and reclaims it (upsert_run's
+    # `authoritative`) -- deliberately not guessed at here.
+    assert run.framework == "unknown"
+
+
 def test_evaluate__requires_the_bearer_api_key(client: TestClient) -> None:
     response = client.post("/v1/policy/evaluate", json=_request_body())
 
