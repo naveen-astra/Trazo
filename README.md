@@ -87,6 +87,23 @@ The two research questions this raises — how to define and measure "replay fid
 
 ## Quickstart
 
+**Just want to see it work?** Clone the repo, copy `deploy/.env.example` to
+`deploy/.env`, and run the one-command launcher — it brings the whole stack
+up and drives the live demo against it, checking each step's real outcome as
+it goes rather than just running five commands and hoping:
+
+```bash
+python scripts/run_demo.py          # or, on Windows, double-click RUN_DEMO.bat
+```
+
+That starts Docker if it isn't running, builds and boots all five services,
+traces a real LangGraph agent, injects a tool-call loop and watches the
+detector fire, has OPA block an over-budget call inline, and replays the
+clean run to verify 100% state fidelity — pausing between steps so you can
+watch each one land in the dashboard. `--fast` skips the pauses;
+`STOP_DEMO.bat` (or `docker compose ... down`) tears it back down. The rest
+of this section is the same thing done by hand, a command at a time.
+
 No PyPI package is published yet (`v0.1.0` is the first tagged release, once
 [TRZ-P7-02](.github/workflows/release.yml) actually cuts one — see
 [Project status](#project-status)) — until then, install the SDK editable
