@@ -200,3 +200,222 @@ Replay requires an entrypoint registered in the same process, so the engine know
 which function to re-invoke for a given run — see
 [Replaying and verifying a run](#replaying-and-verifying-a-run).
 
+## Requirements
+
+| Requirement | Version | Notes |
+|---|---|---|
+| Docker Desktop or Docker Engine | Compose v2 | Runs the five-service stack |
+| Python | 3.10 – 3.13 | For the SDK and your agent |
+| [uv](https://docs.astral.sh/uv/) | Latest | Dependency resolution; `pip install uv` |
+| Node.js | 20+ | Only for dashboard development |
+
+Host ports used by default: `8420` (control plane), `5173` (dashboard), `5432`
+(PostgreSQL), `6379` (Redis), `8181` (OPA). All are configurable in
+`deploy/.env`. The launcher automatically relocates the PostgreSQL and Redis host
+ports if something else already holds them.
+
+## Quickstart
+
+### One command
+
+Clone the repository and run the launcher. It starts Docker if needed, brings up
+all five services, traces a real agent, triggers a detection, has a policy block
+an action inline, and verifies replay fidelity — checking each step's actual
+outcome against the control plane rather than assuming success.
+
+```bash
+git clone https://github.com/naveen-astra/Trazo.git
+cd Trazo
+python scripts/run_demo.py
+```
+
+On Windows you can double-click `RUN_DEMO.bat` instead. `STOP_DEMO.bat` or
+`make down` tears the stack down.
+
+Useful flags:
+
+| Flag | Effect |
+|---|---|
+| `--fast` | Skip the pause between steps |
+| `--keep-data` | Do not reset the database first |
+| `--no-browser` | Do not open the dashboard automatically |
+
+Expected output ends with:
+
+```
+==========================================================================
+  DEMO COMPLETE -- everything verified live
+==========================================================================
+  Dashboard:     http://localhost:5173
+  Control plane: http://localhost:8420
+```
+
+### Step by step
+
+If you would rather run it manually:
+
+```bash
+cp deploy/.env.example deploy/.env   # sets TRAZO_API_KEY (dev-change-me by default)
+make up                              # postgres, redis, opa, control-plane, dashboard
+curl http://localhost:8420/readyz    # {"status":"ready","checks":{...}}
+```
+
+Trace a real instrumented LangGraph agent against the running stack:
+
+```bash
+uv run --project sdk --extra langgraph --extra demos \
+    python demos/research-assistant/run.py --endpoint http://localhost:8420
+```
+
+This is a real LangGraph graph (plan, search, retrieve, synthesize, evaluate)
+wrapped in `instrument()` exactly the way your own agent would be. It prints the
+run id it recorded:
+
+```
+TRAZO_RUN_ID=run_01M2TAPDR1BV8E0MP4Z8N9JRCW
+```
+
+Query it back, or open the dashboard:
+
+```bash
+curl "http://localhost:8420/v1/runs?project=research-assistant"
+open http://localhost:5173
+```
+
+## Instrumenting your own agent
+
+Install the SDK from a clone (no package is published to PyPI yet):
+
+```bash
+uv pip install -e "sdk[langgraph]"     # or sdk[crewai], or plain sdk
+```
+
+### LangGraph
+
+```python
+import trazo
+from trazo.integrations.langgraph import instrument
+
+trazo.init(
+    project="my-agent",
+    endpoint="http://localhost:8420",
+    api_key="dev-change-me",
+)
+
+graph = build_my_graph()
+traced = instrument(graph)
+
+result = traced.invoke({"query": "..."})
+print(traced.last_run_id)     # the run id just recorded
+
+trazo.shutdown()              # flush before the process exits
+```
+
+### CrewAI
+
+```python
+import trazo
+from trazo.integrations.crewai import instrument
+
+trazo.init(project="my-crew", endpoint="http://localhost:8420")
+
+traced = instrument(my_crew)
+traced.kickoff()
+
+trazo.shutdown()
+```
+
+### Any other agent
+
+For a hand-rolled loop or an unsupported framework, decorate the boundaries
+directly. These are the same primitives the adapters use internally.
+
+```python
+from trazo import trace_tool, trace_llm, trace_memory_read, trace_memory_write
+
+@trace_tool(side_effect_class="external")      # "read" | "write" | "external"
+def web_search(query: str) -> list[str]:
+    ...
+
+@trace_llm(provider="openai", model="gpt-4o")
+def call_model(messages: list[dict]) -> str:
+    ...
+
+@trace_memory_read(store="vector")
+def retrieve(query: str) -> list[str]:
+    ...
+
+@trace_memory_write(store="vector")
+def remember(fact: str) -> None:
+    ...
+```
+
+`side_effect_class` matters for governance: by default, only `write` and
+`external` calls are submitted for policy evaluation. Read-only calls are traced
+but not gated, which keeps the 150 ms policy budget off your hot path.
+
+Always call `trazo.shutdown()` before a short-lived process exits. An `atexit`
+hook exists as a fallback, but it is not reliable when a process exits
+immediately after the agent finishes — events still queued will be lost.
+
+## Replaying and verifying a run
+
+Inspect a recorded run without re-executing anything:
+
+```python
+from trazo import replay
+
+session = replay.load("run_01M2TAPDR...", mode="strict")
+
+for step in session.steps():
+    print(step.index, step.name, step.state_before)
+    # step.boundary_events holds the recorded model/tool/memory calls
+    # from the original run, not freshly generated ones
+```
+
+`session.steps()` reads from the replay bundle and needs nothing else. To
+actually *re-drive* the agent and measure fidelity, the engine must know which
+function to re-invoke, so the run's entrypoint has to be registered in the same
+process:
+
+```python
+from trazo import replay
+from trazo.integrations.langgraph import instrument
+
+@replay.entrypoint(framework="langgraph")
+def run_agent(entry_input):
+    return instrument(build_my_graph()).invoke(entry_input)
+```
+
+`framework=` scopes the entrypoint to bundles of that framework, so several can
+coexist in one process. A bare `@replay.entrypoint` registers a default used for
+any framework.
+
+Each demo ships a small wrapper that does exactly this. With it registered,
+verification reports boundary fidelity, state fidelity, and divergences:
+
+```bash
+TRAZO_API_KEY=dev-change-me uv run --project sdk --extra langgraph --extra demos \
+    python demos/research-assistant/replay_entrypoint.py run_01M2TAPDR...
+```
+
+```
+run run_01M2TAPDR1BV8E0MP4Z8N9JRCW (langgraph), mode=lenient (verify)
+  boundary fidelity: 100.00%
+  state fidelity:    100.00%
+  matched: 21  reordered: 0  divergences: 0
+  replay overhead:   1.51x
+```
+
+With `TRAZO_API_KEY` set, the report is persisted to the control plane and
+appears in the dashboard's Replay Studio for that run.
+
+A bare `trazo verify <run_id>` will fail with `NoEntrypointRegisteredError`
+unless an entrypoint was registered earlier in the same process. This is a
+consequence of the design, not a bug: the engine cannot guess which callable
+produced an arbitrary run.
+
+**Modes.** `strict` fails on the first divergence; `lenient` records every
+divergence and continues, which is what you want when diagnosing an unknown
+failure.
+
