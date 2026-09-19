@@ -306,9 +306,9 @@ graph = build_my_graph()
 traced = instrument(graph)
 
 result = traced.invoke({"query": "..."})
-print(traced.last_run_id)     # the run id just recorded
+print(traced.last_run_id)  # the run id just recorded
 
-trazo.shutdown()              # flush before the process exits
+trazo.shutdown()  # flush before the process exits
 ```
 
 ### CrewAI
@@ -333,21 +333,21 @@ directly. These are the same primitives the adapters use internally.
 ```python
 from trazo import trace_tool, trace_llm, trace_memory_read, trace_memory_write
 
-@trace_tool(side_effect_class="external")      # "read" | "write" | "external"
-def web_search(query: str) -> list[str]:
-    ...
+
+@trace_tool(side_effect_class="external")  # "read" | "write" | "external"
+def web_search(query: str) -> list[str]: ...
+
 
 @trace_llm(provider="openai", model="gpt-4o")
-def call_model(messages: list[dict]) -> str:
-    ...
+def call_model(messages: list[dict]) -> str: ...
+
 
 @trace_memory_read(store="vector")
-def retrieve(query: str) -> list[str]:
-    ...
+def retrieve(query: str) -> list[str]: ...
+
 
 @trace_memory_write(store="vector")
-def remember(fact: str) -> None:
-    ...
+def remember(fact: str) -> None: ...
 ```
 
 `side_effect_class` matters for governance: by default, only `write` and
@@ -381,6 +381,7 @@ process:
 ```python
 from trazo import replay
 from trazo.integrations.langgraph import instrument
+
 
 @replay.entrypoint(framework="langgraph")
 def run_agent(entry_input):
