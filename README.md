@@ -419,3 +419,233 @@ produced an arbitrary run.
 divergence and continues, which is what you want when diagnosing an unknown
 failure.
 
+## Writing policies
+
+Policies are Rego files mounted read-only into the OPA sidecar from
+`policies/trazo/`. No SDK or control-plane code changes to add one.
+
+```rego
+package trazo.decision
+
+import rego.v1
+
+deny contains {"policy_id": "send_email_cap", "reason": msg} if {
+    input.action.tool_name == "send_email"
+    input.action.projected_cost_usd > 5
+    msg := "blocked: projected cost exceeds per-action budget"
+}
+```
+
+The input document available to every policy:
+
+```json
+{
+  "run_id": "run_01M2...",
+  "action": {
+    "kind": "tool.call",
+    "fingerprint": "sha256:...",
+    "tool_name": "web_search",
+    "side_effect_class": "external",
+    "projected_cost_usd": 0.1,
+    "args_summary": {}
+  },
+  "run_context": {
+    "cost_usd_so_far": 4.95,
+    "active_detections": ["loop"]
+  }
+}
+```
+
+Rules contribute to `deny` or `escalate` sets. Any non-empty `deny` produces a
+`deny` decision, which the SDK surfaces by raising `PolicyDenied` before the
+governed call runs.
+
+Enable enforcement at runtime:
+
+```bash
+TRAZO_POLICY_MODE=enforce python my_agent.py
+```
+
+OPA does not hot-reload the bundle; restart the sidecar after editing a policy:
+
+```bash
+docker compose --project-name trazo -f deploy/docker-compose.yml restart opa
+```
+
+Test policies without the stack:
+
+```bash
+docker run --rm -v "$(pwd)/policies:/policies" openpolicyagent/opa:0.70.0 \
+    test /policies/trazo /policies/tests/trazo -v
+```
+
+## Failure detection
+
+Three rule-based detectors run in a worker consuming the live event stream.
+Detections are raised during execution, not in a post-hoc batch job.
+
+| Detector | Signature | Severity |
+|---|---|---|
+| `loop` | The same tool called with a near-identical input fingerprint repeatedly, with no state progress | `warn` |
+| `budget` | Cost velocity exceeding a configured rate cap | `critical` |
+| `thrash` | Many distinct tools invoked with no resulting state change | `warn` |
+
+Each detection carries the event IDs that triggered it, so the dashboard links
+straight to the evidence rather than asserting a conclusion. Measured accuracy is
+in [Benchmarks](#benchmarks).
+
+Goal drift — semantically wandering from the original task — is deliberately not
+covered by a rule detector. It is a stretch item behind the same detector
+interface, because a benchmark should not depend on a small model's judgment.
+
+## Configuration reference
+
+### SDK (environment variables)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TRAZO_ENDPOINT` | `http://localhost:8420` | Control plane base URL |
+| `TRAZO_API_KEY` | none | Bearer key for ingest and policy endpoints |
+| `TRAZO_POLICY_MODE` | `off` | `off`, `observe` (evaluate and record, never block), `enforce` (block on deny) |
+| `TRAZO_POLICY_FAIL` | `open` | Behavior when policy evaluation fails or times out: `open` allows, `closed` blocks |
+| `TRAZO_POLICY_SCOPE` | `write,external` | Extra comma-separated side-effect classes to govern |
+| `TRAZO_REDACT_KEYS` | built-in set | Extra comma-separated key substrings to redact, on top of `api_key`, `authorization`, `password`, and similar |
+| `TRAZO_SPOOL_MAX_MB` | `256` | Disk spool cap before the oldest batches are dropped |
+
+`observe` is the recommended way to introduce policies to an existing system:
+decisions are recorded and visible in the dashboard, but nothing is blocked until
+you switch to `enforce`.
+
+### Control plane (environment variables, `TRAZO_` prefix)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TRAZO_API_KEY` | `dev-change-me` | Bearer key required on ingest and policy endpoints |
+| `TRAZO_DATABASE_URL` | `postgresql://trazo:trazo@localhost:5432/trazo` | PostgreSQL connection string |
+| `TRAZO_REDIS_URL` | `redis://localhost:6379/0` | Redis connection string |
+| `TRAZO_OPA_URL` | `http://localhost:8181` | OPA sidecar base URL |
+| `TRAZO_BLOB_ROOT` | `/var/lib/trazo/blobs` | Filesystem blob store root |
+| `TRAZO_HOST` / `TRAZO_PORT` | `0.0.0.0` / `8420` | Bind address |
+| `TRAZO_STALE_RUN_TTL_HOURS` | `6` | A `running` run older than this is marked `stale` |
+| `TRAZO_CORS_ORIGINS` | `*` | Browser origins allowed to read query endpoints |
+| `TRAZO_LOG_JSON` | `true` | JSON logs in containers, human-readable when `false` |
+| `TRAZO_FEATURE_STORE_WORKER` | `true` | Run the persistence worker in-process |
+| `TRAZO_FEATURE_DETECTOR_WORKER` | `true` | Run the detection worker in-process |
+
+### Deployment ports (`deploy/.env`)
+
+`POSTGRES_PORT`, `REDIS_PORT`, `OPA_PORT`, `CONTROL_PLANE_PORT`,
+`DASHBOARD_PORT`, plus `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`.
+Copy `deploy/.env.example` to `deploy/.env` to start.
+
+## HTTP API reference
+
+Base URL `http://localhost:8420`. Endpoints marked **key** require
+`Authorization: Bearer $TRAZO_API_KEY`.
+
+### Ingest and policy
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| `POST` | `/v1/ingest/events` | key | Batch event ingest |
+| `POST` | `/v1/ingest/blobs` | key | Content-addressed large payload upload |
+| `POST` | `/v1/policy/evaluate` | key | Synchronous policy decision for one action |
+
+### Query
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/v1/runs` | List runs; filters `project`, `status`, `limit`, `cursor` |
+| `GET` | `/v1/runs/{run_id}` | One run and its rollup totals |
+| `GET` | `/v1/runs/{run_id}/events` | Events in `seq` order; filters `kind`, `after_seq`, `limit` |
+| `GET` | `/v1/runs/{run_id}/detections` | Detections raised on this run |
+| `GET` | `/v1/runs/{run_id}/policy-decisions` | Policy decisions recorded on this run |
+| `GET` | `/v1/runs/{run_id}/replay-bundle` | Everything needed to replay this run |
+| `GET` / `POST` | `/v1/runs/{run_id}/replay-report` | Fetch or submit a fidelity report |
+| `GET` | `/v1/projects` | Known projects with run counts |
+| `GET` | `/v1/stats` | Dashboard aggregates: success rate, cost, percentiles |
+| `GET` | `/v1/tools` | Per-tool call counts, errors, p50/p95 latency |
+| `GET` | `/v1/agents` | Per-agent event and run counts |
+| `GET` | `/v1/models` | Per-model cost, tokens, latency percentiles |
+| `GET` | `/v1/detections` | Cross-run detection feed; filters `project`, `detector`, `severity` |
+| `GET` | `/v1/policy-decisions` | Cross-run decision feed; filters `project`, `decision`, `policy_id` |
+| `GET` | `/v1/events/recent` | Recent events across runs |
+| `GET` | `/v1/blobs/{sha256}` | Fetch an offloaded payload |
+
+### Live streams and operations
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/v1/live/firehose` | Server-Sent Events across all runs; `Last-Event-ID` resume |
+| `GET` | `/v1/live/runs/{run_id}` | Server-Sent Events for one run |
+| `GET` | `/healthz` | Liveness and version |
+| `GET` | `/readyz` | Readiness with per-dependency checks |
+| `GET` | `/metrics` | Prometheus metrics |
+
+An OpenAPI schema is served at `/openapi.json` and browsable at `/docs`.
+
+## Command-line reference
+
+The SDK installs a `trazo` executable. A global `--endpoint` must precede the
+subcommand.
+
+| Command | Purpose |
+|---|---|
+| `trazo doctor` | Check connectivity, spool status, and version skew |
+| `trazo tail <run_id>` | Stream one run's events live |
+| `trazo replay <run_id> [--step N] [--mode strict\|lenient] [--json]` | Re-drive a recorded run under a registered entrypoint |
+| `trazo verify <run_id> [--json] [--no-submit]` | Fidelity report: boundary, state, overhead |
+
+```bash
+trazo --endpoint http://localhost:8420 doctor
+trazo --endpoint http://localhost:8420 tail run_01M2TAPDR...
+```
+
+`replay` and `verify` require a registered entrypoint in the same process — see
+[Replaying and verifying a run](#replaying-and-verifying-a-run).
+
+## Repository layout
+
+```
+sdk/                     Python SDK: recorder, adapters, policy hook, replay engine, CLI
+control-plane/           FastAPI service: ingest, query, policy, SSE, workers, migrations
+dashboard/               React + TypeScript + Vite frontend
+policies/                Rego policy bundle and its tests
+deploy/                  Docker Compose stack, Dockerfiles, environment template
+demos/                   Runnable example agents (LangGraph and CrewAI)
+benchmark/               TrazoBench: corpus, scoring runners, adapter interface, results
+schema/                  Frozen trace event JSON Schema and fixtures
+scripts/                 Launcher, smoke checkpoints, developer utilities
+```
+
+Each directory has its own `README.md` with specifics.
+
+## Development
+
+```bash
+make up            # start the stack
+make down          # stop it
+make nuke          # stop it and drop volumes
+make test          # SDK and control-plane test suites
+make lint          # ruff, mypy, eslint, prettier
+make fmt           # auto-format
+make benchmark     # regenerate benchmark tables from the committed corpus
+make demo          # bring the stack up and trace one run
+make gen-api-types # regenerate dashboard types from the OpenAPI schema
+```
+
+Per-package commands:
+
+```bash
+cd sdk           && uv run pytest && uv run mypy
+cd control-plane && uv run pytest && uv run mypy --strict src
+cd dashboard     && npm run lint && npm run build
+```
+
+The control-plane suite includes PostgreSQL integration tests that skip
+automatically when a database is not reachable. Run `make up` first to execute
+them — see [Troubleshooting](#troubleshooting) if they skip unexpectedly.
+
+The trace event schema is frozen at `schema-v1.0`. CI fails any pull request that
+modifies `schema/trace-event.v1.schema.json` without a version bump.
+
