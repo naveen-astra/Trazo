@@ -649,3 +649,182 @@ them — see [Troubleshooting](#troubleshooting) if they skip unexpectedly.
 The trace event schema is frozen at `schema-v1.0`. CI fails any pull request that
 modifies `schema/trace-event.v1.schema.json` without a version bump.
 
+## Benchmarks
+
+TrazoBench scores detection accuracy and replay fidelity against a labeled
+corpus of injected failures. All numbers regenerate from committed manifests
+with `make benchmark` — they are computed, not transcribed.
+
+**Detection accuracy** (50 faulty runs per class, 100 clean runs):
+
+| Class | Precision | Recall | False positive rate (clean) |
+|---|---|---|---|
+| loop | 67% | 100% | 0% |
+| budget | 100% | 100% | 0% |
+| thrash | 33% | 50% | 0% |
+
+**Baseline comparison**, flag-any-fault, against a random flagger:
+
+| Adapter | Precision | Recall | False positive rate |
+|---|---|---|---|
+| Trazo (loop + budget + thrash) | 100% | 75% | 0% |
+| Random flagger baseline | 71% | 82% | 67% |
+
+**Replay fidelity** across the demo corpus: 100% boundary fidelity, 100% state
+fidelity, 0 divergences, with replay overhead between 1.5x and 5x depending on
+machine and cache state.
+
+These numbers are reported as measured, including where they are weak. The
+`thrash` detector's 33% precision is a real limitation, not a rounding artifact.
+A third-party tool can be scored against the same corpus by implementing the
+adapter interface in `benchmark/adapter.py`. Details in
+[benchmark/README.md](benchmark/README.md).
+
+## Security posture
+
+**The current release is not multi-tenant-safe.** It is built for a single team
+self-hosting on localhost or a private network, not for exposing a deployment to
+untrusted users. This is a deliberate, documented scope decision, stated plainly
+rather than buried.
+
+- A single static bearer key (`TRAZO_API_KEY`) guards the ingest and policy
+  endpoints. **Query and dashboard endpoints are unauthenticated by default.**
+  Bind them to localhost, or put your own reverse-proxy authentication in front,
+  if the control plane is reachable from anywhere else.
+- No RBAC, no SSO, no per-project keys. `project_id` is threaded through every
+  table and query path specifically so that layer is additive later rather than a
+  schema migration, but it is not built.
+- Every recorded event passes through a redaction pass (configurable key
+  patterns) before it leaves your process. Large payloads are stored
+  content-addressed by SHA-256 rather than at a caller-controlled path.
+- OPA policies are code-reviewed files mounted read-only into the sidecar. There
+  is no runtime policy-upload endpoint to secure or abuse.
+
+Do not deploy this to the public internet without adding an authentication layer
+in front of it. To report a vulnerability, see [SECURITY.md](SECURITY.md).
+
+## Deployment
+
+The same `deploy/docker-compose.yml` that runs locally runs on a server. For
+anything beyond localhost:
+
+1. Set a real `TRAZO_API_KEY` in `deploy/.env`; change the PostgreSQL
+   credentials from their defaults.
+2. Put the control plane and dashboard behind a reverse proxy that terminates
+   TLS and enforces authentication, given the posture above.
+3. Set `TRAZO_CORS_ORIGINS` to your dashboard's actual origin instead of `*`.
+4. Point `TRAZO_DATABASE_URL` and `TRAZO_REDIS_URL` at managed instances if you
+   would rather not operate them yourself; both are standard connection strings.
+5. Back up PostgreSQL and the blob root. The blob store is content-addressed, so
+   it deduplicates naturally but still grows with distinct payloads.
+
+The stack is stateless apart from PostgreSQL, Redis, and the blob volume. The
+control plane runs its own migrations on startup.
+
+## Project status
+
+Version 0.1.0. All seven development phases are code-complete, with passing test
+suites, working end to end against a live stack.
+
+| Component | Status |
+|---|---|
+| Trace event schema | Frozen at `schema-v1.0`; CI enforces version bumps |
+| Python SDK | Complete |
+| LangGraph adapter | Complete |
+| CrewAI adapter | Complete (tracing); no synchronous pre-execution hook point exists in CrewAI's event bus, so inline policy enforcement is LangGraph-only |
+| Ingestion pipeline | Complete: HTTP to Redis Streams to PostgreSQL |
+| Replay engine | Complete: record-and-substitute, divergence detection, fidelity harness |
+| Failure detection | Complete: three rule-based detectors, scored against a 300-run labeled corpus |
+| Policy engine | Complete: synchronous inline enforcement via OPA |
+| Dashboard | Complete: timeline, flow graph, memory inspector, replay stepper, incidents, policy log, settings |
+| TrazoBench | Complete: adapter interface, corpus manifests, baseline comparison |
+| Published packages | Not yet on PyPI or npm — install from a clone |
+
+Known limitations, stated explicitly:
+
+- Inline policy enforcement works for LangGraph and decorator-instrumented code.
+  CrewAI's fire-and-forget event bus provides no synchronous pre-execution hook,
+  so CrewAI runs are traced and detected on, but not gated.
+- The `thrash` detector has low precision (33%). It is shipped because the number
+  is published and reproducible, not because it is finished.
+- Goal-drift detection is not implemented.
+- The demo agents use deterministic scripted model responses by default so the
+  demo costs nothing and reproduces exactly. Pass `--live` with an API key for
+  real model calls. Everything else in the pipeline is real infrastructure.
+
+## Roadmap
+
+Ordered by dependency rather than calendar, and gated on demand rather than
+speculation.
+
+1. **AutoGen adapter** — third framework; tests the generality of the adapter
+   contract.
+2. **Replay forking** — mutate one recorded boundary result and continue live
+   from that point. The bundle format already supports it.
+3. **TypeScript SDK** — after the Python adapter contract survives three
+   frameworks unchanged.
+4. **Kafka event bus** — when measured ingest exceeds what a single Redis stream
+   handles comfortably. The interface already exists.
+5. **Column-store analytics** — when dashboard aggregates outgrow PostgreSQL.
+   The `TraceStore` seam already exists.
+6. **OpenTelemetry exporter** — map events to GenAI-semconv spans so Trazo data
+   is visible in existing Grafana and Jaeger installations.
+7. **Authentication and authorization** — per-project API keys, then SSO, then
+   RBAC. `project_id` is already on every row.
+8. **Auto-pause escalation** — a policy `escalate` decision suspends the run
+   pending human approval. Requires framework-side pause hooks per adapter.
+
+Explicit non-goals: an evaluation and quality-scoring platform, prompt
+management, an agent-building framework, and prediction of fresh-run outcomes.
+
+## Troubleshooting
+
+**The launcher cannot reach Docker.** Start Docker Desktop and wait for the whale
+icon to settle, then re-run. On Linux, `sudo systemctl start docker`.
+
+**A port is already in use.** The launcher relocates PostgreSQL and Redis
+automatically. For the control plane (`8420`) or dashboard (`5173`) it stops
+instead, because those URLs are what the documentation tells you to open — change
+`CONTROL_PLANE_PORT` or `DASHBOARD_PORT` in `deploy/.env`.
+
+**PostgreSQL integration tests skip even though the stack is up.** Something else
+on the host is bound to port 5432 — commonly a natively installed PostgreSQL
+service — and is answering instead of the container. Docker may still report
+success because it bound a different interface. Change `POSTGRES_PORT` in
+`deploy/.env` and point `TRAZO_DATABASE_URL` at the new port.
+
+**`NoEntrypointRegisteredError` when replaying.** `replay` and `verify` need
+`@replay.entrypoint` registered in the same process. Use a wrapper like
+`demos/research-assistant/replay_entrypoint.py`.
+
+**Policy changes have no effect.** OPA does not watch the bundle directory.
+Restart the sidecar: `docker compose --project-name trazo -f
+deploy/docker-compose.yml restart opa`.
+
+**Events are missing from a short-lived script.** Call `trazo.shutdown()` before
+the process exits. The `atexit` fallback is not reliable when a process exits
+immediately after the agent finishes.
+
+**A run stays `running` forever.** The process died before emitting
+`run.finished`. The store worker marks such runs `stale` after
+`TRAZO_STALE_RUN_TTL_HOURS` (default 6).
+
+**`trazo: unrecognized arguments`.** The global `--endpoint` flag must come
+before the subcommand: `trazo --endpoint URL verify RUN_ID`.
+
+## Contributing
+
+Issues and pull requests are welcome. Before sending a large change, open an
+issue to align on the approach — for a project at this stage, agreeing on design
+saves more time than it costs.
+
+Every pull request must pass `make lint` and `make test`. New behavior needs a
+test that fails without the change; bug fixes need a regression test verified to
+fail against the unfixed code. Changes to `schema/trace-event.v1.schema.json`
+require a schema version bump, which CI enforces.
+
+Issue and pull request templates live in [.github/](.github/).
+
+## License
+
+MIT. See [LICENSE](LICENSE).
