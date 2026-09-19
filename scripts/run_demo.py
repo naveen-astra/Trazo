@@ -21,6 +21,7 @@ exited zero.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -105,10 +106,8 @@ def fail(text: str) -> None:
 def pause(enabled: bool, text: str = "Press Enter to continue...") -> None:
     if not enabled:
         return
-    try:
+    with contextlib.suppress(EOFError):  # piped stdin (CI): behave like --fast
         input(f"\n    >> {text}")
-    except EOFError:  # piped stdin (CI): behave like --fast
-        pass
 
 
 # --------------------------------------------------------------------------
@@ -162,13 +161,23 @@ def wait_for_ready(timeout_seconds: int = 180) -> None:
             payload = get_json("/readyz", timeout=5.0)
             if isinstance(payload, dict) and payload.get("status") == "ready":
                 checks = payload.get("checks", {})
-                ok(f"control plane ready (postgres={checks.get('postgres')}, redis={checks.get('redis')})")
+                ok(
+                    f"control plane ready (postgres={checks.get('postgres')}, "
+                    f"redis={checks.get('redis')})"
+                )
                 return
             last = str(payload)
-        except (urllib.error.URLError, OSError, json.JSONDecodeError, TimeoutError) as exc:
+        except (
+            urllib.error.URLError,
+            OSError,
+            json.JSONDecodeError,
+            TimeoutError,
+        ) as exc:
             last = str(exc)
         time.sleep(2)
-    raise DemoFailed(f"control plane never became ready within {timeout_seconds}s (last: {last})")
+    raise DemoFailed(
+        f"control plane never became ready within {timeout_seconds}s (last: {last})"
+    )
 
 
 def extract_run_id(text: str) -> str:
@@ -187,7 +196,9 @@ def ensure_docker(timeout_seconds: int = 240) -> None:
     """Make sure the Docker daemon answers, starting Docker Desktop if this
     is Windows/macOS and it simply isn't running yet."""
     if shutil.which("docker") is None:
-        raise DemoFailed("docker is not installed or not on PATH -- install Docker Desktop first")
+        raise DemoFailed(
+            "docker is not installed or not on PATH -- install Docker Desktop first"
+        )
 
     if subprocess.run(["docker", "info"], capture_output=True).returncode == 0:
         ok("docker daemon is running")
@@ -199,11 +210,17 @@ def ensure_docker(timeout_seconds: int = 240) -> None:
         if desktop.exists():
             subprocess.Popen([str(desktop)])
         else:
-            raise DemoFailed(f"Docker Desktop not found at {desktop} -- start Docker manually, then re-run")
+            raise DemoFailed(
+                f"Docker Desktop not found at {desktop} -- "
+                "start Docker manually, then re-run"
+            )
     elif sys.platform == "darwin":
         subprocess.Popen(["open", "-a", "Docker"])
     else:
-        raise DemoFailed("docker daemon isn't running -- start it (e.g. `sudo systemctl start docker`), then re-run")
+        raise DemoFailed(
+            "docker daemon isn't running -- start it "
+            "(e.g. `sudo systemctl start docker`), then re-run"
+        )
 
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
@@ -221,7 +238,9 @@ def ensure_env_file() -> None:
         return
     example = ENV_FILE.with_name(".env.example")
     if not example.exists():
-        raise DemoFailed(f"neither {ENV_FILE} nor {example} exists -- cannot configure the stack")
+        raise DemoFailed(
+            f"neither {ENV_FILE} nor {example} exists -- cannot configure the stack"
+        )
     shutil.copyfile(example, ENV_FILE)
     ok(f"created {ENV_FILE.relative_to(REPO_ROOT)} from .env.example (dev defaults)")
 
@@ -235,7 +254,9 @@ def _remap_busy_host_port(compose_output: str) -> str | None:
     and dashboard ports are deliberately NOT remapped -- their URLs are what
     the demo tells you to open, so a silent move would be worse than an error.
     """
-    match = re.search(r"Bind for [\d.:]*?:(\d+) failed: port is already allocated", compose_output)
+    match = re.search(
+        r"Bind for [\d.:]*?:(\d+) failed: port is already allocated", compose_output
+    )
     if match is None:
         return None
     busy = int(match.group(1))
@@ -249,11 +270,19 @@ def _remap_busy_host_port(compose_output: str) -> str | None:
         for candidate in range(busy + 1, busy + 40):
             if _port_is_free(candidate):
                 ENV_FILE.write_text(
-                    re.sub(rf"^{var}=\d+$", f"{var}={candidate}", text, flags=re.MULTILINE),
+                    re.sub(
+                        rf"^{var}=\d+$", f"{var}={candidate}", text, flags=re.MULTILINE
+                    ),
                     encoding="utf-8",
                 )
-                info(f"host port {busy} is taken by another program; moved {var} to {candidate}")
-                info("(internal only -- the services still talk to each other over the compose network)")
+                info(
+                    f"host port {busy} is taken by another program; "
+                    f"moved {var} to {candidate}"
+                )
+                info(
+                    "(internal only -- the services still talk to each other "
+                    "over the compose network)"
+                )
                 return var
     return None
 
@@ -290,13 +319,18 @@ def _preflight_host_ports() -> None:
         busy = int(match.group(1))
         for candidate in range(busy + 1, busy + 40):
             if _port_is_free(candidate):
-                text = re.sub(rf"^{var}=\d+$", f"{var}={candidate}", text, flags=re.MULTILINE)
+                text = re.sub(
+                    rf"^{var}=\d+$", f"{var}={candidate}", text, flags=re.MULTILINE
+                )
                 info(f"host port {busy} is already in use; using {candidate} for {var}")
                 changed = True
                 break
     if changed:
         ENV_FILE.write_text(text, encoding="utf-8")
-        info("(internal only -- the services still reach each other over the compose network)")
+        info(
+            "(internal only -- the services still reach each other "
+            "over the compose network)"
+        )
 
 
 def bring_stack_up(reset_data: bool) -> None:
@@ -331,7 +365,9 @@ def bring_stack_up(reset_data: bool) -> None:
 def step_trace_a_real_run(pauses: bool) -> str:
     info("running a real LangGraph agent (plan -> search -> retrieve -> synthesize),")
     info("instrumented with trazo.integrations.langgraph.instrument()...")
-    proc = run([*UV_RUN, "demos/research-assistant/run.py", "--endpoint", CONTROL_PLANE])
+    proc = run(
+        [*UV_RUN, "demos/research-assistant/run.py", "--endpoint", CONTROL_PLANE]
+    )
     run_id = extract_run_id(proc.stdout + proc.stderr)
     ok(f"agent finished, run_id = {run_id}")
 
@@ -341,7 +377,10 @@ def step_trace_a_real_run(pauses: bool) -> str:
     while time.time() < deadline:
         try:
             candidate = get_json(f"/v1/runs/{run_id}")
-            if isinstance(candidate, dict) and candidate.get("status") not in (None, "running"):
+            if isinstance(candidate, dict) and candidate.get("status") not in (
+                None,
+                "running",
+            ):
                 rollup = candidate
                 break
         except (urllib.error.URLError, OSError, json.JSONDecodeError):
@@ -359,7 +398,9 @@ def step_trace_a_real_run(pauses: bool) -> str:
         f"status={rollup.get('status')}"
     )
     info(f"watch it live at {DASHBOARD}/runs/{run_id}")
-    pause(pauses, "Open the run in the dashboard, then press Enter for the next step...")
+    pause(
+        pauses, "Open the run in the dashboard, then press Enter for the next step..."
+    )
     return run_id
 
 
@@ -397,7 +438,10 @@ def step_detection_fires(pauses: bool) -> None:
         raise DemoFailed(f"the loop detector never fired on run {run_id}")
 
     detectors = sorted({d.get("detector") for d in detections if isinstance(d, dict)})
-    ok(f"{len(detections)} detection(s) raised by: {', '.join(str(d) for d in detectors)}")
+    ok(
+        f"{len(detections)} detection(s) raised by: "
+        f"{', '.join(str(d) for d in detectors)}"
+    )
     info(f"see the evidence at {DASHBOARD}/runs/{run_id}")
     pause(pauses, "Look at the detection in the dashboard, then press Enter...")
 
@@ -435,7 +479,9 @@ def step_policy_blocks(pauses: bool) -> None:
 
     # A raw Go fmt escape here would mean the cost_cap policy regressed.
     if "%!f" in combined or "%!d" in combined:
-        raise DemoFailed("the denial message leaked a raw Go format artifact (cost_cap regression)")
+        raise DemoFailed(
+            "the denial message leaked a raw Go format artifact (cost_cap regression)"
+        )
 
     info(f"the deny decision is recorded on the run at {DASHBOARD}/policy")
     pause(pauses, "Check the Policy page in the dashboard, then press Enter...")
@@ -460,9 +506,14 @@ def step_replay_verifies(run_id: str, pauses: bool) -> None:
 
     divergences = re.search(r"divergences:\s*(\d+)", combined)
     if divergences is None:
-        raise DemoFailed("replay produced no divergence count -- verification did not run")
+        raise DemoFailed(
+            "replay produced no divergence count -- verification did not run"
+        )
     if divergences.group(1) != "0":
-        raise DemoFailed(f"replay found {divergences.group(1)} divergence(s) -- fidelity is not clean")
+        raise DemoFailed(
+            f"replay found {divergences.group(1)} divergence(s) -- "
+            "fidelity is not clean"
+        )
 
     if "100.00%" not in combined:
         raise DemoFailed("replay did not report 100% fidelity")
@@ -531,10 +582,16 @@ def main() -> int:
         fail(str(exc))
         print()
         print("  The stack is still running, so you can investigate:")
-        print(f"    docker compose --project-name {PROJECT_NAME} -f deploy/docker-compose.yml logs control-plane")
+        print(
+            f"    docker compose --project-name {PROJECT_NAME} "
+            "-f deploy/docker-compose.yml logs control-plane"
+        )
         return 1
     except KeyboardInterrupt:
-        print("\n\n  Interrupted. The stack is still running -- stop it with STOP_DEMO.bat")
+        print(
+            "\n\n  Interrupted. The stack is still running -- "
+            "stop it with STOP_DEMO.bat"
+        )
         return 130
 
     banner("DEMO COMPLETE -- everything verified live")
@@ -549,7 +606,9 @@ def main() -> int:
     print("    - replay reproducing the run at 100% state fidelity, 0 divergences")
     print()
     print("  The stack stays up so you can explore. Stop it with STOP_DEMO.bat")
-    print("  (or: docker compose --project-name trazo -f deploy/docker-compose.yml down)")
+    print(
+        "  (or: docker compose --project-name trazo -f deploy/docker-compose.yml down)"
+    )
     return 0
 
 
