@@ -18,6 +18,7 @@ database volume locks the control plane out of its own data.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import re
 import secrets
@@ -62,16 +63,20 @@ def main() -> int:
 
     if not _DOMAIN_RE.match(domain) or "." not in domain:
         print(
-            f"error: --domain must be a bare hostname like trazo.example.com, got {args.domain!r}",
+            "error: --domain must be a bare hostname like trazo.example.com, "
+            f"got {args.domain!r}",
             file=sys.stderr,
         )
         return 2
     if not _EMAIL_RE.match(email):
-        print(f"error: --email does not look like an address: {email!r}", file=sys.stderr)
+        print(
+            f"error: --email does not look like an address: {email!r}", file=sys.stderr
+        )
         return 2
     if ENV_FILE.exists() and not args.force:
         print(
-            f"error: {ENV_FILE.relative_to(REPO_ROOT)} already exists. Re-running this would\n"
+            f"error: {ENV_FILE.relative_to(REPO_ROOT)} already exists. "
+            "Re-running this would\n"
             "replace the database password, which an initialized database volume will\n"
             "then reject. Edit the file directly, or pass --force on a fresh install.",
             file=sys.stderr,
@@ -110,10 +115,8 @@ HTTPS_PORT=443
 """
 
     ENV_FILE.write_text(contents, encoding="utf-8", newline="\n")
-    try:
+    with contextlib.suppress(OSError):  # Windows ACLs: chmod is advisory there.
         os.chmod(ENV_FILE, stat.S_IRUSR | stat.S_IWUSR)
-    except OSError:
-        pass  # Windows ACLs: chmod is advisory there.
 
     print(f"Wrote {ENV_FILE.relative_to(REPO_ROOT)} (owner read/write only).")
     print()
