@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
 
 from trazo_server.api.cursors import InvalidCursorError, decode_cursor, encode_cursor
-from trazo_server.api.deps import get_blob_store, get_trace_store
+from trazo_server.api.deps import get_blob_store, get_trace_store, require_viewer
 from trazo_server.api.problem_details import ProblemDetailsError
 from trazo_server.api.projects import resolve_project_id
 from trazo_server.errors import BlobNotFoundError
@@ -33,7 +33,7 @@ from trazo_server.store.rows import (
 )
 from trazo_server.store.trace_store import TraceStore
 
-router = APIRouter(prefix="/v1")
+router = APIRouter(prefix="/v1", dependencies=[Depends(require_viewer)])
 
 _MAX_LIMIT = 1000
 _DEFAULT_LIMIT = 50

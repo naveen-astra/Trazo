@@ -25,13 +25,13 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
-from trazo_server.api.deps import get_trace_store
+from trazo_server.api.deps import get_trace_store, require_viewer
 from trazo_server.api.projects import resolve_project_id
 from trazo_server.metrics import SSE_CLIENTS
 from trazo_server.store.rows import EventRow
 from trazo_server.store.trace_store import TraceStore
 
-router = APIRouter(prefix="/v1")
+router = APIRouter(prefix="/v1", dependencies=[Depends(require_viewer)])
 
 POLL_INTERVAL_SECONDS = 0.5
 
