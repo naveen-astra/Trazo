@@ -521,7 +521,13 @@ you switch to `enforce`.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TRAZO_API_KEY` | `dev-change-me` | Bearer key required on ingest and policy endpoints |
+| `TRAZO_ENVIRONMENT` | `development` | `production` requires sign-in, secure cookies and strong secrets, and hides the API docs |
+| `TRAZO_API_KEY` | `dev-change-me` | Bearer key required on ingest and policy endpoints, and accepted on reads |
+| `TRAZO_DASHBOARD_PASSWORD` | none | Setting it turns on dashboard sign-in; mandatory in production |
+| `TRAZO_SESSION_SECRET` | none | Signs session cookies; required with a dashboard password |
+| `TRAZO_SESSION_TTL_HOURS` | `12` | How long a dashboard session lasts |
+| `TRAZO_LOGIN_MAX_ATTEMPTS` / `TRAZO_LOGIN_WINDOW_MINUTES` | `5` / `15` | Failed sign-ins allowed per client within the window |
+| `TRAZO_FORWARDED_ALLOW_IPS` | `127.0.0.1` | Peers trusted to set `X-Forwarded-For`; widen only behind a reverse proxy |
 | `TRAZO_DATABASE_URL` | `postgresql://trazo:trazo@localhost:5432/trazo` | PostgreSQL connection string |
 | `TRAZO_REDIS_URL` | `redis://localhost:6379/0` | Redis connection string |
 | `TRAZO_OPA_URL` | `http://localhost:8181` | OPA sidecar base URL |
@@ -533,16 +539,35 @@ you switch to `enforce`.
 | `TRAZO_FEATURE_STORE_WORKER` | `true` | Run the persistence worker in-process |
 | `TRAZO_FEATURE_DETECTOR_WORKER` | `true` | Run the detection worker in-process |
 
+In production, the control plane refuses to start if the API key, dashboard
+password, session secret, or database password is missing, too short, or a
+development default, or if `TRAZO_CORS_ORIGINS` is `*`. It lists every problem
+at once.
+
 ### Deployment ports (`deploy/.env`)
 
 `POSTGRES_PORT`, `REDIS_PORT`, `OPA_PORT`, `CONTROL_PLANE_PORT`,
 `DASHBOARD_PORT`, plus `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`.
-Copy `deploy/.env.example` to `deploy/.env` to start.
+Copy `deploy/.env.example` to `deploy/.env` to start. Production uses
+`deploy/.env.production` instead, generated with random secrets — see
+[Deployment](#deployment).
 
 ## HTTP API reference
 
-Base URL `http://localhost:8420`. Endpoints marked **key** require
-`Authorization: Bearer $TRAZO_API_KEY`.
+Base URL `http://localhost:8420` locally, or your domain in production.
+Endpoints marked **key** require `Authorization: Bearer $TRAZO_API_KEY`.
+
+When sign-in is enabled (always, in production), every query and live-stream
+endpoint also requires authentication: either a dashboard session cookie or the
+API key as a bearer token. A session grants read access only.
+
+### Authentication
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/v1/auth/session` | Whether sign-in is required, and whether this client is signed in |
+| `POST` | `/v1/auth/login` | Sign in with `{"password": "..."}`; sets the session cookie |
+| `POST` | `/v1/auth/logout` | End the session |
 
 ### Ingest and policy
 
@@ -581,9 +606,10 @@ Base URL `http://localhost:8420`. Endpoints marked **key** require
 | `GET` | `/v1/live/runs/{run_id}` | Server-Sent Events for one run |
 | `GET` | `/healthz` | Liveness and version |
 | `GET` | `/readyz` | Readiness with per-dependency checks |
-| `GET` | `/metrics` | Prometheus metrics |
+| `GET` | `/metrics` | Prometheus metrics (not served publicly in production) |
 
-An OpenAPI schema is served at `/openapi.json` and browsable at `/docs`.
+An OpenAPI schema is served at `/openapi.json` and browsable at `/docs` in
+development. Production turns both off.
 
 ## Command-line reference
 
@@ -683,44 +709,71 @@ adapter interface in `benchmark/adapter.py`. Details in
 
 ## Security posture
 
-**The current release is not multi-tenant-safe.** It is built for a single team
-self-hosting on localhost or a private network, not for exposing a deployment to
-untrusted users. This is a deliberate, documented scope decision, stated plainly
-rather than buried.
+Trazo runs in one of two modes, chosen by `TRAZO_ENVIRONMENT`.
 
-- A single static bearer key (`TRAZO_API_KEY`) guards the ingest and policy
-  endpoints. **Query and dashboard endpoints are unauthenticated by default.**
-  Bind them to localhost, or put your own reverse-proxy authentication in front,
-  if the control plane is reachable from anywhere else.
-- No RBAC, no SSO, no per-project keys. `project_id` is threaded through every
-  table and query path specifically so that layer is additive later rather than a
-  schema migration, but it is not built.
-- Every recorded event passes through a redaction pass (configurable key
-  patterns) before it leaves your process. Large payloads are stored
-  content-addressed by SHA-256 rather than at a caller-controlled path.
-- OPA policies are code-reviewed files mounted read-only into the sidecar. There
-  is no runtime policy-upload endpoint to secure or abuse.
+**Development** (the default, `deploy/docker-compose.yml`) is built for one
+engineer on localhost. The dashboard and read API are open, every service port
+is published, and credentials are development defaults. Never expose it to a
+network you do not control.
 
-Do not deploy this to the public internet without adding an authentication layer
-in front of it. To report a vulnerability, see [SECURITY.md](SECURITY.md).
+**Production** (`deploy/docker-compose.prod.yml`) is built for the public
+internet:
+
+- **HTTPS only.** Caddy terminates TLS with an automatically issued and renewed
+  certificate, redirects HTTP, and sets HSTS, a strict Content-Security-Policy,
+  and frame, referrer, and permissions policies.
+- **Sign-in required.** Reading any run data needs either a dashboard session or
+  the API key. Sessions are `HttpOnly`, `Secure`, `SameSite=Strict`, `__Host-`
+  prefixed cookies that expire after 12 hours by default. Five failed sign-ins
+  from one client in fifteen minutes locks that client out for the window.
+- **Writes stay key-only.** Sending events and evaluating policy always require
+  the API key. A browser session can read but never write.
+- **Minimal exposure.** Only the reverse proxy publishes a port. PostgreSQL,
+  Redis, and OPA are on an internal network with no route to the internet, and
+  Redis is password-protected. API docs and `/metrics` are not served publicly.
+- **Hardened containers.** The control plane runs as an unprivileged user.
+  Containers drop all Linux capabilities they do not need, run with
+  `no-new-privileges`, and have memory limits and log rotation.
+- **Refuses weak configuration.** The control plane will not start in production
+  with a missing, short, or default secret, and names every problem at once.
+
+In both modes, every recorded event passes through a redaction pass
+(configurable key patterns) before it leaves your process, API keys are compared
+in constant time, large payloads are stored content-addressed by SHA-256, and
+OPA policies are code-reviewed files mounted read-only, with no runtime upload
+endpoint.
+
+**Not multi-tenant.** Production has one shared dashboard password, not user
+accounts: no per-user audit trail, no roles, no SSO. Share it only with people
+who should see every run. `project_id` is threaded through every table so
+per-user access is additive later rather than a schema migration.
+
+To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## Deployment
 
-The same `deploy/docker-compose.yml` that runs locally runs on a server. For
-anything beyond localhost:
+A production deployment is one Linux server, a domain, and about twenty
+minutes. The complete runbook — DNS, firewall, verification, backups, restore,
+updates, and credential rotation — is in [deploy/README.md](deploy/README.md).
+The short version:
 
-1. Set a real `TRAZO_API_KEY` in `deploy/.env`; change the PostgreSQL
-   credentials from their defaults.
-2. Put the control plane and dashboard behind a reverse proxy that terminates
-   TLS and enforces authentication, given the posture above.
-3. Set `TRAZO_CORS_ORIGINS` to your dashboard's actual origin instead of `*`.
-4. Point `TRAZO_DATABASE_URL` and `TRAZO_REDIS_URL` at managed instances if you
-   would rather not operate them yourself; both are standard connection strings.
-5. Back up PostgreSQL and the blob root. The blob store is content-addressed, so
-   it deduplicates naturally but still grows with distinct payloads.
+```bash
+git clone https://github.com/naveen-astra/Trazo.git /opt/trazo && cd /opt/trazo
+make prod-init DOMAIN=trazo.example.com EMAIL=ops@example.com   # generates every secret
+make prod-up                                                    # builds, starts, issues the certificate
+```
 
-The stack is stateless apart from PostgreSQL, Redis, and the blob volume. The
-control plane runs its own migrations on startup.
+`prod-init` writes `deploy/.env.production` with random credentials and prints
+the dashboard password and API key once. Point agents at the deployment with:
+
+```bash
+export TRAZO_ENDPOINT=https://trazo.example.com
+export TRAZO_API_KEY=<the API key>
+```
+
+Back up with `make prod-backup`, which writes a PostgreSQL dump and a blob-store
+archive and prunes old backups; schedule it from cron. Database migrations run
+automatically on every start.
 
 ## Project status
 
@@ -739,6 +792,7 @@ suites, working end to end against a live stack.
 | Policy engine | Complete: synchronous inline enforcement via OPA |
 | Dashboard | Complete: timeline, flow graph, memory inspector, replay stepper, incidents, policy log, settings |
 | TrazoBench | Complete: adapter interface, corpus manifests, baseline comparison |
+| Production deployment | Complete: HTTPS, sign-in, internal-only datastores, hardened containers, backups |
 | Published packages | Not yet on PyPI or npm — install from a clone |
 
 Known limitations, stated explicitly:
