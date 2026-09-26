@@ -146,6 +146,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/healthz":
             self._send_json({"status": "ok", "version": "0.1.0"})
+        elif path == "/v1/auth/session":
+            # A development control plane: no sign-in configured.
+            self._send_json({"auth_required": False, "authenticated": True})
         elif path == "/v1/runs":
             self._send_json({"runs": [RUN], "next_cursor": None})
         elif path == f"/v1/runs/{RUN_ID}":
