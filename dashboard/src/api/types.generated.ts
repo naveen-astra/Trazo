@@ -4,6 +4,57 @@
  */
 
 export interface paths {
+  "/v1/auth/session": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Session */
+    get: operations["get_session_v1_auth_session_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/auth/login": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Login */
+    post: operations["login_v1_auth_login_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/auth/logout": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Logout */
+    post: operations["logout_v1_auth_logout_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/ingest/events": {
     parameters: {
       query?: never;
@@ -645,6 +696,11 @@ export interface components {
       /** Rejected */
       rejected: components["schemas"]["RejectedEvent"][];
     };
+    /** LoginIn */
+    LoginIn: {
+      /** Password */
+      password: string;
+    };
     /** ModelStat */
     ModelStat: {
       /** Provider */
@@ -887,6 +943,13 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** SessionOut */
+    SessionOut: {
+      /** Auth Required */
+      auth_required: boolean;
+      /** Authenticated */
+      authenticated: boolean;
+    };
     /** StatsDailyPoint */
     StatsDailyPoint: {
       /** Date */
@@ -1010,6 +1073,75 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  get_session_v1_auth_session_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SessionOut"];
+        };
+      };
+    };
+  };
+  login_v1_auth_login_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["LoginIn"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  logout_v1_auth_logout_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   ingest_events_v1_ingest_events_post: {
     parameters: {
       query?: never;
@@ -1083,7 +1215,9 @@ export interface operations {
   get_replay_report_v1_runs__run_id__replay_report_get: {
     parameters: {
       query?: never;
-      header?: never;
+      header?: {
+        authorization?: string | null;
+      };
       path: {
         run_id: string;
       };
@@ -1154,7 +1288,9 @@ export interface operations {
         limit?: number;
         cursor?: string | null;
       };
-      header?: never;
+      header?: {
+        authorization?: string | null;
+      };
       path?: never;
       cookie?: never;
     };
@@ -1183,7 +1319,9 @@ export interface operations {
   get_run_v1_runs__run_id__get: {
     parameters: {
       query?: never;
-      header?: never;
+      header?: {
+        authorization?: string | null;
+      };
       path: {
         run_id: string;
       };
@@ -1219,7 +1357,9 @@ export interface operations {
         limit?: number;
         cursor?: string | null;
       };
-      header?: never;
+      header?: {
+        authorization?: string | null;
+      };
       path: {
         run_id: string;
       };
@@ -1250,7 +1390,9 @@ export interface operations {
   list_detections_v1_runs__run_id__detections_get: {
     parameters: {
       query?: never;
-      header?: never;
+      header?: {
+        authorization?: string | null;
+      };
       path: {
         run_id: string;
       };
@@ -1281,7 +1423,9 @@ export interface operations {
   list_policy_decisions_v1_runs__run_id__policy_decisions_get: {
     parameters: {
       query?: never;
-      header?: never;
+      header?: {
+        authorization?: string | null;
+      };
       path: {
         run_id: string;
       };
@@ -1315,7 +1459,9 @@ export interface operations {
         days?: number | null;
         project?: string | null;
       };
-      header?: never;
+      header?: {
+        authorization?: string | null;
+      };
       path?: never;
       cookie?: never;
     };
@@ -1347,7 +1493,9 @@ export interface operations {
         kind?: string | null;
         limit?: number;
       };
-      header?: never;
+      header?: {
+        authorization?: string | null;
+      };
       path?: never;
       cookie?: never;
     };
@@ -1376,7 +1524,9 @@ export interface operations {
   list_tools_v1_tools_get: {
     parameters: {
       query?: never;
-      header?: never;
+      header?: {
+        authorization?: string | null;
+      };
       path?: never;
       cookie?: never;
     };
@@ -1391,12 +1541,23 @@ export interface operations {
           "application/json": components["schemas"]["ToolsPage"];
         };
       };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
   };
   list_agents_v1_agents_get: {
     parameters: {
       query?: never;
-      header?: never;
+      header?: {
+        authorization?: string | null;
+      };
       path?: never;
       cookie?: never;
     };
@@ -1411,12 +1572,23 @@ export interface operations {
           "application/json": components["schemas"]["AgentsPage"];
         };
       };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
   };
   list_models_v1_models_get: {
     parameters: {
       query?: never;
-      header?: never;
+      header?: {
+        authorization?: string | null;
+      };
       path?: never;
       cookie?: never;
     };
@@ -1431,12 +1603,23 @@ export interface operations {
           "application/json": components["schemas"]["ModelsPage"];
         };
       };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
   };
   list_projects_v1_projects_get: {
     parameters: {
       query?: never;
-      header?: never;
+      header?: {
+        authorization?: string | null;
+      };
       path?: never;
       cookie?: never;
     };
@@ -1451,6 +1634,15 @@ export interface operations {
           "application/json": components["schemas"]["ProjectsPage"];
         };
       };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
   };
   list_detections_feed_v1_detections_get: {
@@ -1461,7 +1653,9 @@ export interface operations {
         severity?: string | null;
         limit?: number;
       };
-      header?: never;
+      header?: {
+        authorization?: string | null;
+      };
       path?: never;
       cookie?: never;
     };
@@ -1495,7 +1689,9 @@ export interface operations {
         policy_id?: string | null;
         limit?: number;
       };
-      header?: never;
+      header?: {
+        authorization?: string | null;
+      };
       path?: never;
       cookie?: never;
     };
@@ -1524,7 +1720,9 @@ export interface operations {
   get_replay_bundle_v1_runs__run_id__replay_bundle_get: {
     parameters: {
       query?: never;
-      header?: never;
+      header?: {
+        authorization?: string | null;
+      };
       path: {
         run_id: string;
       };
@@ -1555,7 +1753,9 @@ export interface operations {
   get_blob_v1_blobs__sha256__get: {
     parameters: {
       query?: never;
-      header?: never;
+      header?: {
+        authorization?: string | null;
+      };
       path: {
         sha256: string;
       };
@@ -1586,7 +1786,9 @@ export interface operations {
   live_run_v1_live_runs__run_id__get: {
     parameters: {
       query?: never;
-      header?: never;
+      header?: {
+        authorization?: string | null;
+      };
       path: {
         run_id: string;
       };
@@ -1620,7 +1822,9 @@ export interface operations {
         project?: string | null;
         tail?: boolean;
       };
-      header?: never;
+      header?: {
+        authorization?: string | null;
+      };
       path?: never;
       cookie?: never;
     };

@@ -5,6 +5,66 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/v1/auth/session": {
+      "get": {
+        "summary": "Get Session",
+        "operationId": "get_session_v1_auth_session_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/login": {
+      "post": {
+        "summary": "Login",
+        "operationId": "login_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "summary": "Logout",
+        "operationId": "logout_v1_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        }
+      }
+    },
     "/v1/ingest/events": {
       "post": {
         "summary": "Ingest Events",
@@ -201,6 +261,22 @@
               "type": "string",
               "title": "Run Id"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -289,6 +365,22 @@
               ],
               "title": "Cursor"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -327,6 +419,22 @@
             "schema": {
               "type": "string",
               "title": "Run Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -425,6 +533,22 @@
               ],
               "title": "Cursor"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -465,6 +589,22 @@
               "type": "string",
               "title": "Run Id"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -504,6 +644,22 @@
             "schema": {
               "type": "string",
               "title": "Run Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -568,6 +724,22 @@
               ],
               "title": "Project"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -625,6 +797,22 @@
               "default": 200,
               "title": "Limit"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -656,6 +844,24 @@
         "summary": "List Tools",
         "description": "Per-tool rollup derived from recent ``tool.call`` events: call\ncount, error count, latency (mean + p50/p95), and when it was last\nused.",
         "operationId": "list_tools_v1_tools_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -663,6 +869,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ToolsPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -675,6 +891,24 @@
         "summary": "List Agents",
         "description": "Per-agent rollup from recent events' ``agent_id``.\n\n``unattributed_events`` is reported alongside on purpose: only an\nadapter that can name the acting agent sets ``agent_id`` (CrewAI's\ndoes, per-role; the LangGraph adapter leaves it null because a graph\nnode isn't an agent identity), so an empty list here means \"nothing\nattributed\", not \"nothing ran\".",
         "operationId": "list_agents_v1_agents_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -682,6 +916,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentsPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -694,6 +938,24 @@
         "summary": "List Models",
         "description": "Per-(provider, model) rollup derived from recent ``llm.call``\nevents \u2014 the standard LLM-ops \"where is the money going\" view, sorted\nby spend rather than volume since cost is what this page exists to\nanswer.",
         "operationId": "list_models_v1_models_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -701,6 +963,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ModelsPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -713,6 +985,24 @@
         "summary": "List Projects",
         "description": "Projects that actually have runs \u2014 backs the dashboard's project\nfilter. Derived from the run window rather than the `projects` table\nso the filter only ever offers values that will return something.",
         "operationId": "list_projects_v1_projects_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -720,6 +1010,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProjectsPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -789,6 +1089,22 @@
               "type": "integer",
               "default": 50,
               "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -879,6 +1195,22 @@
               "default": 50,
               "title": "Limit"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -919,6 +1251,22 @@
               "type": "string",
               "title": "Run Id"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -957,6 +1305,22 @@
               "type": "string",
               "title": "Sha256"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -993,6 +1357,22 @@
             "schema": {
               "type": "string",
               "title": "Run Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -1047,6 +1427,22 @@
               "type": "boolean",
               "default": false,
               "title": "Tail"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -1569,6 +1965,21 @@
           "rejected"
         ],
         "title": "IngestEventsResponse"
+      },
+      "LoginIn": {
+        "properties": {
+          "password": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "title": "LoginIn"
       },
       "ModelStat": {
         "properties": {
@@ -2164,6 +2575,24 @@
           "next_cursor"
         ],
         "title": "RunsPage"
+      },
+      "SessionOut": {
+        "properties": {
+          "auth_required": {
+            "type": "boolean",
+            "title": "Auth Required"
+          },
+          "authenticated": {
+            "type": "boolean",
+            "title": "Authenticated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "auth_required",
+          "authenticated"
+        ],
+        "title": "SessionOut"
       },
       "StatsDailyPoint": {
         "properties": {
