@@ -2,18 +2,45 @@
 # so the schema/ directory is reachable when the contract jobs need it.
 FROM python:3.11-slim
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# A fixed, unprivileged UID the server runs as; the entrypoint below only
+# uses root long enough to hand the blob volume to it.
+RUN groupadd --system --gid 10001 trazo \
+    && useradd --system --uid 10001 --gid trazo --home-dir /app --shell /usr/sbin/nologin trazo
+
 WORKDIR /app
 
-COPY control-plane/pyproject.toml control-plane/README.md ./
+# Dependencies come from uv.lock, not from resolving pyproject.toml afresh:
+# every image then runs exactly the versions the test suite ran against,
+# and pip verifies each download against its locked SHA-256 hash. A plain
+# `pip install .` here once let an upstream SQLAlchemy release that
+# dropped a transitive dependency break every fresh build.
+COPY control-plane/pyproject.toml control-plane/uv.lock control-plane/README.md ./
+RUN pip install uv==0.11.29 \
+    && uv export --frozen --no-dev --no-emit-project -o /tmp/requirements.txt \
+    && pip install --require-hashes -r /tmp/requirements.txt \
+    && pip uninstall -y uv \
+    && rm /tmp/requirements.txt
+
 COPY control-plane/src ./src
 COPY control-plane/alembic.ini ./
 COPY control-plane/migrations ./migrations
 
-RUN pip install --no-cache-dir .
+RUN pip install --no-deps . \
+    && mkdir -p /var/lib/trazo/blobs \
+    && chown -R trazo:trazo /var/lib/trazo
+
+COPY deploy/control-plane-entrypoint.sh /usr/local/bin/trazo-entrypoint
+RUN chmod 0755 /usr/local/bin/trazo-entrypoint
 
 EXPOSE 8420
 
+ENTRYPOINT ["/usr/local/bin/trazo-entrypoint"]
 # Migrate then serve: TRZ-P1-04's baseline migration must be applied before
 # the control plane can persist anything (ARCHITECTURE.md: this container
 # owns the store worker too, so there's no separate migration step to run).
-CMD ["sh", "-c", "alembic upgrade head && python -m trazo_server"]
+CMD ["sh", "-c", "alembic upgrade head && exec python -m trazo_server"]
