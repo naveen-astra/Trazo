@@ -1,0 +1,68 @@
+# Trazo production edge: TLS termination, security headers, and routing.
+#
+# Caddy obtains and renews the certificate for {$TRAZO_DOMAIN} on its own
+# (Let's Encrypt, with ZeroSSL as fallback) and redirects HTTP to HTTPS. The
+# domain's DNS A/AAAA record must point at this host, and ports 80 and 443
+# must be reachable from the internet, before the first start.
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$TRAZO_DOMAIN} {
+	# Never compress the live event stream. The encoder buffers until it has
+	# enough bytes to decide, and holds the response headers with it, so a
+	# browser's EventSource (which always sends Accept-Encoding) never sees
+	# the stream open. curl sends no Accept-Encoding, which is why only a
+	# real browser ever showed this.
+	@compressible not path /v1/live/*
+	encode @compressible zstd gzip
+
+	header {
+		# Two years. Deliberately without includeSubDomains/preload: those
+		# would force HTTPS onto every other host under this domain too,
+		# which is a decision for whoever owns the whole domain.
+		Strict-Transport-Security "max-age=63072000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-origin"
+		# The dashboard loads nothing from any other origin. 'unsafe-inline'
+		# is scoped to styles only, for React's style attributes; scripts
+		# are strictly first-party.
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		-Server
+		-X-Powered-By
+	}
+
+	# Caps any single request. Generous for batched event ingest and
+	# offloaded payload uploads, but bounded.
+	request_body {
+		max_size 16MB
+	}
+
+	# `route` evaluates in the order written, so the refusals come first.
+	route {
+		# Operational and introspection endpoints never leave the host.
+		@internal path /metrics /metrics/* /docs /docs/* /redoc /openapi.json
+		respond @internal 404
+
+		# Server-Sent Events: flush every event the moment it is written.
+		@live path /v1/live/*
+		reverse_proxy @live control-plane:8420 {
+			flush_interval -1
+		}
+
+		@api path /v1/* /healthz /readyz
+		reverse_proxy @api control-plane:8420
+
+		reverse_proxy dashboard:8080
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

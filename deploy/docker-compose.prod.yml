@@ -1,0 +1,191 @@
+# Production stack. Deploy with:
+#
+#   python scripts/prod/init_env.py --domain trazo.example.com --email you@example.com
+#   docker compose --env-file deploy/.env.production -f deploy/docker-compose.prod.yml up -d --build
+#
+# (or `make prod-init` / `make prod-up`). See deploy/README.md for the runbook.
+#
+# Only Caddy publishes ports. Everything else is reachable solely over
+# internal networks that have no route to the internet at all:
+#
+#   internet -> caddy --[app]--> dashboard, control-plane --[data]--> postgres, redis, opa
+#
+# Every secret is required (`:?`): a missing value stops `compose up` before
+# anything starts, and the control plane independently refuses to boot with
+# a weak or default one.
+
+name: trazo-prod
+
+x-defaults: &defaults
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  caddy:
+    <<: *defaults
+    image: caddy:2.8-alpine
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp" # HTTP/3
+    environment:
+      TRAZO_DOMAIN: ${TRAZO_DOMAIN:?set TRAZO_DOMAIN in deploy/.env.production}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in deploy/.env.production}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    networks: [edge, app]
+    depends_on:
+      control-plane:
+        condition: service_healthy
+      dashboard:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  dashboard:
+    <<: *defaults
+    build:
+      context: ../dashboard
+      dockerfile: ../deploy/Dockerfile.dashboard
+      args:
+        # Same origin: /v1 is routed by Caddy, so the session cookie can be
+        # SameSite=Strict and no CORS is involved at all.
+        VITE_API_BASE_URL: ""
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    networks: [app]
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  control-plane:
+    <<: *defaults
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.control-plane
+    environment:
+      TRAZO_ENVIRONMENT: production
+      TRAZO_API_KEY: ${TRAZO_API_KEY:?set TRAZO_API_KEY}
+      TRAZO_DASHBOARD_PASSWORD: ${TRAZO_DASHBOARD_PASSWORD:?set TRAZO_DASHBOARD_PASSWORD}
+      TRAZO_SESSION_SECRET: ${TRAZO_SESSION_SECRET:?set TRAZO_SESSION_SECRET}
+      TRAZO_SESSION_TTL_HOURS: ${TRAZO_SESSION_TTL_HOURS:-12}
+      TRAZO_CORS_ORIGINS: https://${TRAZO_DOMAIN}
+      TRAZO_DATABASE_URL: postgresql://${POSTGRES_USER:-trazo}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-trazo}
+      TRAZO_REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
+      TRAZO_OPA_URL: http://opa:8181
+      # Safe only because this service publishes no port: the sole peer that
+      # can reach it is Caddy, which sets X-Forwarded-For to the real client.
+      TRAZO_FORWARDED_ALLOW_IPS: "*"
+    volumes:
+      - blobdata:/var/lib/trazo/blobs
+    # Just enough for the entrypoint to hand the blob volume to the
+    # unprivileged `trazo` user and drop to it; the server itself runs with
+    # no capabilities.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID]
+    networks: [app, data]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      opa:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8420/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  postgres:
+    <<: *defaults
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-trazo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-trazo}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    shm_size: 256mb
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  redis:
+    <<: *defaults
+    image: redis:7-alpine
+    # AOF on: the bus is the durability handoff between ingest ack and
+    # persistence. A password as well as an unreachable network: defense in
+    # depth if a future change ever puts another container on `data`.
+    command: ["sh", "-c", 'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"']
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+    volumes:
+      - redisdata:/data
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  opa:
+    <<: *defaults
+    image: openpolicyagent/opa:0.70.0
+    command: ["run", "--server", "--addr", ":8181", "--log-level", "error", "/policies"]
+    volumes:
+      - ../policies/trazo:/policies:ro
+    read_only: true
+    cap_drop: [ALL]
+    networks: [data]
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+networks:
+  # The only network with a route to the internet (for inbound traffic and
+  # certificate issuance). Only Caddy is on it.
+  edge: {}
+  app:
+    internal: true
+  data:
+    internal: true
+
+volumes:
+  pgdata:
+  redisdata:
+  blobdata:
+  caddy_data:
+  caddy_config:
