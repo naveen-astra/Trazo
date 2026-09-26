@@ -86,6 +86,7 @@ def fetch_blob(
     sha256: str,
     *,
     endpoint: str,
+    api_key: str | None = None,
     cache_dir: Path = _DEFAULT_CACHE_DIR,
     client: httpx.Client | None = None,
 ) -> bytes:
@@ -99,8 +100,9 @@ def fetch_blob(
 
     owns_client = client is None
     http_client = client or httpx.Client(timeout=_TIMEOUT_SECONDS)
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     try:
-        response = http_client.get(f"{endpoint}/v1/blobs/{sha256}")
+        response = http_client.get(f"{endpoint}/v1/blobs/{sha256}", headers=headers)
     except httpx.HTTPError as exc:
         raise BundleFetchError(f"request to {endpoint} failed: {exc}") from exc
     finally:

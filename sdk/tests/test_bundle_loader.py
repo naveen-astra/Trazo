@@ -183,3 +183,24 @@ def test_fetch_blob__404_raises_bundle_fetch_error(tmp_path: Path) -> None:
             cache_dir=tmp_path,
             client=_client(httpx.MockTransport(handler)),
         )
+
+
+def test_fetch_blob__sends_the_api_key(tmp_path: Path) -> None:
+    """A production control plane requires the key on every read; replay
+    resolves large state snapshots through this call lazily, so a missing
+    header here surfaces as a 401 mid-way through stepping a run."""
+    seen: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers.get("authorization"))
+        return httpx.Response(200, content=b"{}")
+
+    fetch_blob(
+        "sha256:abc123",
+        endpoint="http://example.test",
+        api_key="secret-key",
+        cache_dir=tmp_path,
+        client=_client(httpx.MockTransport(handler)),
+    )
+
+    assert seen == ["Bearer secret-key"]
