@@ -95,6 +95,24 @@ jobs:
         working-directory: sdk
         run: uv run python -m benchmark.agent_overhead
 
+  corpus-gate:
+    # `secrets` is not available in a job-level `if`, so the key check runs
+    # in a step here and the corpus job gates on its output.
+    runs-on: ubuntu-latest
+    outputs:
+      has_key: ${{ steps.check.outputs.has_key }}
+    steps:
+      - id: check
+        env:
+          TRAZO_DEMO_API_KEY: ${{ secrets.TRAZO_DEMO_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -n "$TRAZO_DEMO_API_KEY" ] || [ -n "$OPENAI_API_KEY" ]; then
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+          fi
+
   corpus:
     # Runs both demos in --live mode (TRZ-P3-04) against a real, freshly
     # booted compose stack (same pattern as the `smoke` job), then archives
@@ -110,7 +128,8 @@ jobs:
     # code-complete but not field-verified: no LLM API key was available
     # in the environment this was built in, so the actual `--live` network
     # path has never been run for real (see demos/_shared/README.md).
-    if: ${{ secrets.TRAZO_DEMO_API_KEY != '' || secrets.OPENAI_API_KEY != '' }}
+    needs: corpus-gate
+    if: needs.corpus-gate.outputs.has_key == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
