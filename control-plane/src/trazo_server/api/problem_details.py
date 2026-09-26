@@ -19,13 +19,20 @@ class ProblemDetailsError(TrazoServerError):
     """Raise from a route/dependency to produce an RFC 9457 error response."""
 
     def __init__(
-        self, *, status: int, title: str, detail: str, type_: str = "about:blank"
+        self,
+        *,
+        status: int,
+        title: str,
+        detail: str,
+        type_: str = "about:blank",
+        headers: dict[str, str] | None = None,
     ) -> None:
         super().__init__(detail)
         self.status = status
         self.title = title
         self.detail = detail
         self.type = type_
+        self.headers = headers or {}
 
     def to_body(self) -> dict[str, object]:
         return {
@@ -47,7 +54,10 @@ def register_problem_details_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         del request
         return JSONResponse(
-            status_code=exc.status, content=exc.to_body(), media_type=_MEDIA_TYPE
+            status_code=exc.status,
+            content=exc.to_body(),
+            media_type=_MEDIA_TYPE,
+            headers=exc.headers,
         )
 
     @app.exception_handler(RequestValidationError)
