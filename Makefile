@@ -2,10 +2,12 @@
 # Requires: docker compose v2, uv, node 20 + npm.
 
 COMPOSE := docker compose --project-name trazo --env-file deploy/.env -f deploy/docker-compose.yml
+PROD_COMPOSE := docker compose --env-file deploy/.env.production -f deploy/docker-compose.prod.yml
 PHASE ?= 0
 AGENT ?= research-assistant
 
-.PHONY: up down nuke seed dev-server dev-dash test test-int lint fmt smoke demo gen-api-types benchmark
+.PHONY: up down nuke seed dev-server dev-dash test test-int lint fmt smoke demo gen-api-types benchmark \
+	prod-init prod-up prod-down prod-logs prod-ps prod-backup
 
 up:
 	$(COMPOSE) up -d --build
@@ -84,3 +86,24 @@ gen-api-types:
 	# existed under this name.
 	cd control-plane && uv run python ../scripts/export_openapi_schema.py
 	cd dashboard && npm run gen-api-types
+
+# --- production (deploy/README.md) ---
+
+prod-init:
+	# Usage: make prod-init DOMAIN=trazo.example.com EMAIL=ops@example.com
+	python3 scripts/prod/init_env.py --domain "$(DOMAIN)" --email "$(EMAIL)"
+
+prod-up:
+	$(PROD_COMPOSE) up -d --build
+
+prod-down:
+	$(PROD_COMPOSE) down
+
+prod-logs:
+	$(PROD_COMPOSE) logs -f --tail=200
+
+prod-ps:
+	$(PROD_COMPOSE) ps
+
+prod-backup:
+	bash scripts/prod/backup.sh

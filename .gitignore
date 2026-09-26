@@ -22,6 +22,12 @@ dashboard/test-results/
 # Environment & secrets
 .env
 deploy/.env
+# Any deploy env file holds live credentials; only the templates ship.
+deploy/.env.*
+!deploy/.env.example
+!deploy/.env.production.example
+# Database dumps and blob archives from scripts/prod/backup.sh
+backups/
 
 # Trazo runtime artifacts (SDK spool/cache, local blob store)
 .trazo/
