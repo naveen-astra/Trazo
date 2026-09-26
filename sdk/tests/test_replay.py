@@ -181,19 +181,29 @@ def test_steps__resolves_offloaded_state_via_blob_fetch(tmp_path: Path) -> None:
             ),
         ]
     )
-    session = replay.Session(bundle, endpoint="http://example.test", cache_dir=tmp_path)
+    session = replay.Session(
+        bundle, endpoint="http://example.test", cache_dir=tmp_path, api_key="k"
+    )
 
     # Monkeypatch the blob fetch to use our mock transport.
     import trazo.replay as replay_module
 
     original_fetch = replay_module.fetch_blob
+    keys_seen: list[str | None] = []
 
     def fake_fetch_blob(
-        sha256: str, *, endpoint: str, cache_dir: Path, client: object = None
+        sha256: str,
+        *,
+        endpoint: str,
+        cache_dir: Path,
+        api_key: str | None = None,
+        client: object = None,
     ) -> bytes:
+        keys_seen.append(api_key)
         return original_fetch(
             sha256,
             endpoint=endpoint,
+            api_key=api_key,
             cache_dir=cache_dir,
             client=httpx.Client(transport=httpx.MockTransport(handler)),
         )
@@ -202,6 +212,9 @@ def test_steps__resolves_offloaded_state_via_blob_fetch(tmp_path: Path) -> None:
     try:
         [step] = session.steps()
         assert step.state_before == state
+        # The session's key reaches the lazy blob fetch, which a secured
+        # control plane requires on every read.
+        assert keys_seen == ["k"]
     finally:
         replay_module.fetch_blob = original_fetch  # type: ignore[assignment]
 

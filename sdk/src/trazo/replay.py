@@ -25,6 +25,7 @@ entry input, and return the result. Demos expose this as a standard
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -102,12 +103,16 @@ class _NullShipper:
         pass
 
 
-def _resolve_blob_field(value: Any, *, endpoint: str, cache_dir: Path) -> Any:
+def _resolve_blob_field(
+    value: Any, *, endpoint: str, api_key: str | None, cache_dir: Path
+) -> Any:
     """A state snapshot field is either inline JSON or ``{"$blob": sha}``
     (store_worker.py's offload shape) — resolve the latter lazily."""
     if isinstance(value, dict) and set(value) == {"$blob"}:
         return json.loads(
-            fetch_blob(value["$blob"], endpoint=endpoint, cache_dir=cache_dir)
+            fetch_blob(
+                value["$blob"], endpoint=endpoint, api_key=api_key, cache_dir=cache_dir
+            )
         )
     return value
 
@@ -127,6 +132,7 @@ class Step:
         boundary_events: list[RecordedEvent],
         endpoint: str,
         cache_dir: Path,
+        api_key: str | None = None,
     ) -> None:
         self.index = index
         self.name = name
@@ -134,6 +140,7 @@ class Step:
         self._finished = finished
         self.boundary_events = boundary_events
         self._endpoint = endpoint
+        self._api_key = api_key
         self._cache_dir = cache_dir
 
     @property
@@ -141,6 +148,7 @@ class Step:
         return _resolve_blob_field(
             self._started.payload.get("state_before"),
             endpoint=self._endpoint,
+            api_key=self._api_key,
             cache_dir=self._cache_dir,
         )
 
@@ -151,12 +159,17 @@ class Step:
         return _resolve_blob_field(
             self._finished.payload.get("state_after"),
             endpoint=self._endpoint,
+            api_key=self._api_key,
             cache_dir=self._cache_dir,
         )
 
 
 def _steps_from_bundle(
-    bundle: ReplayBundle, *, endpoint: str, cache_dir: Path
+    bundle: ReplayBundle,
+    *,
+    endpoint: str,
+    cache_dir: Path,
+    api_key: str | None = None,
 ) -> list[Step]:
     started_events = bundle.events_by_kind("step.started")
     finished_events = bundle.events_by_kind("step.finished")
@@ -181,6 +194,7 @@ def _steps_from_bundle(
                 boundary_events=step_events,
                 endpoint=endpoint,
                 cache_dir=cache_dir,
+                api_key=api_key,
             )
         )
     return steps
@@ -197,15 +211,20 @@ class Session:
         mode: str = "strict",
         endpoint: str = _DEFAULT_ENDPOINT,
         cache_dir: Path = _DEFAULT_CACHE_DIR,
+        api_key: str | None = None,
     ) -> None:
         self.bundle = bundle
         self.mode = mode
         self._endpoint = endpoint
         self._cache_dir = cache_dir
+        self._api_key = api_key
 
     def steps(self) -> list[Step]:
         return _steps_from_bundle(
-            self.bundle, endpoint=self._endpoint, cache_dir=self._cache_dir
+            self.bundle,
+            endpoint=self._endpoint,
+            cache_dir=self._cache_dir,
+            api_key=self._api_key,
         )
 
     def run_to(self, step_index: int | None = None) -> ReplayReport:
@@ -246,8 +265,17 @@ def load(
     cache_dir: Path = _DEFAULT_CACHE_DIR,
 ) -> Session:
     """Fetch (or reuse a cached) replay bundle and return a ``Session``
-    ready to inspect or re-drive."""
+    ready to inspect or re-drive.
+
+    ``api_key`` falls back to ``TRAZO_API_KEY``, the same way
+    ``trazo.init`` resolves it: a production control plane requires it on
+    every read, and the bundle's large state snapshots are fetched lazily
+    long after this call returns."""
+    if api_key is None:
+        api_key = os.environ.get("TRAZO_API_KEY") or None
     bundle = _load_bundle(
         run_id, endpoint=endpoint, api_key=api_key, cache_dir=cache_dir
     )
-    return Session(bundle, mode=mode, endpoint=endpoint, cache_dir=cache_dir)
+    return Session(
+        bundle, mode=mode, endpoint=endpoint, cache_dir=cache_dir, api_key=api_key
+    )
