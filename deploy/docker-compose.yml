@@ -74,7 +74,7 @@ services:
       context: ../dashboard
       dockerfile: ../deploy/Dockerfile.dashboard
     ports:
-      - "${DASHBOARD_PORT:-5173}:80"
+      - "${DASHBOARD_PORT:-5173}:8080"
     depends_on:
       - control-plane
 
