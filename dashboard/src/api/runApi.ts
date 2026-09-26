@@ -1,7 +1,8 @@
 // Typed API client (API_SPEC.md "Query"/"Live") — types come from
 // types.generated.ts (`npm run gen-api-types`), never hand-written
-// (CODING_STANDARDS.md §2). Unauthenticated: query/dashboard bind to
-// localhost by default (ADR-009).
+// (CODING_STANDARDS.md §2). When the control plane has sign-in enabled,
+// every read is authorized by an HttpOnly session cookie that same-origin
+// fetch and EventSource send on their own; this module never sees it.
 import type { components } from "./types.generated";
 
 export type RunOut = components["schemas"]["RunOut"];
@@ -27,16 +28,81 @@ export type ProjectsPage = components["schemas"]["ProjectsPage"];
 export type DetectionsFeedPage = components["schemas"]["DetectionsFeedPage"];
 export type PolicyDecisionsFeedPage = components["schemas"]["PolicyDecisionsFeedPage"];
 export type ReplayReportOut = components["schemas"]["ReplayReportOut"];
+export type AuthSession = components["schemas"]["SessionOut"];
 
 const BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8420";
 
+/** Dispatched on window whenever a read comes back 401 — the session
+ * expired or was revoked mid-use — so the sign-in gate can take over
+ * instead of every panel showing its own error. */
+export const UNAUTHORIZED_EVENT = "trazo:unauthorized";
+
+export class UnauthorizedError extends Error {
+  constructor(path: string) {
+    super(`${path} -> HTTP 401`);
+    this.name = "UnauthorizedError";
+  }
+}
+
+/** A problem-details error (RFC 9457) carrying the server's own message. */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly retryAfterSeconds: number | null;
+
+  constructor(status: number, detail: string, retryAfterSeconds: number | null) {
+    super(detail);
+    this.name = "ApiError";
+    this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
 async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${BASE_URL}${path}`);
+  const response = await fetch(`${BASE_URL}${path}`, { credentials: "same-origin" });
+  if (response.status === 401) {
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+    throw new UnauthorizedError(path);
+  }
   if (!response.ok) {
     throw new Error(`${path} -> HTTP ${response.status}`);
   }
   return (await response.json()) as T;
+}
+
+async function problemDetail(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { detail?: unknown };
+    if (typeof body.detail === "string") return body.detail;
+  } catch {
+    // Not JSON (e.g. a proxy's own error page): fall back to the status.
+  }
+  return `HTTP ${response.status}`;
+}
+
+export function getAuthSession(): Promise<AuthSession> {
+  return fetchJson<AuthSession>("/v1/auth/session");
+}
+
+export async function signIn(password: string): Promise<void> {
+  const response = await fetch(`${BASE_URL}/v1/auth/login`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+  if (!response.ok) {
+    const retryAfter = response.headers.get("Retry-After");
+    throw new ApiError(
+      response.status,
+      await problemDetail(response),
+      retryAfter ? Number(retryAfter) : null,
+    );
+  }
+}
+
+export async function signOut(): Promise<void> {
+  await fetch(`${BASE_URL}/v1/auth/logout`, { method: "POST", credentials: "same-origin" });
 }
 
 export interface ListRunsParams {
