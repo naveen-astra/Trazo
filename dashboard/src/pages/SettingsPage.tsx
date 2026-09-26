@@ -4,6 +4,7 @@ import { useState } from "react";
 import { getHealthz } from "../api/runApi";
 import { useProjects } from "../hooks/useCatalog";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
+import { useAuth } from "../lib/auth";
 import { RANGE_OPTIONS, useFilters } from "../lib/filters";
 import { usePreferences } from "../lib/preferences";
 
@@ -259,27 +260,41 @@ function NotificationsSection() {
 }
 
 function SecuritySection() {
+  const { authRequired, signOut } = useAuth();
+
   return (
     <div className="card">
       <div className="card__head">
         <h2 className="card__title">Security & Privacy</h2>
       </div>
       <div className="stack" style={{ gap: 12 }}>
-        <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
-          There is nothing user-editable here — this section states the actual posture rather than
-          hiding it behind controls that would not do anything.
-        </p>
+        <div className="field">
+          <span className="field__label">Dashboard sign-in</span>
+          <span className="muted" style={{ fontSize: 12 }}>
+            {authRequired
+              ? "Required. Sessions last 12 hours by default, and end on sign-out or when the password changes."
+              : "Not required. This is a development deployment with no dashboard password set, so keep it on localhost or a private network."}
+          </span>
+          {authRequired && (
+            <div>
+              <button type="button" className="replay-btn" onClick={() => void signOut()}>
+                Sign out
+              </button>
+            </div>
+          )}
+        </div>
         <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: "var(--text-secondary)" }}>
           <li>
-            Ingest and policy-evaluation endpoints require a bearer API key, configured server-side
-            (<code className="mono">TRAZO_API_KEY</code>) — not editable from this dashboard.
+            Sending events and evaluating policy always require the server API key (
+            <code className="mono">TRAZO_API_KEY</code>). A dashboard session can read, never write.
           </li>
           <li>
-            Query and dashboard endpoints are intentionally unauthenticated, designed for a
-            localhost or private-network deployment, not the public internet (ADR-009).
+            The SDK and CLI read with the same API key as a bearer token, so replay and{" "}
+            <code className="mono">trazo tail</code> work against a protected deployment.
           </li>
           <li>
-            There are no user accounts, teams, or workspaces — this deployment is not multi-tenant.
+            There is one shared dashboard password, not per-user accounts or teams — this deployment
+            is not multi-tenant.
           </li>
         </ul>
       </div>
