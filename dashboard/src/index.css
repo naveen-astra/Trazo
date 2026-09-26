@@ -1724,3 +1724,90 @@ a:hover {
 .toggle--on .toggle__thumb {
   transform: translateX(16px);
 }
+
+/* ---------- sign-in ---------- */
+
+.auth-splash {
+  min-height: 100vh;
+  background: var(--page);
+}
+
+.login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--page);
+}
+.login__card {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 28px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.login__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.login__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+.login__subtitle {
+  margin: -6px 0 4px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+.login__input {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+}
+.login__input:focus {
+  outline: 2px solid var(--series-1);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+.login__input[aria-invalid="true"] {
+  border-color: var(--status-critical);
+}
+.login__error {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--status-critical);
+}
+.login__submit {
+  height: 36px;
+  width: 100%;
+  font-weight: 600;
+}
+
+.sidebar__signout {
+  margin-top: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.sidebar__signout:hover {
+  color: var(--text-primary);
+}
