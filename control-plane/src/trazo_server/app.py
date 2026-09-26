@@ -21,7 +21,13 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from redis.asyncio import Redis
 
 from trazo_server import __version__
-from trazo_server.api import ingest_router, live_router, policy_router, query_router
+from trazo_server.api import (
+    auth_router,
+    ingest_router,
+    live_router,
+    policy_router,
+    query_router,
+)
 from trazo_server.api.problem_details import register_problem_details_handlers
 from trazo_server.bus.protocol import BUS_SOCKET_TIMEOUT_SECONDS
 from trazo_server.bus.redis_streams import RedisStreamsBus
@@ -33,6 +39,7 @@ from trazo_server.detectors.thrash import ThrashDetector
 from trazo_server.logging import configure_logging
 from trazo_server.middleware import RequestIDMiddleware
 from trazo_server.policy.opa_client import HttpOpaClient
+from trazo_server.sessions import LoginThrottle
 from trazo_server.store.blob_fs import FilesystemBlobStore
 from trazo_server.store.engine import create_engine
 from trazo_server.store.postgres_trace_store import PostgresTraceStore
@@ -121,8 +128,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await engine.dispose()
             await app.state.opa_client.aclose()
 
-    app = FastAPI(title="Trazo control plane", version=__version__, lifespan=lifespan)
+    # Interactive docs and the schema are a reconnaissance map of every
+    # endpoint; a public production host has no business serving them.
+    docs_enabled = not settings.is_production
+    app = FastAPI(
+        title="Trazo control plane",
+        version=__version__,
+        lifespan=lifespan,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
+    )
     app.state.settings = settings
+    app.state.login_throttle = LoginThrottle(
+        max_attempts=settings.login_max_attempts,
+        window_seconds=settings.login_window_minutes * 60,
+    )
 
     app.add_middleware(RequestIDMiddleware)
     # Outermost (added last -- Starlette wraps in reverse order of
@@ -143,6 +164,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     register_problem_details_handlers(app)
+    app.include_router(auth_router)
     app.include_router(ingest_router)
     app.include_router(query_router)
     app.include_router(live_router)
