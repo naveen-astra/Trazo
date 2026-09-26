@@ -112,3 +112,22 @@ def test_tail_run__returns_1_on_connection_error() -> None:
     )
 
     assert exit_code == 1
+
+
+def test_tail_run__sends_the_api_key() -> None:
+    seen: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers.get("authorization"))
+        return httpx.Response(200, content=b"")
+
+    code = tail_run(
+        "run_1",
+        endpoint="http://example.test",
+        api_key="secret-key",
+        out=io.StringIO(),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert code == 0
+    assert seen == ["Bearer secret-key"]

@@ -62,7 +62,7 @@ def test_main__doctor_dispatches_to_run_doctor(monkeypatch: pytest.MonkeyPatch) 
 def test_main__tail_dispatches_to_tail_run(monkeypatch: pytest.MonkeyPatch) -> None:
     called: dict[str, str] = {}
 
-    def fake_tail_run(run_id: str, *, endpoint: str) -> int:
+    def fake_tail_run(run_id: str, *, endpoint: str, api_key: str | None = None) -> int:
         called["run_id"] = run_id
         called["endpoint"] = endpoint
         return 0
@@ -182,7 +182,7 @@ def test_main__verify_no_submit_dispatches_submit_false(
 def test_main__tail_keyboard_interrupt_returns_130(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake_tail_run(run_id: str, *, endpoint: str) -> int:
+    def fake_tail_run(run_id: str, *, endpoint: str, api_key: str | None = None) -> int:
         raise KeyboardInterrupt
 
     monkeypatch.setattr("trazo.cli.main.tail_run", fake_tail_run)

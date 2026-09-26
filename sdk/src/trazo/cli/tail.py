@@ -47,6 +47,7 @@ def tail_run(
     run_id: str,
     *,
     endpoint: str,
+    api_key: str | None = None,
     out: TextIO = sys.stdout,
     client: httpx.Client | None = None,
 ) -> int:
@@ -62,7 +63,8 @@ def tail_run(
     owns_client = client is None
     client = client or httpx.Client(timeout=None)
     try:
-        with client.stream("GET", url) as response:
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        with client.stream("GET", url, headers=headers) as response:
             if response.status_code != 200:
                 print(
                     f"trazo tail: HTTP {response.status_code} from {url}",

@@ -68,7 +68,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "tail":
         try:
-            return tail_run(args.run_id, endpoint=args.endpoint)
+            return tail_run(
+                args.run_id,
+                endpoint=args.endpoint,
+                api_key=os.environ.get("TRAZO_API_KEY"),
+            )
         except KeyboardInterrupt:
             return 130
 
