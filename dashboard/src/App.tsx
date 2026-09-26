@@ -20,6 +20,7 @@ import {
 import { useProjects } from "./hooks/useCatalog";
 import { useLiveRefresh, type LiveEvent } from "./hooks/useLiveRefresh";
 import { useStats } from "./hooks/useStats";
+import { useAuth } from "./lib/auth";
 import { detectionTitle } from "./lib/detectionTitle";
 import { useFilters } from "./lib/filters";
 import { usePreferences } from "./lib/preferences";
@@ -105,6 +106,7 @@ function maybeNotify(
 export default function App() {
   const { project, setProject } = useFilters();
   const preferences = usePreferences();
+  const { authRequired, signOut } = useAuth();
   const { data: stats } = useStats({ project });
   const { data: projectsPage } = useProjects();
   // One SSE subscription for the whole app: every list/aggregate view
@@ -173,6 +175,13 @@ export default function App() {
             />
             {connected ? (streaming ? "receiving" : "live") : "offline"}
           </span>
+          {authRequired && (
+            <div>
+              <button type="button" className="sidebar__signout" onClick={() => void signOut()}>
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
       </nav>
 

@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 
 import App from "./App";
+import { AuthGate } from "./lib/auth";
 import { FiltersProvider } from "./lib/filters";
 import { PreferencesProvider } from "./lib/preferences";
 import AgentsPage from "./pages/AgentsPage";
@@ -58,9 +59,14 @@ createRoot(rootElement).render(
           below it. Both live above the router so the topbar's project
           selector and every page share one source of truth. */}
       <PreferencesProvider>
-        <FiltersProvider>
-          <RouterProvider router={router} />
-        </FiltersProvider>
+        {/* Inside Preferences so the sign-in page follows the saved
+            theme; outside the router so no route renders, and no panel
+            fetches, until the session is accepted. */}
+        <AuthGate>
+          <FiltersProvider>
+            <RouterProvider router={router} />
+          </FiltersProvider>
+        </AuthGate>
       </PreferencesProvider>
     </QueryClientProvider>
   </StrictMode>,
