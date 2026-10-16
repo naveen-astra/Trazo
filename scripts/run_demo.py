@@ -180,6 +180,43 @@ def wait_for_ready(timeout_seconds: int = 180) -> None:
     )
 
 
+def verify_trace_integrity(run_id: str) -> int:
+    """Every event the SDK says it sent must be stored, once.
+
+    The run's ``totals.events`` is the SDK's own count, carried on
+    ``run.finished``; the stored agent events (``sub_seq`` 0) must match
+    it exactly. This is the check that would have caught the 2026-10-16
+    corruption, where a detection silently overwrote one of a run's events
+    (135 sent, 134 stored) while every other step still reported success.
+    Returns the number of server events (detections, decisions) found.
+    """
+    run = get_json(f"/v1/runs/{run_id}")
+    expected = run["totals"].get("events") if isinstance(run, dict) else None
+
+    events: list[dict[str, object]] = []
+    cursor: str | None = None
+    while True:
+        query = f"?limit=1000&cursor={cursor}" if cursor else "?limit=1000"
+        page = get_json(f"/v1/runs/{run_id}/events{query}")
+        if not isinstance(page, dict):
+            raise DemoFailed(f"unexpected events response for {run_id}")
+        events.extend(page["events"])
+        cursor = page.get("next_cursor")
+        if not cursor:
+            break
+
+    ids = [e["event_id"] for e in events]
+    if len(ids) != len(set(ids)):
+        raise DemoFailed(f"run {run_id} has duplicate events")
+    agent_events = [e for e in events if not e.get("sub_seq")]
+    if expected is not None and len(agent_events) != expected:
+        raise DemoFailed(
+            f"trace integrity: the SDK sent {expected} events for {run_id} "
+            f"but {len(agent_events)} are stored -- events were lost or overwritten"
+        )
+    return len(events) - len(agent_events)
+
+
 def extract_run_id(text: str) -> str:
     match = re.search(r"TRAZO_RUN_ID=(\S+)", text)
     if match is None:
@@ -397,6 +434,8 @@ def step_trace_a_real_run(pauses: bool) -> str:
         f"{totals.get('llm_calls')} llm calls, {totals.get('tool_calls')} tool calls, "
         f"status={rollup.get('status')}"
     )
+    verify_trace_integrity(run_id)
+    ok("trace integrity: every event the SDK sent is stored exactly once")
     info(f"watch it live at {DASHBOARD}/runs/{run_id}")
     pause(
         pauses, "Open the run in the dashboard, then press Enter for the next step..."
@@ -436,6 +475,24 @@ def step_detection_fires(pauses: bool) -> None:
 
     if not detections:
         raise DemoFailed(f"the loop detector never fired on run {run_id}")
+
+    # Detections keep arriving for a moment after the first one; wait for
+    # the count to settle so the integrity check below sees all of them.
+    settled_at = time.time()
+    while time.time() - settled_at < 3 and time.time() < deadline:
+        time.sleep(1)
+        payload = get_json(f"/v1/runs/{run_id}/detections")
+        found = payload.get("detections") if isinstance(payload, dict) else None
+        if isinstance(found, list) and len(found) != len(detections):
+            detections, settled_at = found, time.time()
+
+    server_events = verify_trace_integrity(run_id)
+    if server_events != len(detections):
+        raise DemoFailed(
+            f"run {run_id} has {len(detections)} detections but "
+            f"{server_events} detection events in its trace"
+        )
+    ok("trace integrity: no event lost or overwritten, every detection in the trace")
 
     detectors = sorted({d.get("detector") for d in detections if isinstance(d, dict)})
     ok(
