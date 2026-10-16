@@ -17,6 +17,7 @@ import { useReplayBundle } from "../hooks/useReplayBundle";
 import { useReplayReport } from "../hooks/useReplayReport";
 import { eventKindChipColor } from "../lib/eventKind";
 import { buildStepNodes, type StepNode } from "../lib/runGraph";
+import { formatPosition } from "../lib/eventOrder";
 
 const AUTOPLAY_INTERVAL_MS = 1100;
 
@@ -318,7 +319,7 @@ export default function ReplayStepperPage() {
                               {event.fingerprint.slice(0, 22)}…
                             </span>
                           )}
-                          <span className="timeline__seq">#{event.seq}</span>
+                          <span className="timeline__seq">#{formatPosition(event)}</span>
                         </div>
                       );
                     })}

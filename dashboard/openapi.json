@@ -1813,6 +1813,11 @@
             "type": "integer",
             "title": "Seq"
           },
+          "sub_seq": {
+            "type": "integer",
+            "title": "Sub Seq",
+            "default": 0
+          },
           "event_id": {
             "type": "string",
             "title": "Event Id"
@@ -2323,6 +2328,18 @@
             },
             "type": "array",
             "title": "Active Detections"
+          },
+          "after_seq": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Seq"
           }
         },
         "type": "object",

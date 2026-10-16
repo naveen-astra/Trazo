@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { EventOut } from "../api/runApi";
 import { eventKindChipColor } from "../lib/eventKind";
 import PayloadDrawer from "./PayloadDrawer";
+import { formatPosition } from "../lib/eventOrder";
 
 interface RunTimelineProps {
   events: EventOut[];
@@ -84,7 +85,7 @@ export default function RunTimeline({ events }: RunTimelineProps) {
                   }
                 />
                 <span className="timeline__kind">{event.kind}</span>
-                <span className="timeline__seq">#{event.seq}</span>
+                <span className="timeline__seq">#{formatPosition(event)}</span>
               </button>
             );
           })}

@@ -649,6 +649,11 @@ export interface components {
       run_id: string;
       /** Seq */
       seq: number;
+      /**
+       * Sub Seq
+       * @default 0
+       */
+      sub_seq: number;
       /** Event Id */
       event_id: string;
       /** Kind */
@@ -848,6 +853,8 @@ export interface components {
       cost_usd_so_far: number;
       /** Active Detections */
       active_detections?: string[];
+      /** After Seq */
+      after_seq?: number | null;
     };
     /** ProjectOut */
     ProjectOut: {

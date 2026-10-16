@@ -5,6 +5,7 @@ import { eventKindChipColor } from "../lib/eventKind";
 import type { StepNode } from "../lib/runGraph";
 import CopyButton from "./CopyButton";
 import { IconChevronLeft, IconChevronRight } from "./Icons";
+import { compareEvents, formatPosition } from "../lib/eventOrder";
 
 type Tab = "details" | "input" | "output" | "events";
 const TABS: { id: Tab; label: string }[] = [
@@ -213,28 +214,26 @@ export default function StepInspector({ node, stepCount, onPrev, onNext, onSelec
               No boundary calls in this step.
             </p>
           ) : (
-            [...node.boundaries, ...node.notices]
-              .sort((a, b) => a.seq - b.seq)
-              .map((event) => {
-                const color = eventKindChipColor(event.kind);
-                return (
-                  <button
-                    key={event.event_id}
-                    type="button"
-                    className="timeline__event"
-                    onClick={() => onSelectEvent(event)}
-                  >
-                    <span
-                      className="chip__dot"
-                      style={
-                        color ? { background: color } : { border: "1px solid var(--text-muted)" }
-                      }
-                    />
-                    <span className="timeline__kind">{event.kind}</span>
-                    <span className="timeline__seq">#{event.seq}</span>
-                  </button>
-                );
-              })
+            [...node.boundaries, ...node.notices].sort(compareEvents).map((event) => {
+              const color = eventKindChipColor(event.kind);
+              return (
+                <button
+                  key={event.event_id}
+                  type="button"
+                  className="timeline__event"
+                  onClick={() => onSelectEvent(event)}
+                >
+                  <span
+                    className="chip__dot"
+                    style={
+                      color ? { background: color } : { border: "1px solid var(--text-muted)" }
+                    }
+                  />
+                  <span className="timeline__kind">{event.kind}</span>
+                  <span className="timeline__seq">#{formatPosition(event)}</span>
+                </button>
+              );
+            })
           )}
         </div>
       )}

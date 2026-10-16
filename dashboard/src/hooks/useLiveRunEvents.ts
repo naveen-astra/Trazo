@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { liveRunUrl, type EventOut } from "../api/runApi";
+import { compareEvents } from "../lib/eventOrder";
 
 export interface LiveRunEventsState {
   events: EventOut[];
@@ -18,13 +19,15 @@ export function useLiveRunEvents(runId: string): LiveRunEventsState {
   const [events, setEvents] = useState<EventOut[]>([]);
   const [connected, setConnected] = useState(false);
   const [closed, setClosed] = useState(false);
-  const seenSeqs = useRef<Set<number>>(new Set());
+  // Keyed on event_id: a detection shares its seq with the event it
+  // follows, so a seq-keyed set silently dropped every detection.
+  const seenIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     setEvents([]);
     setConnected(false);
     setClosed(false);
-    seenSeqs.current = new Set();
+    seenIds.current = new Set();
 
     const source = new EventSource(liveRunUrl(runId));
 
@@ -32,11 +35,11 @@ export function useLiveRunEvents(runId: string): LiveRunEventsState {
 
     source.onmessage = (message: MessageEvent<string>) => {
       const parsed = JSON.parse(message.data) as EventOut;
-      if (seenSeqs.current.has(parsed.seq)) {
+      if (seenIds.current.has(parsed.event_id)) {
         return;
       }
-      seenSeqs.current.add(parsed.seq);
-      setEvents((prev) => [...prev, parsed].sort((a, b) => a.seq - b.seq));
+      seenIds.current.add(parsed.event_id);
+      setEvents((prev) => [...prev, parsed].sort(compareEvents));
       if (parsed.kind === "run.finished") {
         setClosed(true);
       }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { blobUrl, isBlobRef, type EventOut } from "../api/runApi";
+import { formatPosition } from "../lib/eventOrder";
 
 interface BlobFieldProps {
   field: string;
@@ -133,7 +134,7 @@ export default function PayloadDrawer({ event, onClose }: PayloadDrawerProps) {
       </button>
       <h2>{event.kind}</h2>
       <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>
-        seq {event.seq} &middot; {event.ts}
+        seq {formatPosition(event)} &middot; {event.ts}
       </p>
       {event.kind === "memory.read" && <MemoryInspector event={event} />}
       {blobFields.length > 0 && (

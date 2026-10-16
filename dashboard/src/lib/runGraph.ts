@@ -1,4 +1,5 @@
 import type { EventOut } from "../api/runApi";
+import { compareEvents } from "./eventOrder";
 
 // Turns a flat event stream into the step nodes the execution graph and
 // the step inspector both render.
@@ -45,7 +46,7 @@ function numberField(payload: unknown, key: string): number {
 }
 
 export function buildStepNodes(events: EventOut[]): StepNode[] {
-  const ordered = [...events].sort((a, b) => a.seq - b.seq);
+  const ordered = [...events].sort(compareEvents);
   const nodes: StepNode[] = [];
   let current: StepNode | null = null;
 

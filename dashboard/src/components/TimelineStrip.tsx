@@ -1,5 +1,6 @@
 import type { EventOut } from "../api/runApi";
 import { eventKindChipColor } from "../lib/eventKind";
+import { formatPosition } from "../lib/eventOrder";
 
 // The whole run compressed to one bar: a segment per event, kind-colored,
 // in seq order. Segments are equal-width rather than duration-scaled on
@@ -31,8 +32,8 @@ export default function TimelineStrip({ events, selectedEventId, onSelect }: Pro
             }
             style={{ background: color ?? "var(--surface-3)" }}
             onClick={() => onSelect(event)}
-            title={`#${event.seq} ${event.kind}`}
-            aria-label={`Event ${event.seq}, ${event.kind}`}
+            title={`#${formatPosition(event)} ${event.kind}`}
+            aria-label={`Event ${formatPosition(event)}, ${event.kind}`}
           />
         );
       })}

@@ -4,6 +4,7 @@ import type { EventOut } from "../api/runApi";
 import { eventKindChipColor } from "../lib/eventKind";
 import type { StepNode } from "../lib/runGraph";
 import { IconBrain, IconDatabase, IconWrench, IconZoomIn, IconZoomOut } from "./Icons";
+import { formatPosition } from "../lib/eventOrder";
 
 // The run's control flow as a two-level graph: step nodes along the
 // spine, each with the boundary calls it actually made branching off it.
@@ -147,7 +148,7 @@ export default function FlowGraph({ nodes, selectedKey, onSelectStep, onSelectEv
                               : (color ?? "var(--text-muted)"),
                           }}
                           onClick={() => onSelectEvent(event)}
-                          title={`${event.kind} · seq ${event.seq}`}
+                          title={`${event.kind} · seq ${formatPosition(event)}`}
                         >
                           <span
                             className="flow__call-icon"
@@ -183,7 +184,7 @@ export default function FlowGraph({ nodes, selectedKey, onSelectStep, onSelectEv
                         className="flow__call"
                         style={{ borderLeftColor: "var(--status-warning)" }}
                         onClick={() => onSelectEvent(event)}
-                        title={`${event.kind} · seq ${event.seq}`}
+                        title={`${event.kind} · seq ${formatPosition(event)}`}
                       >
                         <span className="flow__call-body">
                           <span className="flow__call-name">{event.kind}</span>

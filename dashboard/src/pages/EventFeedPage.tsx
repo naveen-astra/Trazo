@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 
 import { eventKindChipColor } from "../lib/eventKind";
 import { useRecentEvents } from "../hooks/useCatalog";
+import { formatPosition } from "../lib/eventOrder";
 
 interface Props {
   /** Narrow the feed to one event kind (the Logs route passes
@@ -84,7 +85,7 @@ export default function EventFeedPage({ kind, title, subtitle, emptyMessage }: P
                           {event.run_id.slice(0, 20)}…
                         </Link>
                       </td>
-                      <td className="table__num">{event.seq}</td>
+                      <td className="table__num">{formatPosition(event)}</td>
                       <td className="muted mono" style={{ fontSize: 11 }}>
                         {event.fingerprint ? `${event.fingerprint.slice(7, 21)}…` : "—"}
                       </td>
