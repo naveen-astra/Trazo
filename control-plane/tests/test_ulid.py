@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from trazo_server.ulid import new_detection_id, new_event_id, new_ulid
 
 _CROCKFORD_CHARS = set("0123456789ABCDEFGHJKMNPQRSTVWXYZ")
@@ -50,3 +52,45 @@ def test_ulid__real_clock_generation_is_monotonic() -> None:
 def test_ulid__prefixed_helpers_use_the_documented_prefixes() -> None:
     assert new_event_id().startswith("evt_")
     assert new_detection_id().startswith("det_")
+
+
+def test_ulid__stays_monotonic_when_the_clock_reads_earlier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Server-minted event ids land in the same events table the firehose
+    pages with `WHERE event_id > cursor`; an id that sorted below one
+    already issued would be skipped from the live stream for good. A clock
+    reading that comes out earlier -- another thread minting in between,
+    or an NTP step back -- used to produce exactly that."""
+    import trazo_server.ulid as ulid_module
+
+    clock = iter([1_000.002, 1_000.001])  # the second reading is earlier
+    monkeypatch.setattr(ulid_module.time, "time", lambda: next(clock))
+
+    first = new_ulid()
+    second = new_ulid()
+
+    assert second > first
+
+
+def test_ulid__concurrent_generation_stays_unique_and_globally_ordered() -> None:
+    import threading
+
+    issued: list[str] = []
+    lock = threading.Lock()
+
+    def mint() -> None:
+        for _ in range(500):
+            with lock:
+                issued.append(new_ulid())
+
+    threads = [threading.Thread(target=mint) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(set(issued)) == len(issued)
+    # Appended under the same lock that orders issue, so issue order is the
+    # list order -- and ids must sort exactly that way.
+    assert issued == sorted(issued)

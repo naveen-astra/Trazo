@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from trazo.core.ulid import (
     new_event_id,
     new_run_id,
@@ -95,3 +97,25 @@ def test_ulid__prefixed_helpers_use_the_documented_prefixes() -> None:
     assert new_run_id().startswith("run_")
     assert new_event_id().startswith("evt_")
     assert new_step_id().startswith("stp_")
+
+
+def test_ulid__stays_monotonic_when_the_clock_reads_earlier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: the clock used to be read before taking the lock, and a
+    different millisecond from the last one issued redrew the random part.
+    A reading that came out *earlier* -- another thread having minted in
+    the next millisecond in between, or an NTP step back -- then produced
+    an id sorting below ones already issued. Seen on CI as a per-thread
+    ordering failure; it also matters live, where the firehose pages on
+    event_id and would skip such an id for good."""
+    import trazo.core.ulid as ulid_module
+
+    clock = iter([1_000.002, 1_000.001])  # the second reading is earlier
+    monkeypatch.setattr(ulid_module.time, "time", lambda: next(clock))
+
+    first = new_ulid()
+    second = new_ulid()
+
+    assert second > first
+    assert ulid_timestamp_ms(second) == ulid_timestamp_ms(first)

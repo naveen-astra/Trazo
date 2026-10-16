@@ -51,16 +51,28 @@ def new_ulid(*, timestamp_ms: int | None = None) -> str:
     """
     global _last_timestamp_ms, _last_random
 
-    ts = timestamp_ms if timestamp_ms is not None else int(time.time() * 1000)
     with _lock:
-        # Only the same-millisecond case needs the counter. A different
-        # timestamp — including a smaller one from an injected value or an
-        # NTP step — redraws, so an explicitly passed timestamp is always
-        # the one that lands in the id (the test seam stays honest, and a
-        # backwards clock is no worse off than a plain ULID).
+        # The clock is read inside the lock. Read outside it, a thread could
+        # take a reading, be preempted while another thread minted in the
+        # next millisecond, and then -- seeing a timestamp different from
+        # the last one issued -- draw a fresh random part that sorted below
+        # ids already handed out.
+        explicit = timestamp_ms is not None
+        ts = timestamp_ms if timestamp_ms is not None else int(time.time() * 1000)
+        if not explicit and ts < _last_timestamp_ms:
+            # A clock-derived reading never goes backwards: a stale reading
+            # or an NTP step back stays in the last millisecond issued and
+            # takes the counter path below, so ids remain strictly
+            # increasing. (An explicitly passed timestamp is the test seam
+            # and always lands unchanged.)
+            ts = _last_timestamp_ms
         if ts == _last_timestamp_ms and _last_random < _MAX_RANDOM:
             random_part = _last_random + 1
         else:
+            if ts == _last_timestamp_ms and not explicit:
+                # The counter is exhausted within this millisecond: move to
+                # the next one rather than redraw, which could sort lower.
+                ts += 1
             random_part = int.from_bytes(os.urandom(_RANDOM_BYTES), "big")
 
         _last_timestamp_ms = ts
