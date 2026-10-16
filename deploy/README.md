@@ -186,14 +186,33 @@ $COMPOSE exec -T postgres sh -c \
   < backups/trazo-db-<timestamp>.dump
 
 # Blob store
-$COMPOSE run --rm --no-deps -T --entrypoint sh control-plane -c \
-  'rm -rf /var/lib/trazo/blobs/* && tar -C /var/lib/trazo -xzf - && chown -R 10001:10001 /var/lib/trazo/blobs' \
+$COMPOSE run --rm --no-deps -T --user 10001:10001 --entrypoint tar control-plane \
+  -C /var/lib/trazo -xzf - \
   < backups/trazo-blobs-<timestamp>.tar.gz
 
 $COMPOSE up -d
 ```
 
-Test a restore on a spare server before you need one.
+The blob step runs as the store's owner, the unprivileged `trazo` user (uid
+10001). Running it as root would fail: the control plane's container drops
+every Linux capability, and root without them cannot write into a directory
+it does not own.
+
+It also deletes nothing. Blobs are content-addressed and immutable, so
+extracting over an existing store rewrites identical files, and any blob not
+in the backup is an unreferenced leftover that costs only disk space.
+
+Test a restore on a spare server before you need one. This procedure was
+drilled end to end against the production stack: back up, delete every
+volume, restore, then sign in, read an offloaded payload, and replay a run.
+Every row count, a checksum over all events, and the blob hashes came back
+identical.
+
+The TLS certificate is not part of the backup. If the `caddy_data` volume was
+lost too, Caddy requests a new certificate on first start, which needs DNS
+and port 80 in place as on the original install. That is one issuance, well
+within Let's Encrypt's limits, but it means the first start after a disaster
+needs internet access.
 
 ### Updating
 
