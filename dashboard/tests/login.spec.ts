@@ -25,9 +25,7 @@ test("a wrong password is rejected and the form stays", async ({ page }) => {
   await expect(page.getByLabel("Password")).toHaveValue("");
 });
 
-test("signing in shows the app, survives a reload, and signing out ends it", async ({
-  page,
-}) => {
+test("signing in shows the app, survives a reload, and signing out ends it", async ({ page }) => {
   await page.goto("/runs");
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
