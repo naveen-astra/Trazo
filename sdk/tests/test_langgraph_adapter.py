@@ -12,6 +12,7 @@ from typing import Any
 
 import httpx
 from agents.research_assistant import ToyState, build_toy_graph, initial_state
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 
 from trazo.core.context import init as context_init
@@ -189,11 +190,11 @@ def test_instrument__totals_count_escape_hatch_calls_not_just_langchain_callback
     def call_tool(query: str) -> str:
         return f"results for {query}"
 
-    def plan(state: ToyState, config: dict[str, Any]) -> dict[str, Any]:
+    def plan(state: ToyState, config: RunnableConfig) -> dict[str, Any]:
         call_llm("hello")
         return {}
 
-    def search(state: ToyState, config: dict[str, Any]) -> dict[str, Any]:
+    def search(state: ToyState, config: RunnableConfig) -> dict[str, Any]:
         call_tool("trazo")
         return {}
 
@@ -244,7 +245,7 @@ def test_instrument__totals_events_counts_kinds_outside_the_llm_tool_step_set() 
     def remember(key_or_ns: str, value: str) -> None:
         return None
 
-    def plan(state: ToyState, config: dict[str, Any]) -> dict[str, Any]:
+    def plan(state: ToyState, config: RunnableConfig) -> dict[str, Any]:
         recall("what do I know")
         remember("notes", "something learned")
         return {}
@@ -270,7 +271,7 @@ def test_instrument__run_error_still_emits_run_finished_with_error_status() -> N
     shipper = _FakeShipper()
     recorder = Recorder(shipper=shipper)
 
-    def _boom_node(state: ToyState, config: dict[str, Any]) -> dict[str, Any]:
+    def _boom_node(state: ToyState, config: RunnableConfig) -> dict[str, Any]:
         raise RuntimeError("node exploded")
 
     graph = StateGraph(ToyState)

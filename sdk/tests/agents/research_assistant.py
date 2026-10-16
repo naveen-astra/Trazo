@@ -29,6 +29,7 @@ from typing import Any, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -65,7 +66,7 @@ def build_toy_graph(
             time.sleep(latency_seconds)
         return f"results for {query}"
 
-    def _plan_node(state: ToyState, config: dict[str, Any]) -> dict[str, Any]:
+    def _plan_node(state: ToyState, config: RunnableConfig) -> dict[str, Any]:
         counters.llm_calls += 1
         manager = config["callbacks"]
         typed_messages: list[BaseMessage] = list(state["messages"])
@@ -86,7 +87,7 @@ def build_toy_graph(
             run_manager.on_llm_end(result)
         return {"messages": [*state["messages"], response]}
 
-    def _search_node(state: ToyState, config: dict[str, Any]) -> dict[str, Any]:
+    def _search_node(state: ToyState, config: RunnableConfig) -> dict[str, Any]:
         result = web_search.invoke({"query": "trazo"}, config=config)
         return {"search_result": result}
 

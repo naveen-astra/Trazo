@@ -46,7 +46,7 @@ jobs:
         include:
           - framework: langgraph
             version: min
-            pin: "langgraph==0.2.17 langchain-core>=0.3"
+            pin: "langgraph==1.2.3 langgraph-checkpoint==4.1.1 langgraph-sdk==0.4.4 langchain-core==1.4.0"
             tests: tests/test_langgraph_adapter.py tests/test_core_serialization.py
           - framework: langgraph
             version: max

@@ -311,6 +311,13 @@ print(traced.last_run_id)  # the run id just recorded
 trazo.shutdown()  # flush before the process exits
 ```
 
+Requires LangGraph 1.2.3 or later. If a node takes the run config, type it
+`RunnableConfig` (from `langchain_core.runnables`) or leave it unannotated:
+LangGraph 1.x does not pass `config` to a parameter annotated as a plain
+`dict`. See the adapter's
+[README](sdk/src/trazo/integrations/langgraph/README.md) when upgrading
+from LangGraph 0.2.
+
 ### CrewAI
 
 ```python

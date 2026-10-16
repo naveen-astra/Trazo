@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import Any, TypedDict
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from llm import ask_evaluate, ask_finalize, ask_plan, ask_synthesize
@@ -40,21 +41,21 @@ def build_graph(*, target_iterations: int = 3) -> CompiledStateGraph:
     memory state, matching the toy-agent pattern from Phase 2."""
     memory = VectorMemory(namespace=f"research-assistant-{id(object())}")
 
-    def plan(state: ResearchState, config: dict[str, Any]) -> dict[str, Any]:
+    def plan(state: ResearchState, config: RunnableConfig) -> dict[str, Any]:
         query = ask_plan(state["question"], state["queries_done"])["response"]
         return {"pending_query": query, "queries_done": [*state["queries_done"], query]}
 
-    def search(state: ResearchState, config: dict[str, Any]) -> dict[str, Any]:
+    def search(state: ResearchState, config: RunnableConfig) -> dict[str, Any]:
         result = web_search(state["pending_query"])
         if state["iteration"] == 0:
             fetch_document("sdk-md")  # a second, distinct tool for realism
         return {"pending_search_result": result}
 
-    def retrieve(state: ResearchState, config: dict[str, Any]) -> dict[str, Any]:
+    def retrieve(state: ResearchState, config: RunnableConfig) -> dict[str, Any]:
         retrieved = memory.query(state["question"], k=2)
         return {"pending_retrieved": retrieved}
 
-    def synthesize(state: ResearchState, config: dict[str, Any]) -> dict[str, Any]:
+    def synthesize(state: ResearchState, config: RunnableConfig) -> dict[str, Any]:
         finding = ask_synthesize(
             state["question"],
             state["pending_search_result"],
@@ -63,14 +64,14 @@ def build_graph(*, target_iterations: int = 3) -> CompiledStateGraph:
         memory.save(key_or_ns="finding", value=finding)
         return {"findings": [*state["findings"], finding]}
 
-    def evaluate(state: ResearchState, config: dict[str, Any]) -> dict[str, Any]:
+    def evaluate(state: ResearchState, config: RunnableConfig) -> dict[str, Any]:
         decision = ask_evaluate(state["iteration"] + 1, target_iterations)["response"]
         return {"iteration": state["iteration"] + 1, "decision": decision}
 
     def route_after_evaluate(state: ResearchState) -> str:
         return "plan" if state["decision"] == "continue" else "finalize"
 
-    def finalize(state: ResearchState, config: dict[str, Any]) -> dict[str, Any]:
+    def finalize(state: ResearchState, config: RunnableConfig) -> dict[str, Any]:
         sources_consulted = calculator(f"{len(state['queries_done'])} + 1")
         answer = ask_finalize(state["question"], state["findings"], sources_consulted)[
             "response"

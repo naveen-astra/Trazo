@@ -3,13 +3,31 @@
 `instrument(compiled_graph)` wraps a compiled LangGraph graph so its
 run/step lifecycle and LLM/tool boundaries are captured through
 `Recorder`. Install with the `langgraph` extra: `pip install
-trazo[langgraph]`. Verified across the full pinned range in
-`pyproject.toml` (`langgraph>=0.2.17,<0.3`), min (`0.2.17`) and max
-(`0.2.76`) both tested nightly (TRZ-P3-06). `langchain-core>=0.3` is
-pinned explicitly alongside `langgraph` — versions below 0.2.17 permit a
-`langchain-core` old enough to predate `model_dump()` on message classes,
-which `trazo.core.serialization` depends on; see `pyproject.toml`'s
-comment on the `langgraph` extra for the full story.
+trazo[langgraph]`. Supports `langgraph>=1.2.3,<2`; the minimum and the
+latest release are both tested nightly (TRZ-P3-06).
+
+The floor is set by security, not features: every release below 1.0.10
+carries open advisories, and 1.0.10–1.2.2 cannot reach a patched
+`langgraph-sdk`. The extra also pins the first patched
+`langgraph-checkpoint` (4.1.1) and `langgraph-sdk` (0.4.4) directly,
+because LangGraph's own ranges still admit vulnerable versions. It pins
+`langchain-core>=1.4` too, which `trazo.core.serialization` needs for
+pydantic-v2 message classes. See `pyproject.toml` for the details.
+
+### Upgrading from LangGraph 0.2
+
+LangGraph 1.x passes `config` to a node only if the parameter is
+unannotated or typed `RunnableConfig`. A node written as
+`def node(state, config: dict[str, Any])` now fails with
+`missing 1 required positional argument: 'config'`. This is LangGraph's
+change, not Trazo's — fix it in your graph:
+
+```python
+from langchain_core.runnables import RunnableConfig
+
+def node(state: MyState, config: RunnableConfig) -> dict[str, Any]:
+    ...
+```
 
 ## How it hooks (why, not just what)
 

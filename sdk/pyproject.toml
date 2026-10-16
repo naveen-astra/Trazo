@@ -23,19 +23,20 @@ dependencies = [
 
 [project.optional-dependencies]
 langgraph = [
-    # >=0.2.17, not bare >=0.2: langgraph<0.2.17 pins langchain-core<0.3
-    # exclusively, which is incompatible with the langchain-core>=0.3
-    # constraint below (verified against PyPI metadata, TRZ-P3-06).
-    "langgraph>=0.2.17,<0.3",
-    # langgraph's own declared range otherwise permits langchain-core as
-    # low as 0.2.4x even at its newest 0.2.x release — that's still
-    # pydantic-v1-style message classes with no `model_dump`, which
-    # `trazo.core.serialization` depends on (confirmed by actually
-    # installing langgraph==0.2.0 and running the adapter's tests against
-    # it: state hashing silently degrades every LangChain message to
-    # `$unrepresentable`). Pin the transitive dependency directly rather
-    # than trust langgraph's range.
-    "langchain-core>=0.3",
+    # >=1.2.3: the earliest release whose own dependency ranges can reach a
+    # patched langgraph-sdk (1.0.10 through 1.2.2 cap it below 0.4, and the
+    # fix is 0.4.4). Everything below 1.0.10 carries open advisories itself
+    # (pip-audit, 2026-10-17).
+    "langgraph>=1.2.3,<2",
+    # Pinned directly, not left to langgraph's ranges: those still admit
+    # vulnerable versions, and the nightly minimum-version leg resolves to
+    # the lowest allowed. Floors are the first patched release of each.
+    "langgraph-checkpoint>=4.1.1",
+    "langgraph-sdk>=0.4.4",
+    # Also pinned for the original reason: `trazo.core.serialization`
+    # needs pydantic-v2 message classes (`model_dump`), and langgraph's own
+    # range has historically admitted much older langchain-core.
+    "langchain-core>=1.4,<2",
 ]
 crewai = [
     "crewai>=1.15,<2",
