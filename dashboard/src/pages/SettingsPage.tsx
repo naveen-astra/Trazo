@@ -1,15 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { getHealthz } from "../api/runApi";
+import { API_BASE_URL, getHealthz } from "../api/runApi";
 import { useProjects } from "../hooks/useCatalog";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
 import { useAuth } from "../lib/auth";
 import { RANGE_OPTIONS, useFilters } from "../lib/filters";
 import { usePreferences } from "../lib/preferences";
-
-const API_BASE =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8420";
 
 type Section = "appearance" | "preferences" | "notifications" | "security" | "application";
 
@@ -320,7 +317,7 @@ function ApplicationSection() {
       <div className="kv">
         <span className="kv__k">Control plane</span>
         <span className="kv__v mono" style={{ fontSize: 12 }}>
-          {API_BASE}
+          {API_BASE_URL || `${window.location.origin} (same origin)`}
         </span>
         <span className="kv__k">Version</span>
         <span className="kv__v mono" style={{ fontSize: 12 }}>

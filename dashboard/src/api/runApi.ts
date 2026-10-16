@@ -30,8 +30,14 @@ export type PolicyDecisionsFeedPage = components["schemas"]["PolicyDecisionsFeed
 export type ReplayReportOut = components["schemas"]["ReplayReportOut"];
 export type AuthSession = components["schemas"]["SessionOut"];
 
-const BASE_URL =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8420";
+/** Same origin unless VITE_API_BASE_URL says otherwise. Every way the
+ * dashboard is served routes /v1 to the control plane on its own origin
+ * (the Vite dev proxy, the dev image's nginx, Caddy in production), and
+ * staying same-origin is what lets the browser store and send the
+ * HttpOnly sign-in cookie. A cross-origin default silently broke sign-in
+ * on any deployment that enabled it outside production. */
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "";
+const BASE_URL = API_BASE_URL;
 
 /** Dispatched on window whenever a read comes back 401 — the session
  * expired or was revoked mid-use — so the sign-in gate can take over
