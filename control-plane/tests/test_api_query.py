@@ -1045,3 +1045,50 @@ async def test_list_policy_decisions_feed__not_capped_at_the_overview_display_si
     body = client.get("/v1/policy-decisions", params={"limit": 20}).json()
 
     assert len(body["decisions"]) == 20
+
+
+async def test_list_events__pagination_does_not_skip_a_server_event_on_a_page_edge(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    """A detection shares its seq with the event it follows. A seq-only
+    cursor ending on that seq would skip the detection on the next page."""
+    await trace_store.upsert_events(
+        [_event(seq=0, event_id="evt_0"), _event(seq=1, event_id="evt_1")]
+    )
+    await trace_store.append_server_event(
+        run_id="run_1",
+        project="research-assistant",
+        after_seq=0,
+        event_id="evt_det",
+        kind="detection.raised",
+        ts=_NOW,
+        payload={"detector": "loop"},
+    )
+
+    seen: list[tuple[int, int, str]] = []
+    cursor: str | None = None
+    while True:
+        params: dict[str, object] = {"limit": 1}
+        if cursor:
+            params["cursor"] = cursor
+        page = client.get("/v1/runs/run_1/events", params=params).json()
+        seen += [(e["seq"], e["sub_seq"], e["event_id"]) for e in page["events"]]
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+
+    assert seen == [(0, 0, "evt_0"), (0, 1, "evt_det"), (1, 0, "evt_1")]
+
+
+async def test_list_events__a_cursor_from_before_sub_seq_still_works(
+    client: TestClient, trace_store: InMemoryTraceStore
+) -> None:
+    from trazo_server.api.cursors import encode_cursor
+
+    await trace_store.upsert_events([_event(seq=0), _event(seq=1, event_id="evt_1")])
+
+    page = client.get(
+        "/v1/runs/run_1/events", params={"cursor": encode_cursor({"seq": 0})}
+    ).json()
+
+    assert [e["seq"] for e in page["events"]] == [1]

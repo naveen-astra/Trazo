@@ -218,3 +218,28 @@ def test_evaluate__rejects_a_malformed_fingerprint(client: TestClient) -> None:
     )
 
     assert response.status_code == 422
+
+
+async def test_evaluate__records_the_decision_right_after_the_sdks_last_event(
+    client: TestClient, opa: FakeOpaClient, trace_store: InMemoryTraceStore
+) -> None:
+    """The SDK reports the seq of the last event it emitted before asking,
+    and the decision is recorded right after it -- never at a seq of its
+    own, which the SDK may already have used for an event in flight."""
+    opa.next_result = {"decision": "allow", "policy_id": "", "reasons": []}
+    body = _request_body()
+    body["run_context"] = {**body["run_context"], "after_seq": 12}
+
+    client.post("/v1/policy/evaluate", json=body, headers=_auth_headers())
+
+    [event] = await trace_store.get_server_events("run_1")
+    assert (event.seq, event.sub_seq) == (12, 1)
+
+
+def test_evaluate__rejects_a_negative_after_seq(client: TestClient) -> None:
+    body = _request_body()
+    body["run_context"] = {**body["run_context"], "after_seq": -1}
+
+    response = client.post("/v1/policy/evaluate", json=body, headers=_auth_headers())
+
+    assert response.status_code == 422

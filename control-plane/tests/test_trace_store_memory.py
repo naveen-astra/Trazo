@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 from trazo_server.store.memory_trace_store import InMemoryTraceStore
 from trazo_server.store.rows import (
+    AppendedEvent,
     DetectionRow,
     EventRow,
     PolicyDecisionRow,
@@ -217,40 +218,124 @@ async def test_trace_store__get_project_events_after_event_id_resumes_correctly(
     ]
 
 
-async def test_trace_store__append_event_assigns_next_seq_after_existing() -> None:
-    store = InMemoryTraceStore()
-    await store.upsert_events([_event(seq=0), _event(seq=1, kind="llm.call")])
-
-    assigned = await store.append_event(
-        run_id="run_1",
-        event_id="evt_detection",
+async def _server_event(
+    store: InMemoryTraceStore,
+    *,
+    after_seq: int | None,
+    event_id: str,
+    run_id: str = "run_1",
+    idempotency_key: str | None = None,
+) -> AppendedEvent:
+    return await store.append_server_event(
+        run_id=run_id,
+        project="research-assistant",
+        after_seq=after_seq,
+        event_id=event_id,
         kind="detection.raised",
         ts=_NOW,
-        fingerprint=None,
         payload={"detector": "loop"},
+        idempotency_key=idempotency_key,
     )
 
-    assert assigned == 2
-    [event] = await store.get_events("run_1", after_seq=1)
-    assert event.seq == 2
-    assert event.kind == "detection.raised"
+
+async def test_trace_store__server_event_attaches_after_the_given_sdk_event() -> None:
+    store = InMemoryTraceStore()
+    await store.upsert_events(
+        [
+            _event(seq=0, event_id="evt_0"),
+            _event(seq=1, event_id="evt_1", kind="llm.call"),
+            _event(seq=2, event_id="evt_2", kind="llm.call"),
+        ]
+    )
+
+    appended = await _server_event(store, after_seq=1, event_id="evt_det")
+
+    assert (appended.seq, appended.sub_seq, appended.created) == (1, 1, True)
+    order = [(e.seq, e.sub_seq, e.event_id) for e in await store.get_events("run_1")]
+    assert order == [
+        (0, 0, "evt_0"),
+        (1, 0, "evt_1"),
+        (1, 1, "evt_det"),
+        (2, 0, "evt_2"),
+    ]
 
 
-async def test_trace_store__append_event_starts_at_zero_for_a_run_with_no_events() -> (
+async def test_trace_store__server_event_never_takes_an_sdk_slot() -> None:
+    """Regression: the SDK numbers its events in the agent's process; a
+    server event that took `max + 1` collided with one still in flight."""
+    store = InMemoryTraceStore()
+    await store.upsert_events([_event(seq=0, event_id="evt_0")])
+    await _server_event(store, after_seq=None, event_id="evt_det")
+
+    await store.upsert_events([_event(seq=1, event_id="evt_1", kind="llm.call")])
+
+    ids = {e.event_id for e in await store.get_events("run_1")}
+    assert ids == {"evt_0", "evt_1", "evt_det"}
+
+
+async def test_trace_store__server_event_defaults_to_the_latest_sdk_event() -> None:
+    store = InMemoryTraceStore()
+    await store.upsert_events(
+        [_event(seq=0, event_id="evt_0"), _event(seq=4, event_id="evt_4")]
+    )
+
+    appended = await _server_event(store, after_seq=None, event_id="evt_det")
+
+    assert (appended.seq, appended.sub_seq) == (4, 1)
+
+
+async def test_trace_store__server_events_under_one_seq_take_successive_slots() -> None:
+    store = InMemoryTraceStore()
+    first = await _server_event(store, after_seq=3, event_id="evt_a")
+    second = await _server_event(store, after_seq=3, event_id="evt_b")
+
+    assert (first.sub_seq, second.sub_seq) == (1, 2)
+
+
+async def test_trace_store__server_event_for_an_unseen_run_creates_a_placeholder() -> (
     None
 ):
     store = InMemoryTraceStore()
 
-    assigned = await store.append_event(
-        run_id="run_new",
-        event_id="evt_1",
-        kind="detection.raised",
-        ts=_NOW,
-        fingerprint=None,
-        payload={},
+    appended = await _server_event(
+        store, after_seq=None, event_id="evt_det", run_id="run_new"
     )
 
-    assert assigned == 0
+    assert (appended.seq, appended.sub_seq) == (0, 1)
+    run = await store.get_run("run_new")
+    assert run is not None and run.framework == "unknown"
+
+
+async def test_trace_store__server_event_is_idempotent_on_its_key() -> None:
+    store = InMemoryTraceStore()
+    first = await _server_event(
+        store, after_seq=0, event_id="evt_a", idempotency_key="k"
+    )
+    again = await _server_event(
+        store, after_seq=0, event_id="evt_b", idempotency_key="k"
+    )
+
+    assert first.created and not again.created
+    assert again.event_id == "evt_a"
+    assert len(await store.get_server_events("run_1")) == 1
+
+
+async def test_trace_store__position_cursor_does_not_skip_a_shared_seq() -> None:
+    store = InMemoryTraceStore()
+    await store.upsert_events(
+        [_event(seq=0, event_id="evt_0"), _event(seq=1, event_id="evt_1")]
+    )
+    await _server_event(store, after_seq=0, event_id="evt_det")
+
+    page_one = await store.get_events("run_1", limit=1)
+    rest = await store.get_events(
+        "run_1",
+        after_seq=page_one[-1].seq,
+        after_sub_seq=page_one[-1].sub_seq,
+        limit=10,
+    )
+
+    assert [e.event_id for e in page_one + rest] == ["evt_0", "evt_det", "evt_1"]
 
 
 async def test_trace_store__insert_detection_then_list_round_trips() -> None:

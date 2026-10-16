@@ -11,7 +11,9 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
+from trazo_server.project_id import derive_project_id
 from trazo_server.store.rows import (
+    AppendedEvent,
     DetectionRow,
     EventRow,
     PolicyDecisionRow,
@@ -28,7 +30,9 @@ class InMemoryTraceStore:
         self._runs: dict[str, RunRow] = {}
         # (run_id, seq) -> EventRow, keyed for the same idempotent-upsert
         # semantics as the real `events` table's PRIMARY KEY (run_id, seq).
-        self._events: dict[tuple[str, int], EventRow] = {}
+        # Keyed like the real table's primary key: (run_id, seq, sub_seq).
+        self._events: dict[tuple[str, int, int], EventRow] = {}
+        self._idempotency: dict[tuple[str, str], tuple[int, int]] = {}
         self._detections: dict[str, DetectionRow] = {}
         self._policy_decisions: dict[str, PolicyDecisionRow] = {}
         self._replay_reports: dict[str, ReplayReportRow] = {}
@@ -58,7 +62,7 @@ class InMemoryTraceStore:
 
     async def upsert_events(self, rows: Sequence[EventRow]) -> None:
         for row in rows:
-            self._events[(row.run_id, row.seq)] = row
+            self._events[(row.run_id, row.seq, row.sub_seq)] = row
 
     async def get_run(self, run_id: str) -> RunRow | None:
         return self._runs.get(run_id)
@@ -88,17 +92,34 @@ class InMemoryTraceStore:
         *,
         kind: str | None = None,
         after_seq: int | None = None,
+        after_sub_seq: int | None = None,
         limit: int = 100,
     ) -> list[EventRow]:
+        def after_cursor(event: EventRow) -> bool:
+            if after_seq is None:
+                return True
+            if after_sub_seq is None:
+                return event.seq > after_seq
+            return (event.seq, event.sub_seq) > (after_seq, after_sub_seq)
+
         rows = [
             event
-            for (event_run_id, _seq), event in self._events.items()
+            for (event_run_id, _seq, _sub), event in self._events.items()
             if event_run_id == run_id
             and (kind is None or event.kind == kind)
-            and (after_seq is None or event.seq > after_seq)
+            and after_cursor(event)
         ]
-        rows.sort(key=lambda event: event.seq)
+        rows.sort(key=lambda event: (event.seq, event.sub_seq))
         return rows[:limit]
+
+    async def get_server_events(self, run_id: str) -> list[EventRow]:
+        rows = [
+            event
+            for (event_run_id, _seq, sub), event in self._events.items()
+            if event_run_id == run_id and sub > 0
+        ]
+        rows.sort(key=lambda event: (event.seq, event.sub_seq))
+        return rows
 
     async def get_project_events(
         self,
@@ -118,7 +139,7 @@ class InMemoryTraceStore:
         )
         rows = [
             event
-            for (event_run_id, _seq), event in self._events.items()
+            for (event_run_id, _seq, _sub), event in self._events.items()
             if (run_ids_in_project is None or event_run_id in run_ids_in_project)
             and (after_event_id is None or event.event_id > after_event_id)
         ]
@@ -137,39 +158,85 @@ class InMemoryTraceStore:
         )
         event_ids = [
             event.event_id
-            for (event_run_id, _seq), event in self._events.items()
+            for (event_run_id, _seq, _sub), event in self._events.items()
             if run_ids_in_project is None or event_run_id in run_ids_in_project
         ]
         return max(event_ids) if event_ids else None
 
-    async def append_event(
+    async def append_server_event(
         self,
         *,
         run_id: str,
+        project: str,
+        after_seq: int | None,
         event_id: str,
         kind: str,
         ts: datetime,
-        fingerprint: str | None,
         payload: dict[str, Any],
-    ) -> int:
-        # No real concurrency in a single-threaded event loop test fake:
-        # this "reservation" is just the current max + 1, computed and
-        # applied in one uninterrupted (no `await` in between) step.
-        existing_seqs = [seq for (rid, seq) in self._events if rid == run_id]
-        next_seq = max(existing_seqs, default=-1) + 1
-        self._events[(run_id, next_seq)] = EventRow(
+        idempotency_key: str | None = None,
+    ) -> AppendedEvent:
+        # Mirrors PostgresTraceStore.append_server_event; single-threaded,
+        # so no lock is needed between the reads and the write below.
+        project_id = derive_project_id(project)
+        self._projects.setdefault(project_id, project)
+        if run_id not in self._runs:
+            self._runs[run_id] = RunRow(
+                run_id=run_id,
+                project_id=project_id,
+                framework="unknown",
+                status="running",
+                started_at=ts,
+                finished_at=None,
+                tags={},
+                totals={},
+            )
+        if idempotency_key is not None:
+            position = self._idempotency.get((run_id, idempotency_key))
+            if position is not None:
+                existing = self._events[(run_id, *position)]
+                return AppendedEvent(
+                    seq=existing.seq,
+                    sub_seq=existing.sub_seq,
+                    event_id=existing.event_id,
+                    created=False,
+                )
+
+        anchor = after_seq
+        if anchor is None:
+            anchor = max(
+                (seq for (rid, seq, sub) in self._events if rid == run_id and sub == 0),
+                default=0,
+            )
+        anchor = max(anchor, 0)
+        sub_seq = (
+            max(
+                (
+                    sub
+                    for (rid, seq, sub) in self._events
+                    if rid == run_id and seq == anchor
+                ),
+                default=0,
+            )
+            + 1
+        )
+        self._events[(run_id, anchor, sub_seq)] = EventRow(
             run_id=run_id,
-            seq=next_seq,
+            seq=anchor,
             event_id=event_id,
             kind=kind,
             ts=ts,
             step_id=None,
             agent_id=None,
-            fingerprint=fingerprint,
+            fingerprint=None,
             payload=payload,
             blobs=[],
+            sub_seq=sub_seq,
         )
-        return next_seq
+        if idempotency_key is not None:
+            self._idempotency[(run_id, idempotency_key)] = (anchor, sub_seq)
+        return AppendedEvent(
+            seq=anchor, sub_seq=sub_seq, event_id=event_id, created=True
+        )
 
     async def insert_detection(self, detection: DetectionRow) -> None:
         self._detections.setdefault(detection.detection_id, detection)

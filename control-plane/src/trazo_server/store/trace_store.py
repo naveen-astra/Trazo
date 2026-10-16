@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from trazo_server.store.rows import (
+    AppendedEvent,
     DetectionRow,
     EventRow,
     PolicyDecisionRow,
@@ -100,9 +101,23 @@ class TraceStore(Protocol):
         *,
         kind: str | None = None,
         after_seq: int | None = None,
+        after_sub_seq: int | None = None,
         limit: int = 100,
     ) -> list[EventRow]:
-        """List one run's events in seq order, optionally filtered."""
+        """List one run's events in (seq, sub_seq) order, optionally filtered.
+
+        ``after_seq`` alone means ``seq > after_seq``. With ``after_sub_seq``
+        too it is a position: events strictly after ``(after_seq,
+        after_sub_seq)``. A cursor that pages through a run must use the
+        position form, or it skips server events that share the boundary
+        ``seq``.
+        """
+        ...
+
+    async def get_server_events(self, run_id: str) -> list[EventRow]:
+        """Every server-originated event of one run (``sub_seq > 0``), in
+        order. Few per run; the live stream re-reads them each poll because
+        one can land behind its cursor."""
         ...
 
     async def get_project_events(
@@ -137,28 +152,38 @@ class TraceStore(Protocol):
         """
         ...
 
-    async def append_event(
+    async def append_server_event(
         self,
         *,
         run_id: str,
+        project: str,
+        after_seq: int | None,
         event_id: str,
         kind: str,
         ts: datetime,
-        fingerprint: str | None,
         payload: dict[str, Any],
-    ) -> int:
-        """Atomically reserve the next seq for ``run_id`` and insert the
-        resulting row; returns the assigned seq.
+        idempotency_key: str | None = None,
+    ) -> AppendedEvent:
+        """Record an event the control plane itself originates
+        (``detection.raised``, ``policy.decision``).
 
-        The *only* legitimate way to mint a seq for an event discovered
-        server-side (``detection.raised``, TRZ-P5-06) — every SDK-recorded
-        event already carries its own seq, assigned client-side by the
-        Recorder's own per-run counter (ARCHITECTURE.md's Policy-path
-        note). A server-side discoverer has no access to that counter, so
-        it must ask the store for the next one and insert atomically in
-        the same transaction — reserving one without immediately writing
-        it would leave a race window for a second concurrent detection on
-        the same run to reserve the identical number.
+        The SDK numbers its own events, in the agent's process, with no
+        coordination with the server (EVENTS.md §1: seq is "assigned by
+        SDK"). So a server event must never take a ``seq`` of its own: the
+        SDK may already have used that number for an event still in flight,
+        and whichever landed second would overwrite the other. Instead the
+        event attaches to the SDK event it follows -- ``after_seq``, or the
+        latest persisted SDK event when that is None -- and takes the next
+        free ``sub_seq`` (1, 2, ...) under it. SDK events are always
+        ``sub_seq = 0``, so the two can never address the same row.
+
+        Creates a placeholder ``runs`` row if ``run.started`` has not been
+        persisted yet (``events.run_id`` is a foreign key); ``run.started``
+        reclaims it when it lands (``upsert_run``'s ``authoritative``).
+
+        ``idempotency_key``, when given, makes the call safe to retry: a
+        second call with the same key returns the first call's row with
+        ``created=False`` instead of writing another.
         """
         ...
 

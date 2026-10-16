@@ -26,7 +26,13 @@ from trazo_server.events import Event, EventAdapter
 from trazo_server.metrics import BUS_DLQ_DEPTH_MESSAGES, BUS_LAG_MESSAGES
 from trazo_server.project_id import derive_project_id
 from trazo_server.store.blob_store import BlobStore
-from trazo_server.store.rows import DetectionRow, EventRow, PolicyDecisionRow, RunRow
+from trazo_server.store.rows import (
+    SERVER_EVENT_KINDS,
+    DetectionRow,
+    EventRow,
+    PolicyDecisionRow,
+    RunRow,
+)
 from trazo_server.store.trace_store import TraceStore
 from trazo_server.topics import EVENTS_STREAM, STORE_WORKER_GROUP
 
@@ -229,7 +235,13 @@ class StoreWorker:
                     reason="schema validation failed",
                 )
                 continue
-            rows.append(await self._offload_and_build_row(event))
+            # A server event's row was already written, durably, by the
+            # path that originated it (TraceStore.append_server_event), at a
+            # position this worker cannot see in the envelope. Writing it
+            # again here from the envelope's `seq` would land on sub_seq 0
+            # -- the SDK's own slot -- and overwrite the agent event there.
+            if event.kind not in SERVER_EVENT_KINDS:
+                rows.append(await self._offload_and_build_row(event))
             await self._apply_rollup(event)
 
         if rows:

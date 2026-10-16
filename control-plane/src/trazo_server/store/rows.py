@@ -23,7 +23,9 @@ class RunRow:
 
 @dataclass(frozen=True)
 class EventRow:
-    """One row of ``events`` (DATABASE.md §2); identity is (run_id, seq)."""
+    """One row of ``events`` (DATABASE.md §2); identity is (run_id, seq,
+    sub_seq). ``sub_seq`` is 0 for every SDK event and 1, 2, ... for a
+    server event attached after the SDK event at ``seq``."""
 
     run_id: str
     seq: int
@@ -35,6 +37,24 @@ class EventRow:
     fingerprint: str | None
     payload: dict[str, Any]
     blobs: list[dict[str, Any]]
+    sub_seq: int = 0
+
+
+# Kinds only the control plane may originate. Ingest rejects them from
+# clients, and the store worker never writes their event rows itself (the
+# originating path already has, durably, before publishing).
+SERVER_EVENT_KINDS: frozenset[str] = frozenset({"detection.raised", "policy.decision"})
+
+
+@dataclass(frozen=True)
+class AppendedEvent:
+    """Where ``TraceStore.append_server_event`` recorded an event, and
+    whether this call created it or found an earlier identical write."""
+
+    seq: int
+    sub_seq: int
+    event_id: str
+    created: bool
 
 
 @dataclass(frozen=True)

@@ -10,6 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from trazo_server.project_id import derive_project_id
 from trazo_server.store.models import (
     detections,
     events,
@@ -19,6 +20,7 @@ from trazo_server.store.models import (
     runs,
 )
 from trazo_server.store.rows import (
+    AppendedEvent,
     DetectionRow,
     EventRow,
     PolicyDecisionRow,
@@ -101,12 +103,13 @@ class PostgresTraceStore:
                 "fingerprint": row.fingerprint,
                 "payload": row.payload,
                 "blobs": row.blobs,
+                "sub_seq": row.sub_seq,
             }
             for row in rows
         ]
         insert_stmt = pg_insert(events).values(values)
         stmt = insert_stmt.on_conflict_do_update(
-            index_elements=[events.c.run_id, events.c.seq],
+            index_elements=[events.c.run_id, events.c.seq, events.c.sub_seq],
             set_={
                 "event_id": insert_stmt.excluded.event_id,
                 "kind": insert_stmt.excluded.kind,
@@ -164,18 +167,36 @@ class PostgresTraceStore:
         *,
         kind: str | None = None,
         after_seq: int | None = None,
+        after_sub_seq: int | None = None,
         limit: int = 100,
     ) -> list[EventRow]:
         stmt = (
             sa.select(events)
             .where(events.c.run_id == run_id)
-            .order_by(events.c.seq)
+            .order_by(events.c.seq, events.c.sub_seq)
             .limit(limit)
         )
         if kind is not None:
             stmt = stmt.where(events.c.kind == kind)
-        if after_seq is not None:
+        if after_seq is not None and after_sub_seq is not None:
+            # A row comparison, so the primary key index serves it.
+            stmt = stmt.where(
+                sa.tuple_(events.c.seq, events.c.sub_seq)
+                > sa.tuple_(sa.literal(after_seq), sa.literal(after_sub_seq))
+            )
+        elif after_seq is not None:
             stmt = stmt.where(events.c.seq > after_seq)
+        async with self._engine.connect() as conn:
+            result = await conn.execute(stmt)
+            fetched = result.mappings().all()
+        return [_event_row_from_mapping(row) for row in fetched]
+
+    async def get_server_events(self, run_id: str) -> list[EventRow]:
+        stmt = (
+            sa.select(events)
+            .where(events.c.run_id == run_id, events.c.sub_seq > 0)
+            .order_by(events.c.seq, events.c.sub_seq)
+        )
         async with self._engine.connect() as conn:
             result = await conn.execute(stmt)
             fetched = result.mappings().all()
@@ -219,58 +240,113 @@ class PostgresTraceStore:
             result = await conn.execute(stmt)
             return result.scalar_one_or_none()
 
-    async def append_event(
+    async def append_server_event(
         self,
         *,
         run_id: str,
+        project: str,
+        after_seq: int | None,
         event_id: str,
         kind: str,
         ts: datetime,
-        fingerprint: str | None,
         payload: dict[str, Any],
-    ) -> int:
+        idempotency_key: str | None = None,
+    ) -> AppendedEvent:
+        project_id = derive_project_id(project)
         async with self._engine.begin() as conn:
-            # Lock the run's own `runs` row (present for every run before
-            # its first event, unlike an events row) rather than the last
-            # events row: locking `ORDER BY seq DESC LIMIT 1 ... FOR
-            # UPDATE` looked equivalent but isn't — when a blocked
-            # transaction's FOR UPDATE wait resolves, Postgres re-checks
-            # only the *same physical row* it originally matched
-            # (EvalPlanQual), it does not re-run the ORDER BY/LIMIT scan.
-            # Since a concurrent insert doesn't modify that row, the
-            # unblocked transaction reads the same stale "last seq" the
-            # first transaction started from, and both assign the same
-            # next_seq -- reproduced by the concurrent-append test as a
-            # duplicate-key error on `events_pkey`. Locking the `runs` row
-            # instead makes every concurrent reservation for this run_id
-            # wait for the whole transaction (lock plus insert plus
-            # commit), so each one's subsequent MAX(seq) read is against
-            # the latest committed state.
+            # Insert-if-absent, never update: an existing row is left
+            # untouched, so this takes no lock on a run that already exists.
+            # Untargeted: `projects` is unique on both project_id and name,
+            # and a conflict on either means the project already exists.
             await conn.execute(
-                sa.select(runs.c.run_id)
-                .where(runs.c.run_id == run_id)
-                .with_for_update()
+                pg_insert(projects)
+                .values(project_id=project_id, name=project)
+                .on_conflict_do_nothing()
             )
-            result = await conn.execute(
-                sa.select(sa.func.max(events.c.seq)).where(events.c.run_id == run_id)
+            await conn.execute(
+                pg_insert(runs)
+                .values(
+                    run_id=run_id,
+                    project_id=project_id,
+                    framework="unknown",
+                    status="running",
+                    started_at=ts,
+                    finished_at=None,
+                    tags={},
+                    totals={},
+                )
+                .on_conflict_do_nothing(index_elements=[runs.c.run_id])
             )
-            last_seq = result.scalar_one_or_none()
-            next_seq = 0 if last_seq is None else last_seq + 1
+            # Serialize server-event allocation per run with an advisory
+            # lock, not `SELECT ... FOR UPDATE` on the runs row. The row lock
+            # conflicted with the KEY SHARE lock that every concurrent SDK
+            # event insert takes for its foreign-key check -- one half of
+            # the deadlock observed on 2026-10-16. Only writers of server
+            # events take this lock, so it cannot cycle with the store
+            # worker.
+            await conn.execute(
+                sa.select(
+                    sa.func.pg_advisory_xact_lock(sa.func.hashtextextended(run_id, 0))
+                )
+            )
+            if idempotency_key is not None:
+                existing = (
+                    await conn.execute(
+                        sa.select(
+                            events.c.seq, events.c.sub_seq, events.c.event_id
+                        ).where(
+                            events.c.run_id == run_id,
+                            events.c.idempotency_key == idempotency_key,
+                        )
+                    )
+                ).one_or_none()
+                if existing is not None:
+                    return AppendedEvent(
+                        seq=existing.seq,
+                        sub_seq=existing.sub_seq,
+                        event_id=existing.event_id,
+                        created=False,
+                    )
+
+            anchor = after_seq
+            if anchor is None:
+                anchor = (
+                    await conn.execute(
+                        sa.select(sa.func.max(events.c.seq)).where(
+                            events.c.run_id == run_id, events.c.sub_seq == 0
+                        )
+                    )
+                ).scalar_one_or_none()
+            # The schema requires seq >= 0, and a governed action always
+            # comes after run.started (seq 0), so 0 is the right floor.
+            anchor = max(anchor or 0, 0)
+            last_sub = (
+                await conn.execute(
+                    sa.select(sa.func.max(events.c.sub_seq)).where(
+                        events.c.run_id == run_id, events.c.seq == anchor
+                    )
+                )
+            ).scalar_one_or_none()
+            sub_seq = (last_sub or 0) + 1
             await conn.execute(
                 events.insert().values(
                     run_id=run_id,
-                    seq=next_seq,
+                    seq=anchor,
+                    sub_seq=sub_seq,
                     event_id=event_id,
                     kind=kind,
                     ts=ts,
                     step_id=None,
                     agent_id=None,
-                    fingerprint=fingerprint,
+                    fingerprint=None,
                     payload=payload,
                     blobs=[],
+                    idempotency_key=idempotency_key,
                 )
             )
-        return next_seq
+        return AppendedEvent(
+            seq=anchor, sub_seq=sub_seq, event_id=event_id, created=True
+        )
 
     async def insert_detection(self, detection: DetectionRow) -> None:
         stmt = (
@@ -439,6 +515,7 @@ def _event_row_from_mapping(row: sa.RowMapping) -> EventRow:
         fingerprint=row["fingerprint"],
         payload=row["payload"],
         blobs=row["blobs"],
+        sub_seq=row["sub_seq"],
     )
 
 

@@ -335,3 +335,57 @@ async def test_submit_replay_report__resubmission_replaces_not_accumulates(
     fetched = client.get("/v1/runs/run_1/replay-report").json()
     assert fetched["boundary_fidelity"] == 1.0
     assert fetched["divergences"] == []
+
+
+@pytest.mark.parametrize(
+    ("kind", "payload"),
+    [
+        (
+            "detection.raised",
+            {
+                "detector": "loop",
+                "severity": "critical",
+                "evidence_event_ids": [],
+                "details": {},
+                "window": {},
+            },
+        ),
+        (
+            "policy.decision",
+            {
+                "policy_id": "cost_cap",
+                "action_ref": {
+                    "fingerprint": "sha256:" + "a" * 64,
+                    "kind": "tool.call",
+                },
+                "decision": "allow",
+                "reasons": [],
+                "eval_latency_ms": 1.0,
+                "mode": "enforce",
+            },
+        ),
+    ],
+)
+async def test_ingest_events__rejects_kinds_only_the_control_plane_records(
+    client: TestClient, bus: InMemoryEventBus, kind: str, payload: dict
+) -> None:
+    """A client could otherwise forge incidents and policy decisions, and
+    write into the position space the server reserves for its own events
+    -- the route to the 2026-10-16 trace corruption from the outside."""
+    response = client.post(
+        "/v1/ingest/events",
+        json={
+            "events": [
+                _sample_event(seq=0),
+                _sample_event(seq=1, kind=kind, payload=payload),
+            ]
+        },
+        headers=_auth_headers(),
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["accepted"] == 1
+    assert [r["index"] for r in body["rejected"]] == [1]
+    assert "recorded by the control plane" in body["rejected"][0]["reason"]
+    assert len(await _published_messages(bus)) == 1

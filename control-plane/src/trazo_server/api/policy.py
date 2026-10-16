@@ -33,8 +33,6 @@ from trazo_server.errors import OpaUnavailableError
 from trazo_server.events import Event, EventAdapter, EventKind, PolicyMode, Sha256Ref
 from trazo_server.metrics import POLICY_EVAL_LATENCY_SECONDS
 from trazo_server.policy.opa_client import OpaClient
-from trazo_server.project_id import derive_project_id
-from trazo_server.store.rows import RunRow
 from trazo_server.store.trace_store import TraceStore
 from trazo_server.topics import EVENTS_STREAM
 from trazo_server.ulid import new_event_id
@@ -54,6 +52,10 @@ class PolicyActionIn(BaseModel):
 class PolicyRunContextIn(BaseModel):
     cost_usd_so_far: float = 0.0
     active_detections: list[str] = Field(default_factory=list)
+    # The seq of the last event the SDK emitted before asking. The decision
+    # is recorded right after it in the run's trace. Optional so an older
+    # SDK keeps working; the store then uses the latest persisted event.
+    after_seq: int | None = Field(default=None, ge=0)
 
 
 class PolicyEvaluateRequest(BaseModel):
@@ -113,43 +115,26 @@ async def evaluate_policy(
         "mode": body.mode,
     }
 
-    # The run row has to exist before its first event: `events.run_id` is a
-    # foreign key, and this endpoint is synchronous while `run.started`
-    # reaches the store asynchronously (SDK -> batch POST -> Redis Streams
-    # -> StoreWorker). For the very first governed action of a run, this
-    # write routinely wins that race -- which used to raise a FK violation,
-    # 500 the endpoint, and make the SDK fail *open*: governance silently
-    # stopped governing exactly when a run was new. Create a placeholder
-    # row so the decision is still recorded; `run.started` reclaims every
-    # creation field when it lands (upsert_run's `authoritative`), so the
-    # placeholder's stand-in framework/timestamp never survives.
-    project_id = derive_project_id(body.project)
-    await trace_store.ensure_project(project_id, body.project)
-    await trace_store.upsert_run(
-        RunRow(
-            run_id=body.run_id,
-            project_id=project_id,
-            framework="unknown",
-            status="running",
-            started_at=ts,
-            finished_at=None,
-            tags={},
-            totals={},
-        )
-    )
-
     # Durable write first (this is what "before responding" means, ADR-006
     # -- the decision is recorded no matter what happens next), then
-    # republished onto the bus so StoreWorker's generic consumption
-    # maintains the policy_decisions projection (TRZ-P6-05) and any live
-    # SSE/dashboard subscriber sees it immediately, mirroring
-    # PersistDetection's identical two-step shape (TRZ-P5-06).
-    seq = await trace_store.append_event(
+    # republished onto the bus so StoreWorker maintains the
+    # policy_decisions projection (TRZ-P6-05) and any live SSE/dashboard
+    # subscriber sees it immediately, mirroring PersistDetection.
+    #
+    # append_server_event also creates the run row if `run.started` has
+    # not reached the store yet. This endpoint is synchronous while
+    # `run.started` arrives asynchronously, so for a run's first governed
+    # action that is the normal case, and a missing row used to 500 here
+    # and make the SDK fail open. The decision attaches after the last
+    # event the SDK emitted before asking (`after_seq`), never at a seq of
+    # its own, which the SDK may already have used for an event in flight.
+    appended = await trace_store.append_server_event(
         run_id=body.run_id,
+        project=body.project,
+        after_seq=body.run_context.after_seq,
         event_id=event_id,
         kind="policy.decision",
         ts=ts,
-        fingerprint=None,
         payload=payload,
     )
     envelope: Event = EventAdapter.validate_python(
@@ -158,7 +143,7 @@ async def evaluate_policy(
             "event_id": event_id,
             "run_id": body.run_id,
             "project": body.project,
-            "seq": seq,
+            "seq": appended.seq,
             "ts": ts.isoformat(),
             "kind": "policy.decision",
             "payload": payload,

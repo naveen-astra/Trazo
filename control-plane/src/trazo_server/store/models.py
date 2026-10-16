@@ -58,8 +58,26 @@ events = sa.Table(
     sa.Column("fingerprint", sa.Text),
     sa.Column("payload", JSONB, nullable=False),
     sa.Column("blobs", JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
-    sa.PrimaryKeyConstraint("run_id", "seq"),
-    sa.Index("events_kind", "run_id", "kind", "seq"),
+    # 0 for every SDK event; 1, 2, ... for server events attached after the
+    # SDK event at `seq` (migration 0003 explains why).
+    sa.Column("sub_seq", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("idempotency_key", sa.Text, nullable=True),
+    sa.PrimaryKeyConstraint("run_id", "seq", "sub_seq"),
+    sa.Index("events_kind", "run_id", "kind", "seq", "sub_seq"),
+    sa.Index(
+        "events_idempotency",
+        "run_id",
+        "idempotency_key",
+        unique=True,
+        postgresql_where=sa.text("idempotency_key IS NOT NULL"),
+    ),
+    sa.Index(
+        "events_server",
+        "run_id",
+        "seq",
+        "sub_seq",
+        postgresql_where=sa.text("sub_seq > 0"),
+    ),
     sa.Index(
         "events_fingerprint",
         "fingerprint",

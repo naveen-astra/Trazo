@@ -20,8 +20,13 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from trazo_server.api import live as live_module
 from trazo_server.api.deps import get_trace_store
-from trazo_server.api.live import stream_project_events, stream_run_events
+from trazo_server.api.live import (
+    parse_resume_position,
+    stream_project_events,
+    stream_run_events,
+)
 from trazo_server.api.projects import resolve_project_id
 from trazo_server.app import create_app
 from trazo_server.config import Settings
@@ -88,22 +93,26 @@ async def test_stream_run_events__yields_events_in_order_stops_at_finished() -> 
     store = InMemoryTraceStore()
     await store.upsert_events(
         [
-            _event(seq=0, kind="run.started"),
-            _event(seq=1, kind="step.started"),
-            _event(seq=2, kind="run.finished"),
+            _event(seq=0, event_id="evt_0", kind="run.started"),
+            _event(seq=1, event_id="evt_1", kind="step.started"),
+            _event(seq=2, event_id="evt_2", kind="run.finished"),
         ]
     )
 
     chunks = await _collect(
         stream_run_events(
-            store, "run_1", after_seq=None, is_disconnected=_never_disconnected
+            store,
+            "run_1",
+            after=None,
+            is_disconnected=_never_disconnected,
+            late_event_grace=0,
         )
     )
 
     assert len(chunks) == 3
-    assert chunks[0].startswith("id: 0\ndata: ")
+    assert chunks[0].startswith("id: 0.0\ndata: ")
     assert '"kind":"run.started"' in chunks[0]
-    assert chunks[2].startswith("id: 2\ndata: ")
+    assert chunks[2].startswith("id: 2.0\ndata: ")
     assert '"kind":"run.finished"' in chunks[2]
 
 
@@ -111,15 +120,19 @@ async def test_stream_run_events__resumes_from_last_event_id() -> None:
     store = InMemoryTraceStore()
     await store.upsert_events(
         [
-            _event(seq=0, kind="run.started"),
-            _event(seq=1, kind="step.started"),
-            _event(seq=2, kind="run.finished"),
+            _event(seq=0, event_id="evt_0", kind="run.started"),
+            _event(seq=1, event_id="evt_1", kind="step.started"),
+            _event(seq=2, event_id="evt_2", kind="run.finished"),
         ]
     )
 
     chunks = await _collect(
         stream_run_events(
-            store, "run_1", after_seq=0, is_disconnected=_never_disconnected
+            store,
+            "run_1",
+            after=(0, 0),
+            is_disconnected=_never_disconnected,
+            late_event_grace=0,
         )
     )
 
@@ -135,13 +148,153 @@ async def test_stream_run_events__stops_when_client_disconnects() -> None:
         stream_run_events(
             store,
             "run_1",
-            after_seq=None,
+            after=None,
             is_disconnected=_DisconnectAfterN(2),
             poll_interval=0.01,
         )
     )
 
     assert chunks == []
+
+
+async def _detection(
+    store: InMemoryTraceStore, *, after_seq: int, event_id: str
+) -> None:
+    await store.append_server_event(
+        run_id="run_1",
+        project="research-assistant",
+        after_seq=after_seq,
+        event_id=event_id,
+        kind="detection.raised",
+        ts=_NOW,
+        payload={"detector": "loop"},
+    )
+
+
+async def test_stream_run_events__sends_a_server_event_written_behind_the_cursor() -> (
+    None
+):
+    """A detection attaches right after the event that caused it, but is
+    written later -- after the stream has already moved past that point. A
+    cursor alone never goes back for it."""
+    store = InMemoryTraceStore()
+    await store.upsert_events(
+        [
+            _event(seq=0, event_id="evt_0", kind="run.started"),
+            _event(seq=1, event_id="evt_1", kind="tool.call"),
+            _event(seq=2, event_id="evt_2", kind="step.started"),
+        ]
+    )
+    stream = stream_run_events(
+        store,
+        "run_1",
+        after=None,
+        is_disconnected=_never_disconnected,
+        poll_interval=0.01,
+        late_event_grace=0,
+    )
+    first_three = [await anext(stream) for _ in range(3)]
+    assert "step.started" in first_three[2]
+
+    # The detector, reacting to seq 1, records its detection now.
+    await _detection(store, after_seq=1, event_id="evt_det")
+    await store.upsert_events([_event(seq=3, event_id="evt_3", kind="run.finished")])
+
+    rest = await _collect(stream)
+
+    detection_chunks = [c for c in rest if "detection.raised" in c]
+    assert len(detection_chunks) == 1
+    # Its SSE id is the stream's cursor, not the detection's own (earlier)
+    # position, so a reconnect does not rewind.
+    assert detection_chunks[0].startswith("id: 2.0\n")
+    assert any("run.finished" in c for c in rest)
+
+
+async def test_stream_run_events__waits_for_a_detection_raised_after_the_run_ends() -> (
+    None
+):
+    store = InMemoryTraceStore()
+    await store.upsert_events(
+        [
+            _event(seq=0, event_id="evt_0", kind="run.started"),
+            _event(seq=1, event_id="evt_1", kind="run.finished"),
+        ]
+    )
+    stream = stream_run_events(
+        store,
+        "run_1",
+        after=None,
+        is_disconnected=_never_disconnected,
+        poll_interval=0.01,
+        late_event_grace=2.0,
+    )
+    assert "run.started" in await anext(stream)
+    assert "run.finished" in await anext(stream)
+
+    await _detection(store, after_seq=0, event_id="evt_late")
+
+    late = await asyncio.wait_for(anext(stream), timeout=2.0)
+    assert "evt_late" in late
+
+
+async def test_stream_run_events__sends_each_server_event_once() -> None:
+    store = InMemoryTraceStore()
+    await store.upsert_events([_event(seq=0, event_id="evt_0", kind="run.started")])
+    await _detection(store, after_seq=0, event_id="evt_det")
+    await store.upsert_events([_event(seq=1, event_id="evt_1", kind="run.finished")])
+
+    chunks = await _collect(
+        stream_run_events(
+            store,
+            "run_1",
+            after=None,
+            is_disconnected=_never_disconnected,
+            poll_interval=0.01,
+            late_event_grace=0.05,
+        )
+    )
+
+    assert sum("evt_det" in chunk for chunk in chunks) == 1
+    kinds = [
+        k
+        for c in chunks
+        for k in ("run.started", "detection", "run.finished")
+        if k in c
+    ]
+    assert kinds == ["run.started", "detection", "run.finished"]
+
+
+async def test_stream_run_events__resume_skips_server_events_already_sent() -> None:
+    store = InMemoryTraceStore()
+    await store.upsert_events([_event(seq=0, event_id="evt_0", kind="run.started")])
+    await _detection(store, after_seq=0, event_id="evt_det")
+    await store.upsert_events([_event(seq=1, event_id="evt_1", kind="run.finished")])
+
+    chunks = await _collect(
+        stream_run_events(
+            store,
+            "run_1",
+            after=(0, 1),  # resuming just after the detection
+            is_disconnected=_never_disconnected,
+            late_event_grace=0,
+        )
+    )
+
+    assert [("evt_det" in c, "run.finished" in c) for c in chunks] == [(False, True)]
+
+
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [
+        (None, None),
+        ("", None),
+        ("7", (7, None)),
+        ("7.2", (7, 2)),
+        ("garbage", None),
+    ],
+)
+def test_parse_resume_position(header: str | None, expected: object) -> None:
+    assert parse_resume_position(header) == expected
 
 
 async def test_stream_project_events__spans_runs_ordered_by_event_id() -> None:
@@ -280,7 +433,12 @@ def trace_store() -> InMemoryTraceStore:
 
 
 @pytest.fixture
-def client(tmp_path: Path, trace_store: InMemoryTraceStore) -> Iterator[TestClient]:
+def client(
+    tmp_path: Path,
+    trace_store: InMemoryTraceStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[TestClient]:
+    monkeypatch.setattr(live_module, "LATE_EVENT_GRACE_SECONDS", 0.0)
     settings = Settings(
         # Both workers off - see conftest.py and test_api_query.py: a real
         # worker against CI's live Redis blocks TestClient teardown.

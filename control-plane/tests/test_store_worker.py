@@ -472,3 +472,43 @@ async def test_store_worker__reclaims_even_while_every_poll_fails(
         await task
 
     assert bus.reclaim_calls > 0, "reclaim never ran while polls were failing"
+
+
+async def test_store_worker__never_writes_a_server_event_row_itself(
+    tmp_path: Path,
+) -> None:
+    """A server event's row was already written, at (seq, sub_seq >= 1), by
+    the path that originated it. Writing it again from the envelope's seq
+    would land on sub_seq 0 -- the SDK's own slot -- and overwrite the
+    agent event there."""
+    bus = InMemoryEventBus()
+    trace_store = InMemoryTraceStore()
+    blob_store = FilesystemBlobStore(tmp_path)
+    await _publish(
+        bus,
+        _event(event_id="evt_sdk_0", run_id="run_x", project="proj_x", seq=0),
+        _event(
+            event_id="evt_detection_1",
+            run_id="run_x",
+            project="proj_x",
+            seq=0,  # attached after evt_sdk_0, as append_server_event records it
+            kind="detection.raised",
+            payload={
+                "detector": "loop",
+                "severity": "warn",
+                "evidence_event_ids": [],
+                "details": {},
+                "window": {},
+            },
+        ),
+    )
+
+    worker = _make_worker(bus, trace_store, blob_store)
+    await worker.ensure_group()
+    await worker.poll_once(count=20, block_ms=0)
+
+    [stored] = await trace_store.get_events("run_x")
+    assert stored.event_id == "evt_sdk_0"
+    assert [d.detection_id for d in await trace_store.list_detections("run_x")] == [
+        "det_detection_1"
+    ]

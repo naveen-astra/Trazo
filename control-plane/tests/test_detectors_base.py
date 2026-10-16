@@ -180,3 +180,18 @@ def test_as_summary__is_json_safe() -> None:
     window.record(_llm_call(seq=0, cost_usd=1.0, tokens_in=1, tokens_out=1))
 
     json.dumps(window.as_summary())  # must not raise
+
+
+def test_record__counts_a_redelivered_event_once() -> None:
+    """A redelivered event (bus reclaim after a failed attempt) must not be
+    folded in twice: the totals are cumulative for the rest of the run, so
+    a double count inflates cost and can raise a false budget detection."""
+    window = RunWindow("run_1")
+    call = _llm_call(seq=0, cost_usd=0.5, tokens_in=10, tokens_out=5)
+
+    assert window.record(call) is True
+    assert window.record(call) is False
+
+    assert window.cost_usd_total == 0.5
+    assert window.tokens_total == 15
+    assert len(window.recent_boundaries) == 1

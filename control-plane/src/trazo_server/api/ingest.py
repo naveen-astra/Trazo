@@ -24,7 +24,7 @@ from trazo_server.bus.protocol import EventBus
 from trazo_server.events import EventAdapter
 from trazo_server.metrics import INGEST_BLOBS_TOTAL, INGEST_EVENTS_TOTAL
 from trazo_server.store.blob_store import BlobStore
-from trazo_server.store.rows import ReplayReportRow
+from trazo_server.store.rows import SERVER_EVENT_KINDS, ReplayReportRow
 from trazo_server.store.trace_store import TraceStore
 from trazo_server.topics import EVENTS_STREAM
 
@@ -76,6 +76,20 @@ async def ingest_events(
             event = EventAdapter.validate_python(raw_event)
         except ValidationError as exc:
             rejected.append(RejectedEvent(index=index, reason=_first_error(exc)))
+            INGEST_EVENTS_TOTAL.labels(result="rejected").inc()
+            continue
+        # Only the control plane originates these. Accepting them from a
+        # client would let it forge incidents and policy decisions, and
+        # write into the per-run position space the server reserves for
+        # its own events (TraceStore.append_server_event).
+        if event.kind in SERVER_EVENT_KINDS:
+            rejected.append(
+                RejectedEvent(
+                    index=index,
+                    reason=f"kind: {event.kind} is recorded by the control plane, "
+                    "not accepted from clients",
+                )
+            )
             INGEST_EVENTS_TOTAL.labels(result="rejected").inc()
             continue
         encoded = EventAdapter.dump_json(event, by_alias=True, exclude_none=True)

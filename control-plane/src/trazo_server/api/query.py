@@ -58,6 +58,10 @@ class RunsPage(BaseModel):
 class EventOut(BaseModel):
     run_id: str
     seq: int
+    # 0 for an SDK event; 1, 2, ... for a server event (a detection or a
+    # policy decision) recorded right after the SDK event at `seq`. Order
+    # by (seq, sub_seq); event_id is the unique key.
+    sub_seq: int = 0
     event_id: str
     kind: str
     ts: str
@@ -312,6 +316,7 @@ def _event_out(event: EventRow) -> EventOut:
     return EventOut(
         run_id=event.run_id,
         seq=event.seq,
+        sub_seq=event.sub_seq,
         event_id=event.event_id,
         kind=event.kind,
         ts=event.ts.isoformat(),
@@ -331,10 +336,13 @@ def _decode_runs_cursor(cursor: str) -> tuple[datetime, str]:
         raise InvalidCursorError(f"invalid cursor: {cursor!r}") from exc
 
 
-def _decode_events_cursor(cursor: str) -> int:
+def _decode_events_cursor(cursor: str) -> tuple[int, int | None]:
+    """A position (seq, sub_seq). Cursors issued before sub_seq existed
+    carry only seq; those keep their old meaning (seq > cursor)."""
     decoded = decode_cursor(cursor)
     try:
-        return int(decoded["seq"])
+        sub_seq = decoded.get("sub_seq")
+        return int(decoded["seq"]), None if sub_seq is None else int(sub_seq)
     except (KeyError, ValueError, TypeError) as exc:
         raise InvalidCursorError(f"invalid cursor: {cursor!r}") from exc
 
@@ -396,23 +404,31 @@ async def list_events(
     cursor: str | None = None,
 ) -> EventsPage:
     limit = _clamp_limit(limit)
-    cursor_seq: int | None = None
+    position: tuple[int, int | None] | None = None
     if cursor is not None:
         try:
-            cursor_seq = _decode_events_cursor(cursor)
+            position = _decode_events_cursor(cursor)
         except InvalidCursorError as exc:
             raise ProblemDetailsError(
                 status=400, title="Invalid Cursor", detail=str(exc)
             ) from exc
-
-    bounds = [v for v in (after_seq, cursor_seq) if v is not None]
-    effective_after_seq = max(bounds) if bounds else None
+    if after_seq is not None and (position is None or after_seq > position[0]):
+        # `after_seq` is the coarse, seq-only filter (seq > after_seq).
+        position = (after_seq, None)
 
     fetched = await store.get_events(
-        run_id, kind=kind, after_seq=effective_after_seq, limit=limit + 1
+        run_id,
+        kind=kind,
+        after_seq=None if position is None else position[0],
+        after_sub_seq=None if position is None else position[1],
+        limit=limit + 1,
     )
     page, has_more = fetched[:limit], len(fetched) > limit
-    next_cursor = encode_cursor({"seq": page[-1].seq}) if has_more and page else None
+    next_cursor = (
+        encode_cursor({"seq": page[-1].seq, "sub_seq": page[-1].sub_seq})
+        if has_more and page
+        else None
+    )
 
     return EventsPage(events=[_event_out(e) for e in page], next_cursor=next_cursor)
 
@@ -986,15 +1002,20 @@ async def _all_events(store: TraceStore, run_id: str) -> list[EventRow]:
     internally so this works the same against Postgres (fetch-limited)
     and the in-memory fake."""
     events: list[EventRow] = []
-    after_seq: int | None = None
+    position: tuple[int, int] | None = None
     while True:
         page = await store.get_events(
-            run_id, after_seq=after_seq, limit=_BUNDLE_PAGE_SIZE
+            run_id,
+            after_seq=None if position is None else position[0],
+            after_sub_seq=None if position is None else position[1],
+            limit=_BUNDLE_PAGE_SIZE,
         )
         if not page:
             break
         events.extend(page)
-        after_seq = page[-1].seq
+        # A position, not a seq: a seq-only cursor would skip any server
+        # event sharing the page's last seq.
+        position = (page[-1].seq, page[-1].sub_seq)
         if len(page) < _BUNDLE_PAGE_SIZE:
             break
     return events

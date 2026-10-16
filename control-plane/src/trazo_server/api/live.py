@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Annotated, Any
 
@@ -34,12 +35,20 @@ from trazo_server.store.trace_store import TraceStore
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_viewer)])
 
 POLL_INTERVAL_SECONDS = 0.5
+# How long a per-run stream stays open after `run.finished`. Detections are
+# raised by a separate worker and can land a moment after the run ends --
+# measured at 0.1-2.3 s on the demo stack -- and closing on run.finished
+# alone dropped every one of them.
+LATE_EVENT_GRACE_SECONDS = 3.0
+
+Position = tuple[int, int]
 
 
 def _event_out(event: EventRow) -> dict[str, Any]:
     return {
         "run_id": event.run_id,
         "seq": event.seq,
+        "sub_seq": event.sub_seq,
         "event_id": event.event_id,
         "kind": event.kind,
         "ts": event.ts.isoformat(),
@@ -60,28 +69,94 @@ def _sse_message(event_id: str, data: dict[str, Any]) -> str:
     return f"id: {event_id}\ndata: {body}\n\n"
 
 
+def _format_position(position: Position | None) -> str:
+    return "" if position is None else f"{position[0]}.{position[1]}"
+
+
+def parse_resume_position(last_event_id: str | None) -> tuple[int, int | None] | None:
+    """An SSE ``Last-Event-ID``: ``"<seq>.<sub_seq>"``, or a bare ``"<seq>"``
+    from a client connected before sub_seq existed. Anything else restarts
+    the stream from the beginning rather than failing the request."""
+    if not last_event_id:
+        return None
+    head, _, tail = last_event_id.partition(".")
+    try:
+        return int(head), (int(tail) if tail else None)
+    except ValueError:
+        return None
+
+
 async def stream_run_events(
     store: TraceStore,
     run_id: str,
     *,
-    after_seq: int | None,
+    after: tuple[int, int | None] | None,
     is_disconnected: Callable[[], Awaitable[bool]],
     poll_interval: float = POLL_INTERVAL_SECONDS,
+    late_event_grace: float = LATE_EVENT_GRACE_SECONDS,
+    clock: Callable[[], float] = time.monotonic,
 ) -> AsyncIterator[str]:
     """Yields SSE messages for one run's events, oldest first, resuming
-    from ``after_seq``. Returns (closes the stream) once ``run.finished``
-    is observed, or the client disconnects."""
-    last_seq = after_seq
+    after ``after``. Closes ``late_event_grace`` seconds after
+    ``run.finished``, or when the client disconnects.
+
+    Two reads per poll. Events after the cursor, in (seq, sub_seq) order,
+    are the bulk of it. But a server event (a detection, a policy decision)
+    attaches right after the agent event that caused it, and is often
+    written *after* the stream has already moved past that point, so a
+    cursor alone would never send it. Each poll therefore also re-reads
+    the run's server events -- a handful per run -- and sends any not yet
+    seen. Every message's SSE id is the stream's current cursor, so a
+    reconnect resumes from the right place whichever kind it was.
+    """
+    cursor: tuple[int, int | None] | None = after
+    sent_server_ids: set[str] = set()
+    finished_at: float | None = None
+
+    if after is not None:
+        # Resuming: server events at or behind the resume point were sent
+        # on the previous connection.
+        resume = (after[0], after[1] if after[1] is not None else 2**31)
+        for event in await store.get_server_events(run_id):
+            if (event.seq, event.sub_seq) <= resume:
+                sent_server_ids.add(event.event_id)
+
     while True:
         if await is_disconnected():
             return
-        events = await store.get_events(run_id, after_seq=last_seq, limit=100)
+        sent_any = False
+
+        events = await store.get_events(
+            run_id,
+            after_seq=None if cursor is None else cursor[0],
+            after_sub_seq=None if cursor is None else cursor[1],
+            limit=100,
+        )
         for event in events:
-            last_seq = event.seq
-            yield _sse_message(str(event.seq), _event_out(event))
-            if event.kind == "run.finished":
-                return
-        if not events:
+            cursor = (event.seq, event.sub_seq)
+            if event.sub_seq > 0:
+                if event.event_id in sent_server_ids:
+                    continue
+                sent_server_ids.add(event.event_id)
+            yield _sse_message(_format_position(cursor), _event_out(event))
+            sent_any = True
+            if event.kind == "run.finished" and finished_at is None:
+                finished_at = clock()
+
+        for event in await store.get_server_events(run_id):
+            if event.event_id in sent_server_ids:
+                continue
+            sent_server_ids.add(event.event_id)
+            id_position = cursor if cursor is not None else (event.seq, event.sub_seq)
+            yield _sse_message(
+                _format_position((id_position[0], id_position[1] or 0)),
+                _event_out(event),
+            )
+            sent_any = True
+
+        if finished_at is not None and clock() - finished_at >= late_event_grace:
+            return
+        if not sent_any:
             await asyncio.sleep(poll_interval)
 
 
@@ -141,8 +216,7 @@ async def live_run(
     request: Request,
     store: Annotated[TraceStore, Depends(get_trace_store)],
 ) -> StreamingResponse:
-    last_event_id = request.headers.get("last-event-id")
-    after_seq = int(last_event_id) if last_event_id else None
+    after = parse_resume_position(request.headers.get("last-event-id"))
 
     async def _generator() -> AsyncIterator[str]:
         SSE_CLIENTS.labels(endpoint="runs").inc()
@@ -150,8 +224,11 @@ async def live_run(
             async for chunk in stream_run_events(
                 store,
                 run_id,
-                after_seq=after_seq,
+                after=after,
                 is_disconnected=request.is_disconnected,
+                # Read at call time, not bound as a default, so it is
+                # adjustable (tests shorten it).
+                late_event_grace=LATE_EVENT_GRACE_SECONDS,
             ):
                 yield chunk
         finally:

@@ -70,11 +70,22 @@ class RunWindow:
         self.cost_usd_total = 0.0
         self.tokens_total = 0
         self.step_count = 0
+        # Every event_id already folded in. A redelivered event (bus reclaim
+        # after a failed attempt) must not be counted twice: the totals
+        # here are cumulative, so a double count would inflate cost and
+        # step totals for the rest of the run. One string per event, and a
+        # window only lives for its run.
+        self._recorded_event_ids: set[str] = set()
 
-    def record(self, event: Event) -> None:
+    def record(self, event: Event) -> bool:
         """Fold one event into the rolling state. Called for *every*
         event, before dispatching to detectors — a detector always sees
-        the window as of (and including) the event it's judging."""
+        the window as of (and including) the event it's judging.
+
+        Returns False, and changes nothing, for an event already recorded."""
+        if event.event_id in self._recorded_event_ids:
+            return False
+        self._recorded_event_ids.add(event.event_id)
         if event.kind in _BOUNDARY_KINDS:
             self.recent_boundaries.append(
                 BoundaryRecord(
@@ -94,6 +105,7 @@ class RunWindow:
         if event.kind == "step.finished":
             self.recent_state_hashes.append(event.payload.state_after_hash)
             self.step_count += 1
+        return True
 
     def as_summary(self) -> dict[str, Any]:
         """A JSON-safe snapshot for ``Detection.window`` — evidence
