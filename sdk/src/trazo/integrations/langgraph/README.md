@@ -25,8 +25,8 @@ change, not Trazo's — fix it in your graph:
 ```python
 from langchain_core.runnables import RunnableConfig
 
-def node(state: MyState, config: RunnableConfig) -> dict[str, Any]:
-    ...
+
+def node(state: MyState, config: RunnableConfig) -> dict[str, Any]: ...
 ```
 
 ## How it hooks (why, not just what)
