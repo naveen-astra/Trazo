@@ -99,6 +99,11 @@ class _SeqCounter:
             self._value += 1
             return self._value
 
+    def current(self) -> int:
+        """The last seq handed out, or -1 before the first."""
+        with self._lock:
+            return self._value
+
 
 class RunTotals:
     """Thread-safe running tallies for ``run.finished.totals``, fed by
@@ -160,6 +165,17 @@ class RunContext:
 
     def next_seq(self) -> int:
         return self._seq_counter.next()
+
+    @property
+    def last_seq(self) -> int | None:
+        """The seq of the last event this run emitted, or None if none yet.
+
+        Sent with each policy check so the control plane can record its
+        decision right after that event in the trace (the server never
+        numbers an event in this counter's space itself).
+        """
+        value = self._seq_counter.current()
+        return None if value < 0 else value
 
 
 _run_context_var: contextvars.ContextVar[RunContext | None] = contextvars.ContextVar(

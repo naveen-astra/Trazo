@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from trazo.core.replay_bundle import InvalidBundleError, ReplayBundle
+from trazo.core.replay_bundle import InvalidBundleError, RecordedEvent, ReplayBundle
 
 _MANIFEST = {
     "schema": "trazo.replay-bundle.v1",
@@ -101,3 +101,17 @@ def test_parse_ndjson__event_count_mismatch_raises() -> None:
 
     with pytest.raises(InvalidBundleError, match="manifest declares 5"):
         ReplayBundle.parse_ndjson(data)
+
+
+def test_recorded_event__reads_sub_seq_and_defaults_it_for_older_bundles() -> None:
+    base = {
+        "run_id": "run_1",
+        "seq": 3,
+        "event_id": "evt_1",
+        "kind": "detection.raised",
+        "ts": "2026-01-01T00:00:00Z",
+        "payload": {},
+    }
+
+    assert RecordedEvent.from_dict({**base, "sub_seq": 2}).sub_seq == 2
+    assert RecordedEvent.from_dict(base).sub_seq == 0

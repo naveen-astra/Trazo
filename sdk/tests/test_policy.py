@@ -255,6 +255,33 @@ def test_check__request_body_matches_the_api_contract() -> None:
     assert body["action"]["projected_cost_usd"] == 0.4
     assert body["action"]["fingerprint"].startswith("sha256:")
     assert body["run_context"]["active_detections"] == []
+    assert body["run_context"]["after_seq"] is None  # nothing emitted yet
+
+
+def test_check__reports_the_last_emitted_seq_so_the_decision_lands_after_it() -> None:
+    """The control plane records the decision right after this event in the
+    run's trace; it never numbers an event in the SDK's seq space itself."""
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json={"decision": "allow"})
+
+    hook = _hook(handler, mode=PolicyMode.ENFORCE)
+    with run_scope("proj"):
+        ctx = current_run_context()
+        assert ctx is not None
+        for _ in range(3):
+            ctx.next_seq()  # seqs 0, 1, 2 emitted
+        hook.check(
+            kind="tool.call",
+            tool_name="send_email",
+            args={},
+            side_effect_class="external",
+        )
+
+    [body] = seen
+    assert body["run_context"]["after_seq"] == 2
 
 
 def test_check__custom_scope_governs_additional_side_effect_classes() -> None:

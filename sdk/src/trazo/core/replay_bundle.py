@@ -38,6 +38,10 @@ class RecordedEvent:
     fingerprint: str | None
     payload: dict[str, Any]
     blobs: list[dict[str, Any]]
+    # 0 for an event the SDK recorded; 1, 2, ... for an event the control
+    # plane recorded right after the one at `seq` (a detection, a policy
+    # decision). Absent from bundles served before it existed.
+    sub_seq: int = 0
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RecordedEvent:
@@ -52,6 +56,7 @@ class RecordedEvent:
             fingerprint=data.get("fingerprint"),
             payload=data["payload"],
             blobs=data.get("blobs", []),
+            sub_seq=data.get("sub_seq", 0),
         )
 
 

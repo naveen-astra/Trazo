@@ -168,6 +168,7 @@ class PolicyHook:
                 side_effect_class=side_effect_class,
                 projected_cost_usd=projected_cost_usd,
                 cost_usd_so_far=cost_usd_so_far,
+                after_seq=ctx.last_seq,
             )
             self._cache[cache_key] = (decision, policy_id, reasons)
 
@@ -185,8 +186,9 @@ class PolicyHook:
         side_effect_class: str,
         projected_cost_usd: float,
         cost_usd_so_far: float,
+        after_seq: int | None = None,
     ) -> tuple[str, str, list[str]]:
-        body = {
+        body: dict[str, Any] = {
             "run_id": run_id,
             "project": project,
             "mode": self.mode.value,
@@ -200,6 +202,8 @@ class PolicyHook:
             "run_context": {
                 "cost_usd_so_far": cost_usd_so_far,
                 "active_detections": [],
+                # Where the decision belongs in this run's trace.
+                "after_seq": after_seq,
             },
         }
         try:
