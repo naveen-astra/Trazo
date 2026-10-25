@@ -111,13 +111,25 @@ class DetectorWorker:
         running = await self._trace_store.list_runs(status="running", limit=1000)
         for run in running:
             window = RunWindow(run.run_id)
-            rows = await self._trace_store.get_events(
-                run.run_id, limit=self._window_rebuild_size
-            )
-            for row in rows:
-                event = _event_row_to_event(run, row)
-                if event is not None:
-                    window.record(event)
+            # Every event, a page at a time: the window's cost and token
+            # totals are cumulative for the whole run, so reading only the
+            # first page (as this once did) under-counted any longer run
+            # and could hide a budget breach after a restart.
+            position: tuple[int, int] | None = None
+            while True:
+                rows = await self._trace_store.get_events(
+                    run.run_id,
+                    after_seq=None if position is None else position[0],
+                    after_sub_seq=None if position is None else position[1],
+                    limit=self._window_rebuild_size,
+                )
+                for row in rows:
+                    event = _event_row_to_event(run, row)
+                    if event is not None:
+                        window.record(event)
+                if len(rows) < self._window_rebuild_size:
+                    break
+                position = (rows[-1].seq, rows[-1].sub_seq)
             self._windows[run.run_id] = window
         return len(running)
 

@@ -308,3 +308,66 @@ async def test_detector_worker__run_forever_exits_when_cancelled_mid_poll() -> N
 
     with pytest.raises(asyncio.CancelledError):
         await asyncio.wait_for(task, timeout=1.0)
+
+
+async def test_detector_worker__rebuild_folds_in_a_long_runs_whole_history() -> None:
+    """The window's cost and token totals are cumulative for the whole run,
+    so a rebuild must read every event, not just the first page. It used to
+    read only the first 200, so after a restart a long run's spend came out
+    low and the budget detector could miss it."""
+    trace_store = InMemoryTraceStore()
+    await trace_store.ensure_project("proj_1", "proj")
+    await trace_store.upsert_run(
+        RunRow(
+            run_id=_RUN_ID,
+            project_id="proj_1",
+            framework="langgraph",
+            status="running",
+            started_at=_NOW,
+            finished_at=None,
+            tags={},
+            totals={},
+        )
+    )
+    calls = 250
+    await trace_store.upsert_events(
+        [
+            EventRow(
+                run_id=_RUN_ID,
+                seq=seq,
+                event_id=f"evt_{seq:04d}",
+                kind="llm.call",
+                ts=_NOW,
+                step_id=None,
+                agent_id=None,
+                fingerprint=f"sha256:{'a' * 64}",
+                payload={
+                    "provider": "fixture",
+                    "model": "fixture-v1",
+                    "params": {},
+                    "messages_in": {},
+                    "response": "hi",
+                    "tokens_in": 1,
+                    "tokens_out": 1,
+                    "cost_usd": 1.0,
+                    "latency_ms": 1.0,
+                },
+                blobs=[],
+            )
+            for seq in range(calls)
+        ]
+    )
+    worker = DetectorWorker(
+        bus=InMemoryEventBus(),
+        trace_store=trace_store,
+        detectors=[_RecordingDetector()],
+        consumer_name="w1",
+    )
+
+    await worker.rebuild_running_windows()
+
+    window = worker._windows[_RUN_ID]
+    assert window.cost_usd_total == calls * 1.0
+    assert window.tokens_total == calls * 2
+    # The ring buffers end on the run's latest boundaries.
+    assert window.recent_boundaries[-1].event_id == f"evt_{calls - 1:04d}"
