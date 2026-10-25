@@ -31,6 +31,7 @@ hitting.
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -40,13 +41,28 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_shared"))
 from cassette import Cassette, request_key
 from crewai.llms.base_llm import BaseLLM, LLMCallType, llm_call_context
 from live_llm import complete as live_complete
+from live_llm import configured_model, trace_labels
 from pydantic import PrivateAttr
 
-LIVE_MODEL = "gpt-4o-mini"
+# Decided at import, like the research assistant's: the model label enters
+# every llm.call fingerprint (CrewAI's listener infers the provider from
+# it), so recording and replay must agree on it. run.py sets
+# TRAZO_DEMO_LIVE for --live before importing this module, and
+# replay_entrypoint.py adopts the recorded run's label.
+LIVE = os.environ.get("TRAZO_DEMO_LIVE") == "1"
+_, TRACE_MODEL = trace_labels(live=LIVE)
 
-_CASSETTE_PATH = Path(__file__).resolve().parent / "cassette.json"
+# Overridable so a live run can record somewhere other than the demo's own
+# cassette, which fixture mode (and therefore CI) replays. Replaying a
+# live run needs the same path: CrewAI really calls the LLM during replay,
+# and fixture mode answers from this cassette.
+_CASSETTE_PATH = Path(
+    os.environ.get(
+        "TRAZO_DEMO_CASSETTE", Path(__file__).resolve().parent / "cassette.json"
+    )
+)
 _cassette = Cassette(_CASSETTE_PATH)
-_live_mode = False
+_live_mode = LIVE
 
 
 def set_live_mode(live: bool) -> None:
@@ -149,7 +165,7 @@ class ScriptedLLM(BaseLLM):
     helpers ``BaseLLM`` gives every subclass), returning each task's
     canned ReAct-format response in order."""
 
-    model: str = "fixture-v1"
+    model: str = TRACE_MODEL
     _progress: dict[str, int] = PrivateAttr(default_factory=dict)
 
     def call(
@@ -173,7 +189,7 @@ class ScriptedLLM(BaseLLM):
             )
             key = request_key("crewai_call", {"messages": str(messages)})
             if _live_mode:
-                result = live_complete(str(messages), model=LIVE_MODEL)
+                result = live_complete(str(messages), model=configured_model())
                 reply = str(result["response"])
                 usage = {
                     "prompt_tokens": result["tokens_in"],

@@ -4,55 +4,47 @@ Run in its own process — never imported alongside research-assistant's
 same-named ``llm`` module in one interpreter, which would collide in
 ``sys.modules``.
 
-    uv run --project sdk --extra crewai \\
-        python demos/content-pipeline/replay_entrypoint.py <run_id> \\
+    uv run --project sdk --extra crewai \
+        python demos/content-pipeline/replay_entrypoint.py <run_id> \
+        [--mode verify|strict|lenient] [--step N] \
         [--endpoint http://localhost:8420] [--json]
 
-Prints ``trazo verify``'s report to stdout (delegates to
-``trazo.cli.replay.run_verify`` directly rather than shelling out to the
-``trazo`` console script, so this stays one process).
+The default ``--mode verify`` prints ``trazo verify``'s fidelity report;
+``strict``/``lenient`` re-drive like ``trazo replay``. Both delegate to
+``trazo.cli.replay`` directly rather than shelling out to the ``trazo``
+console script, so this stays one process. The recorded run's model
+label is adopted automatically (``demos/_shared/replay_cli.py``). CrewAI
+really calls the LLM during replay, answered from the cassette, so a run
+recorded live with ``TRAZO_DEMO_CASSETTE`` set must be replayed with the
+same ``TRAZO_DEMO_CASSETTE``.
 """
 
 from __future__ import annotations
 
-import argparse
-import os
 import sys
 from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_shared"))
 
-from crew import build_crew
+from replay_cli import main as replay_main
 
 from trazo import replay
-from trazo.cli.replay import run_verify
 from trazo.integrations.crewai import instrument
 
 
-@replay.entrypoint(framework="crewai")
-def _replay_content_pipeline(entry_input: Any) -> object:
-    crew = build_crew()
-    traced = instrument(crew)
-    return traced.kickoff(inputs=entry_input or {})
+def _register() -> None:
+    # Imported only now, after the recorded label is adopted: llm.py reads
+    # it at import.
+    from crew import build_crew
 
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("run_id")
-    parser.add_argument(
-        "--endpoint", default=os.environ.get("TRAZO_ENDPOINT", "http://localhost:8420")
-    )
-    parser.add_argument("--json", action="store_true", dest="as_json")
-    args = parser.parse_args()
-
-    return run_verify(
-        args.run_id,
-        endpoint=args.endpoint,
-        api_key=os.environ.get("TRAZO_API_KEY"),
-        as_json=args.as_json,
-    )
+    @replay.entrypoint(framework="crewai")
+    def _replay_content_pipeline(entry_input: Any) -> object:
+        crew = build_crew()
+        traced = instrument(crew)
+        return traced.kickoff(inputs=entry_input or {})
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(replay_main(description=__doc__, register=_register))

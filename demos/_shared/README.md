@@ -52,17 +52,28 @@ uv run --project sdk --extra langgraph --extra demos \
     python demos/research-assistant/run.py --live
 ```
 
-Traced `llm.call` events carry `provider: "ollama"` and the model name.
-Those labels are part of each call's fingerprint, and replay never calls
-the model, so **replay a live run with the same three variables set plus
-`TRAZO_DEMO_LIVE=1`**; without them the replayed calls are labelled
-`fixture` and every `llm.call` is reported as a mismatch.
+Traced `llm.call` events carry the model name (and, for the research
+assistant, `provider: "ollama"`). Those labels are part of each call's
+fingerprint and replay never calls the model, so each demo's
+`replay_entrypoint.py` reads them from the recorded run before loading
+the demo (`replay_cli.py`); nothing needs setting to replay a live run.
+`TRAZO_DEMO_TRACE_PROVIDER`/`TRAZO_DEMO_TRACE_MODEL` force them by hand.
+The content pipeline is the exception for one setting: CrewAI really
+calls the LLM during replay, answered from the cassette, so replay a
+live run with the same `TRAZO_DEMO_CASSETTE` it recorded to.
 
 Verified on 2026-10-25 against Ollama 0.40 serving Qwen2.5 3B on a 6 GB
-laptop GPU: a 55-event research-assistant run (10 LLM calls, about 100 s)
-was stored intact, and replayed at 100% boundary and state fidelity with
-no divergences. The OpenAI endpoint itself has not been called; it uses
-the same request and response shape.
+laptop GPU, both replayed at 100% boundary and state fidelity with no
+divergences:
+
+- research assistant: 55 events, 10 LLM calls, about 100 s;
+- content pipeline: 50 events, 17 LLM calls, about 6 minutes. The 3B
+  model answered every task directly and never used CrewAI's tool-call
+  format, so that run made no tool calls; a larger local model is needed
+  to exercise them live.
+
+The OpenAI endpoint itself has not been called; it uses the same request
+and response shape.
 
 `test_live_llm.py` covers the request/response contract against a fake
 `httpx` transport.

@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_shared"))
 
 from cassette import Cassette, request_key
 from live_llm import complete as live_complete
-from live_llm import configured_model, configured_provider
+from live_llm import trace_labels
 
 from trazo import trace_llm
 
@@ -45,11 +45,10 @@ from trazo import trace_llm
 # them up front -- rather than reporting the model from the call's result
 # -- keeps recording and replay computing the same fingerprint: replay
 # never runs the function, so a result-reported model would not exist
-# there. To replay a live run, set the same TRAZO_DEMO_LIVE and
-# TRAZO_DEMO_LLM_MODEL; replay still never contacts the model.
+# there. replay_entrypoint.py adopts the recorded run's labels before
+# importing this module; replay still never contacts the model.
 LIVE = os.environ.get("TRAZO_DEMO_LIVE") == "1"
-PROVIDER = configured_provider() if LIVE else "fixture"
-MODEL = configured_model() if LIVE else "fixture-v1"
+PROVIDER, MODEL = trace_labels(live=LIVE)
 
 SUB_TOPICS = ["overview", "architecture", "reliability"]
 

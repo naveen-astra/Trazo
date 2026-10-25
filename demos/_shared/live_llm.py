@@ -51,6 +51,29 @@ def configured_provider() -> str:
     return "openai-compatible"
 
 
+# Set by each demo's replay entrypoint from the recorded run, so replay
+# labels its calls the way the recording did (see replay_cli.py).
+TRACE_PROVIDER_ENV = "TRAZO_DEMO_TRACE_PROVIDER"
+TRACE_MODEL_ENV = "TRAZO_DEMO_TRACE_MODEL"
+
+
+def trace_labels(*, live: bool) -> tuple[str, str]:
+    """The provider and model to label traced ``llm.call`` events with.
+
+    They are part of each call's fingerprint, so recording and replay must
+    agree on them; replay never calls the model, so they are decided up
+    front rather than read from a response. Explicit labels in the
+    environment win; otherwise a live run is labelled with the configured
+    server and model, and a fixture run with ``fixture``/``fixture-v1``."""
+    provider = os.environ.get(TRACE_PROVIDER_ENV)
+    model = os.environ.get(TRACE_MODEL_ENV)
+    if provider and model:
+        return provider, model
+    if live:
+        return configured_provider(), configured_model()
+    return "fixture", "fixture-v1"
+
+
 class LiveLLMError(Exception):
     """Raised when a real completion can't be obtained — missing key,
     transport failure, or an unexpected response shape. Never silently

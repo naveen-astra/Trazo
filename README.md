@@ -418,6 +418,12 @@ run run_01M2TAPDR1BV8E0MP4Z8N9JRCW (langgraph), mode=lenient (verify)
 With `TRAZO_API_KEY` set, the report is persisted to the control plane and
 appears in the dashboard's Replay Studio for that run.
 
+The wrapper also re-drives like `trazo replay`: `--mode strict` stops at the
+first divergence, `--mode lenient` records divergences and carries on, and
+`--step N` reports only what the recording reached by the end of step `N`.
+A run recorded live replays without extra settings, because the wrapper
+reads the run's model labels from the recording first.
+
 A bare `trazo verify <run_id>` will fail with `NoEntrypointRegisteredError`
 unless an entrypoint was registered earlier in the same process. This is a
 consequence of the design, not a bug: the engine cannot guess which callable

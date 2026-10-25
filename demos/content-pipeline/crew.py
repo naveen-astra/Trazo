@@ -17,12 +17,12 @@ task description, which doesn't mention memory).
 from __future__ import annotations
 
 from crewai import Agent, Crew, Process, Task
-from llm import ScriptedLLM
+from llm import TRACE_MODEL, ScriptedLLM
 from tools import fetch_style_guide, web_search, word_count
 
 
 def build_crew() -> Crew:
-    llm = ScriptedLLM(model="fixture-v1")
+    llm = ScriptedLLM(model=TRACE_MODEL)
 
     researcher = Agent(
         role="Researcher",
