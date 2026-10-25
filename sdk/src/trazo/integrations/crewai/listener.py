@@ -45,9 +45,9 @@ Design notes (verified empirically against crewai 1.15.6, not assumed):
   the run produced is guaranteed to be in the buffer, in the right order,
   before anything reaches ``Recorder``.
 - Scope: ``Process.sequential`` toy crews (TRZ-P3-01's own boundary-
-  coverage audit). ``Process.hierarchical`` isn't specifically exercised
-  yet — later work, same spirit as the LangGraph adapter's ``.invoke()``-
-  only Phase 2 scope note.
+  coverage audit) and ``Process.hierarchical`` crews (see
+  ``tests/test_crewai_adapter.py``); ``Process.consensual`` isn't
+  exercised.
 - **PolicyHook (TRZ-P6-04) is not called from this listener**, and
   can't be: ``emit()`` is fire-and-forget onto a thread pool, so a
   ``PolicyDenied`` raised from ``_on_tool_started`` would be an orphaned

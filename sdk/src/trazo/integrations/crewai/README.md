@@ -85,8 +85,11 @@ Tools CrewAI creates during the run (delegation) are not governed.
 
 ## Known limitations (Phase 3 scope; tracked, not hidden)
 
-- **`Process.sequential` only.** `Process.hierarchical`'s manager-agent
-  orchestration isn't specifically exercised yet.
+- **Sequential and hierarchical processes are tested; `Process.consensual`
+  is not.** In a hierarchical crew the manager's and the workers' model
+  calls are all recorded, delegation shows up as one `agent.message`, and
+  policy enforcement reaches the workers' tools (the manager's own
+  delegation tools are not governed).
 - **`side_effect_class` defaults to `"external"`** for every tool call —
   same conservative-default rationale as the LangGraph adapter; CrewAI's
   `BaseTool` doesn't declare one either. Escape hatch: `@trace_tool

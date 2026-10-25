@@ -19,9 +19,10 @@ would otherwise vanish; the adapter records it and re-raises it from
 ``kickoff()`` once the crew stops, matching the LangGraph adapter's contract
 that ``PolicyDenied`` propagates to the caller.
 
-Phase 3 scope is ``Process.sequential`` (TASKS/PHASE_3.md's toy-crew
-boundary-coverage audit); ``Process.hierarchical`` isn't specifically
-exercised yet.
+``Process.sequential`` (TASKS/PHASE_3.md's toy-crew boundary-coverage
+audit) and ``Process.hierarchical`` are covered by tests; the manager's
+and the workers' model calls are all recorded and delegation is one
+``agent.message``. ``Process.consensual`` is not exercised.
 """
 
 from __future__ import annotations

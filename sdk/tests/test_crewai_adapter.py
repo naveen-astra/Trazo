@@ -513,3 +513,93 @@ def test_instrument__llm_calls_are_priced_from_the_model_and_tokens() -> None:
     assert run_finished["payload"]["totals"]["cost_usd"] == pytest.approx(
         llm_call["payload"]["cost_usd"]
     )
+
+
+def _hierarchical_crew(tool: Any, worker_script: list[str]) -> Crew:
+    """A manager delegates to one worker. The manager and the worker each
+    get their own scripted model, so the calls are told apart by model."""
+    worker = Agent(
+        role="Researcher",
+        goal="Find facts",
+        backstory="A careful researcher",
+        llm=_ScriptedLLM(model="fake-worker", script=worker_script),
+        allow_delegation=False,
+        verbose=False,
+        tools=[tool],
+    )
+    manager_llm = _ScriptedLLM(
+        model="fake-manager",
+        script=[
+            "Thought: I should delegate\n"
+            "Action: Delegate work to coworker\n"
+            'Action Input: {"task": "find facts", "context": "about trazo", '
+            '"coworker": "Researcher"}',
+            *["Final Answer: report ready"] * 5,
+        ],
+    )
+    task = Task(description="Produce a report on trazo", expected_output="a report")
+    return Crew(
+        agents=[worker],
+        tasks=[task],
+        process=Process.hierarchical,
+        manager_llm=manager_llm,
+        verbose=False,
+    )
+
+
+def test_instrument__hierarchical_crew_records_manager_worker_and_delegation() -> None:
+    context_init(project="toy-crew-test")
+    shipper = _FakeShipper()
+    crew = _hierarchical_crew(
+        _CountingTool().build(),
+        [
+            "Thought: I should search\n"
+            "Action: web_search\n"
+            'Action Input: {"query": "trazo"}',
+            *["Final Answer: facts about trazo"] * 5,
+        ],
+    )
+
+    result = instrument(crew, recorder=Recorder(shipper=shipper)).kickoff()
+
+    assert result.raw == "report ready"
+    llm_calls = _events_by_kind(shipper.enqueued, "llm.call")
+    assert [e["payload"]["model"] for e in llm_calls] == [
+        "fake-manager",
+        "fake-worker",
+        "fake-worker",
+        "fake-manager",
+    ]
+    assert [
+        e["payload"]["tool_name"]
+        for e in _events_by_kind(shipper.enqueued, "tool.call")
+    ] == ["web_search"]
+    # Delegation is a tool in CrewAI, recorded as a message, not a tool.call.
+    assert len(_events_by_kind(shipper.enqueued, "agent.message")) == 1
+    assert [
+        e["payload"]["status"]
+        for e in _events_by_kind(shipper.enqueued, "run.finished")
+    ] == ["ok"]
+
+
+def test_instrument__policy_denial_reaches_a_workers_tool_under_a_manager() -> None:
+    context_init(project="toy-crew-test")
+    shipper = _FakeShipper()
+    counting = _CountingTool()
+    crew = _hierarchical_crew(
+        counting.build(),
+        [
+            "Thought: I should search\n"
+            "Action: web_search\n"
+            'Action Input: {"query": "trazo"}',
+            *["Final Answer: facts about trazo"] * 5,
+        ],
+    )
+    traced = instrument(
+        crew, recorder=Recorder(shipper=shipper), policy_hook=_policy_hook("deny")
+    )
+
+    with pytest.raises(PolicyDenied):
+        traced.kickoff()
+
+    assert counting.executions == 0
