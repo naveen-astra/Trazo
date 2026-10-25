@@ -8,13 +8,17 @@ provider-abstraction layer; they need exactly enough to generate real
 completions for `--live` runs (TRZ-P3-05's nightly corpus job) and to
 refresh a fixture cassette (`cassette.py`) for everyone else.
 
-NOTE: this module's actual network path has not been exercised end to
-end in this environment — no `OPENAI_API_KEY` (or any other LLM API key)
-is available here. `complete()`'s request construction and response
-parsing *are* covered by a unit test against a fake transport
-(`test_live_llm.py`), but a real call to `https://api.openai.com` has
-not been made. Treat the live path as code-complete, not field-verified,
-until it's run somewhere with a real key.
+Any server that speaks this shape works, including a free local one.
+Configuration comes from the environment:
+
+- ``TRAZO_DEMO_LLM_BASE_URL``: defaults to OpenAI. Point it at
+  ``http://localhost:11434/v1`` to use Ollama, at no cost.
+- ``TRAZO_DEMO_LLM_MODEL``: defaults to ``gpt-4o-mini``.
+- ``TRAZO_DEMO_API_KEY`` / ``OPENAI_API_KEY``: required only for the
+  OpenAI default; a local server such as Ollama needs none.
+
+Field-verified against Ollama serving Qwen2.5 3B: real completions,
+traced as real ``llm.call`` events, and replayed at full fidelity.
 """
 
 from __future__ import annotations
@@ -25,7 +29,26 @@ import httpx
 
 DEFAULT_MODEL = "gpt-4o-mini"
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
-_TIMEOUT_SECONDS = 30.0
+# Generous: a local model's first request includes loading it onto the GPU.
+_TIMEOUT_SECONDS = 120.0
+
+
+def configured_base_url() -> str:
+    return os.environ.get("TRAZO_DEMO_LLM_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
+
+
+def configured_model() -> str:
+    return os.environ.get("TRAZO_DEMO_LLM_MODEL", DEFAULT_MODEL)
+
+
+def configured_provider() -> str:
+    """A label for traces: which server actually answered."""
+    base_url = configured_base_url()
+    if base_url == DEFAULT_BASE_URL:
+        return "openai"
+    if ":11434" in base_url:
+        return "ollama"
+    return "openai-compatible"
 
 
 class LiveLLMError(Exception):
@@ -38,24 +61,30 @@ class LiveLLMError(Exception):
 def complete(
     prompt: str,
     *,
-    model: str = DEFAULT_MODEL,
+    model: str | None = None,
     api_key: str | None = None,
-    base_url: str = DEFAULT_BASE_URL,
+    base_url: str | None = None,
     client: httpx.Client | None = None,
 ) -> dict[str, object]:
     """Request one completion for ``prompt``, returning the same
     ``{"response", "tokens_in", "tokens_out"}`` shape every demo's
     ``@trace_llm``-wrapped function already returns, so a live call is a
     drop-in replacement for the deterministic fixture path."""
+    model = model or configured_model()
+    base_url = (base_url or configured_base_url()).rstrip("/")
     key = (
         api_key
         or os.environ.get("TRAZO_DEMO_API_KEY")
         or os.environ.get("OPENAI_API_KEY")
     )
     if not key:
-        raise LiveLLMError(
-            "no API key: set TRAZO_DEMO_API_KEY or OPENAI_API_KEY to run in --live mode"
-        )
+        if base_url == DEFAULT_BASE_URL:
+            raise LiveLLMError(
+                "no API key: set TRAZO_DEMO_API_KEY or OPENAI_API_KEY, or point "
+                "TRAZO_DEMO_LLM_BASE_URL at a local server such as Ollama"
+            )
+        # A local server ignores the header; the protocol still wants one.
+        key = "unused"
 
     owns_client = client is None
     http_client = client or httpx.Client(timeout=_TIMEOUT_SECONDS)

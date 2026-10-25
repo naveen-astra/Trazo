@@ -5,11 +5,18 @@
         python demos/research-assistant/run.py \\
         [--question "..."] [--endpoint http://localhost:8420] [--live]
 
-``--live`` calls a real model (needs ``TRAZO_DEMO_API_KEY`` or
-``OPENAI_API_KEY``) instead of the deterministic fixture stub, and
-records the exchange to ``cassette.json`` for fixture mode to replay
-later (TRZ-P3-04) — used by the nightly corpus job (TRZ-P3-05), not by
-CI, which stays zero-cost on the default fixture path.
+``--live`` calls a real model instead of the deterministic fixture stub,
+and records the exchange to ``cassette.json`` for fixture mode to replay
+later (TRZ-P3-04). For zero cost, run a local model with Ollama::
+
+    ollama pull qwen2.5:3b
+    TRAZO_DEMO_LLM_BASE_URL=http://localhost:11434/v1 \
+    TRAZO_DEMO_LLM_MODEL=qwen2.5:3b \
+        uv run --project sdk --extra langgraph --extra demos \
+        python demos/research-assistant/run.py --live
+
+Or set ``TRAZO_DEMO_API_KEY``/``OPENAI_API_KEY`` to use OpenAI. CI stays
+on the zero-cost fixture path.
 
 Only the SDK's public API is used here (``trazo.init``,
 ``trazo.integrations.langgraph.instrument``) — IMPLEMENTATION_PLAN.md's
@@ -24,9 +31,6 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import llm
-from agent import build_graph, initial_state
 
 import trazo
 from trazo.integrations.langgraph import instrument
@@ -48,6 +52,13 @@ def main() -> int:
         "the deterministic fixture stub",
     )
     args = parser.parse_args()
+
+    # Before the demo's own modules load: llm.py reads this at import to
+    # label every traced call with the model that will actually answer.
+    if args.live:
+        os.environ["TRAZO_DEMO_LIVE"] = "1"
+    import llm
+    from agent import build_graph, initial_state
 
     llm.set_live_mode(args.live)
 

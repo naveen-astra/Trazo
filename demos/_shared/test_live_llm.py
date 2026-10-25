@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from live_llm import LiveLLMError, complete
+from live_llm import LiveLLMError, complete, configured_provider
 
 
 def _client(handler: httpx.MockTransport) -> httpx.Client:
@@ -80,3 +80,47 @@ def test_complete__missing_usage_falls_back_to_word_count() -> None:
         "tokens_in": 3,
         "tokens_out": 4,
     }
+
+
+def test_complete__a_local_server_needs_no_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("TRAZO_DEMO_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": "local answer"}}]}
+        )
+
+    result = complete(
+        "hello",
+        model="qwen2.5:3b",
+        base_url="http://localhost:11434/v1/",
+        client=_client(httpx.MockTransport(handler)),
+    )
+
+    assert result["response"] == "local answer"
+    assert str(seen[0].url) == "http://localhost:11434/v1/chat/completions"
+
+
+@pytest.mark.parametrize(
+    ("base_url", "provider"),
+    [
+        (None, "openai"),
+        ("https://api.openai.com/v1/", "openai"),
+        ("http://localhost:11434/v1", "ollama"),
+        ("http://127.0.0.1:8000/v1", "openai-compatible"),
+    ],
+)
+def test_configured_provider__labels_the_server_that_answers(
+    monkeypatch: pytest.MonkeyPatch, base_url: str | None, provider: str
+) -> None:
+    if base_url is None:
+        monkeypatch.delenv("TRAZO_DEMO_LLM_BASE_URL", raising=False)
+    else:
+        monkeypatch.setenv("TRAZO_DEMO_LLM_BASE_URL", base_url)
+
+    assert configured_provider() == provider

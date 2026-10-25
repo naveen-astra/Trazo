@@ -29,9 +29,10 @@ through the real `@trace_llm` decorator, so it's recorded as a genuine
 `llm.call` event with a real fingerprint — `trace_llm` doesn't know or
 care how the wrapped function produced its answer.
 
-`--live` (TRZ-P3-04) calls a real model instead — needs
-`TRAZO_DEMO_API_KEY` or `OPENAI_API_KEY` — and records the exchange to
-`cassette.json`, which fixture mode then replays on later runs before
+`--live` (TRZ-P3-04) calls a real model instead — OpenAI with
+`TRAZO_DEMO_API_KEY` or `OPENAI_API_KEY`, or a free local model through
+Ollama (see `demos/_shared/README.md`) — and records the exchange to
+`cassette.json` (or `TRAZO_DEMO_CASSETTE`, if set), which fixture mode then replays on later runs before
 ever falling back to the rule-based stub. See `demos/_shared/README.md`
 for the cassette mechanics; this is what the nightly corpus job
 (TRZ-P3-05) uses to generate fresh traces without paying for every CI

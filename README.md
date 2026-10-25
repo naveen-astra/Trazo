@@ -815,8 +815,10 @@ Known limitations, stated explicitly:
   is published and reproducible, not because it is finished.
 - Goal-drift detection is not implemented.
 - The demo agents use deterministic scripted model responses by default so the
-  demo costs nothing and reproduces exactly. Pass `--live` with an API key for
-  real model calls. Everything else in the pipeline is real infrastructure.
+  demo costs nothing and reproduces exactly. Pass `--live` for real model
+  calls: against OpenAI with an API key, or free against a local model served by
+  Ollama (verified with Qwen2.5 3B; see `demos/_shared/README.md`). Everything
+  else in the pipeline is real infrastructure.
 
 ## Roadmap
 

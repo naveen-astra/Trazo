@@ -31,16 +31,41 @@ no network. The cassette is an *additive* upgrade over that baseline:
 One function (`complete()`), one provider shape (OpenAI's chat
 completions JSON — close enough to a lingua franca that many gateways
 and other providers emulate it), via `httpx` (already an SDK dependency,
-so no new one is added here). Reads `TRAZO_DEMO_API_KEY` or
-`OPENAI_API_KEY`; raises `LiveLLMError` — never a silent fallback — if
-neither is set.
+so no new one is added here). Configured from the environment:
 
-**Not field-verified**: no LLM API key is available in the environment
-this was built in. `complete()`'s request/response contract is covered by
-`test_live_llm.py` against a fake `httpx` transport, but a real call to
-`https://api.openai.com` has never been made. Code-complete, not
-live-verified — run it somewhere with a real key before trusting the
-network path specifically.
+| Variable | Default | Purpose |
+|---|---|---|
+| `TRAZO_DEMO_LLM_BASE_URL` | `https://api.openai.com/v1` | Any server speaking the OpenAI shape |
+| `TRAZO_DEMO_LLM_MODEL` | `gpt-4o-mini` | Model name sent to that server |
+| `TRAZO_DEMO_API_KEY` / `OPENAI_API_KEY` | none | Required only for the OpenAI default |
+| `TRAZO_DEMO_CASSETTE` | `cassette.json` beside the demo | Where `--live` records completions |
+
+Against the OpenAI default with no key, `complete()` raises `LiveLLMError`
+— never a silent fallback.
+
+### Zero-cost live mode with Ollama
+
+```bash
+ollama pull qwen2.5:3b
+export TRAZO_DEMO_LLM_BASE_URL=http://localhost:11434/v1 TRAZO_DEMO_LLM_MODEL=qwen2.5:3b
+uv run --project sdk --extra langgraph --extra demos \
+    python demos/research-assistant/run.py --live
+```
+
+Traced `llm.call` events carry `provider: "ollama"` and the model name.
+Those labels are part of each call's fingerprint, and replay never calls
+the model, so **replay a live run with the same three variables set plus
+`TRAZO_DEMO_LIVE=1`**; without them the replayed calls are labelled
+`fixture` and every `llm.call` is reported as a mismatch.
+
+Verified on 2026-10-25 against Ollama 0.40 serving Qwen2.5 3B on a 6 GB
+laptop GPU: a 55-event research-assistant run (10 LLM calls, about 100 s)
+was stored intact, and replayed at 100% boundary and state fidelity with
+no divergences. The OpenAI endpoint itself has not been called; it uses
+the same request and response shape.
+
+`test_live_llm.py` covers the request/response contract against a fake
+`httpx` transport.
 
 ## `cassette.py`
 

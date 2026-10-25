@@ -27,6 +27,7 @@ since ``@trace_llm`` doesn't know or care how ``fn`` produced its answer.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -34,17 +35,33 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "_shared"))
 
 from cassette import Cassette, request_key
 from live_llm import complete as live_complete
+from live_llm import configured_model, configured_provider
 
 from trazo import trace_llm
 
-MODEL = "fixture-v1"
-LIVE_MODEL = "gpt-4o-mini"
+# Live mode is decided at import, from TRAZO_DEMO_LIVE (run.py sets it for
+# --live before importing this module), because the labels below are baked
+# into each @trace_llm decorator and enter the call's fingerprint. Choosing
+# them up front -- rather than reporting the model from the call's result
+# -- keeps recording and replay computing the same fingerprint: replay
+# never runs the function, so a result-reported model would not exist
+# there. To replay a live run, set the same TRAZO_DEMO_LIVE and
+# TRAZO_DEMO_LLM_MODEL; replay still never contacts the model.
+LIVE = os.environ.get("TRAZO_DEMO_LIVE") == "1"
+PROVIDER = configured_provider() if LIVE else "fixture"
+MODEL = configured_model() if LIVE else "fixture-v1"
 
 SUB_TOPICS = ["overview", "architecture", "reliability"]
 
-_CASSETTE_PATH = Path(__file__).resolve().parent / "cassette.json"
+# Overridable so a live run can record somewhere other than the demo's own
+# cassette, which fixture mode (and therefore CI) replays.
+_CASSETTE_PATH = Path(
+    os.environ.get(
+        "TRAZO_DEMO_CASSETTE", Path(__file__).resolve().parent / "cassette.json"
+    )
+)
 _cassette = Cassette(_CASSETTE_PATH)
-_live_mode = False
+_live_mode = LIVE
 
 
 def set_live_mode(live: bool) -> None:
@@ -63,10 +80,28 @@ def _resolve(name: str, kwargs: dict[str, object], *, prompt: str) -> dict[str, 
             return cached
         return _fixture(name, kwargs)
 
-    result = live_complete(prompt, model=LIVE_MODEL)
+    result = live_complete(prompt, model=MODEL)
+    if name == "ask_evaluate":
+        result = {**result, "response": _bounded_decision(result, kwargs)}
     _cassette.put(key, result)
     _cassette.save()
     return result
+
+
+def _bounded_decision(result: dict[str, object], kwargs: dict[str, object]) -> str:
+    """Turn a model's free-text verdict into the graph's two routes.
+
+    The graph only knows "continue" and "finalize", and a real model rarely
+    answers with exactly one of those words. It may also never stop saying
+    "continue", which would loop the graph until LangGraph's recursion
+    limit aborted the run. So the model may end research early, but never
+    extend it past the target.
+    """
+    text = str(result.get("response", "")).lower()
+    iteration = int(kwargs["iteration"])  # type: ignore[arg-type]
+    target = int(kwargs["target_iterations"])  # type: ignore[arg-type]
+    wants_more = "continue" in text and "finalize" not in text
+    return "continue" if wants_more and iteration < target else "finalize"
 
 
 def _fixture(name: str, kwargs: dict[str, object]) -> dict[str, object]:
@@ -112,7 +147,7 @@ def _fixture(name: str, kwargs: dict[str, object]) -> dict[str, object]:
     raise ValueError(f"no fixture for {name}")  # pragma: no cover — defensive
 
 
-@trace_llm(provider="fixture", model=MODEL)
+@trace_llm(provider=PROVIDER, model=MODEL)
 def ask_plan(question: str, queries_done: list[str]) -> dict[str, object]:
     """Decide the next search query: rotate through SUB_TOPICS in order
     (fixture) or ask a real model (live)."""
@@ -125,7 +160,7 @@ def ask_plan(question: str, queries_done: list[str]) -> dict[str, object]:
     return _resolve("ask_plan", kwargs, prompt=prompt)
 
 
-@trace_llm(provider="fixture", model=MODEL)
+@trace_llm(provider=PROVIDER, model=MODEL)
 def ask_synthesize(
     question: str, search_result: str, retrieved: list[str]
 ) -> dict[str, object]:
@@ -144,7 +179,7 @@ def ask_synthesize(
     return _resolve("ask_synthesize", kwargs, prompt=prompt)
 
 
-@trace_llm(provider="fixture", model=MODEL)
+@trace_llm(provider=PROVIDER, model=MODEL)
 def ask_evaluate(iteration: int, target_iterations: int) -> dict[str, object]:
     """Decide whether enough findings have been gathered."""
     kwargs = {"iteration": iteration, "target_iterations": target_iterations}
@@ -156,7 +191,7 @@ def ask_evaluate(iteration: int, target_iterations: int) -> dict[str, object]:
     return _resolve("ask_evaluate", kwargs, prompt=prompt)
 
 
-@trace_llm(provider="fixture", model=MODEL)
+@trace_llm(provider=PROVIDER, model=MODEL)
 def ask_finalize(
     question: str, findings: list[str], sources_consulted: float
 ) -> dict[str, object]:
