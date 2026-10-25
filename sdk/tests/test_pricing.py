@@ -101,6 +101,31 @@ def test_estimate_cost_usd__an_unknown_model_records_zero_not_a_guess() -> None:
     )
 
 
+def test_estimate_cost_usd__never_writes_to_stdout(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`trazo verify --json` and the demos' replay scripts print JSON to
+    stdout; a pricing warning there corrupts it (it did, in CI)."""
+    pricing._warned_unknown.clear()
+
+    estimate_cost_usd(
+        provider="openai", model="brand-new-model", tokens_in=1, tokens_out=1
+    )
+
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("model", ["fixture-v1", "Fixture-v2"])
+def test_estimate_cost_usd__fixture_models_are_free_whatever_the_provider(
+    model: str,
+) -> None:
+    """CrewAI infers provider "unknown" for the demos' scripted model."""
+    assert (
+        estimate_cost_usd(provider="unknown", model=model, tokens_in=9, tokens_out=9)
+        == 0.0
+    )
+
+
 def test_pricing_file__overrides_and_extends_the_table(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

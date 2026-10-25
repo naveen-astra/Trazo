@@ -23,13 +23,15 @@ detail the adapters don't receive.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from functools import lru_cache
 from pathlib import Path
 
-import structlog
-
-log = structlog.get_logger(__name__)
+# Standard logging, not structlog: structlog's default prints to stdout, and
+# the SDK's CLIs (`trazo verify --json`, the demos' replay scripts) write
+# machine-readable JSON there. A warning must never land in it.
+log = logging.getLogger(__name__)
 
 # Claude: Anthropic first-party rates as of 2026-10. OpenAI and Google:
 # list prices as last checked; override with TRAZO_PRICING_FILE.
@@ -104,7 +106,7 @@ def _prices(pricing_file: str | None) -> dict[str, tuple[float, float]]:
         for prefix, (per_m_in, per_m_out) in overrides.items():
             prices[normalize_model(prefix)] = (float(per_m_in), float(per_m_out))
     except (OSError, ValueError, TypeError) as exc:
-        log.warning("pricing.invalid_file", path=pricing_file, error=str(exc))
+        log.warning("ignoring pricing file %s: %s", pricing_file, exc)
     return prices
 
 
@@ -134,13 +136,18 @@ def estimate_cost_usd(
 ) -> float:
     """``cost_usd`` for one call. 0.0 for a free provider, and for a
     model the table doesn't know (logged once per model)."""
-    if _is_free_provider(provider) or not model:
+    if _is_free_provider(provider) or not model or model.lower().startswith("fixture"):
         return 0.0
     price = price_per_million(model)
     if price is None:
         if model not in _warned_unknown:
             _warned_unknown.add(model)
-            log.info("pricing.unknown_model", model=model, provider=provider)
+            log.warning(
+                "no price for model %r (provider %r): recording cost_usd 0.0; "
+                "add it with TRAZO_PRICING_FILE",
+                model,
+                provider,
+            )
         return 0.0
     per_m_in, per_m_out = price
     return (max(tokens_in, 0) * per_m_in + max(tokens_out, 0) * per_m_out) / 1_000_000
