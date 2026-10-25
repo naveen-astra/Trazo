@@ -69,12 +69,14 @@ RESEARCH.md RQ3 means by "anchor the scale":
 
 | Adapter | Corpus (faulty) | Precision | Recall | FPR (clean) |
 |---|---|---|---|---|
-| Trazo (loop+budget+thrash) | 200 | 100% | 75% | 0% |
+| Trazo (loop+budget+thrash) | 200 | 100% | 62% | 0% |
 | Random flagger (5% per-event) | 200 | 71% | 82% | 67% |
 
-The random baseline's recall isn't dramatically lower than Trazo's — with
-enough boundary events in a run, even a low per-event flag rate has good
-odds of hitting *something*. Its failure mode shows up in precision and
+The random baseline's recall is higher than Trazo's — with enough boundary
+events in a run, even a low per-event flag rate has good odds of hitting
+*something*. (Trazo's was 75% until the thrash detector stopped firing on
+healthy long runs: the 25 drift runs had counted as detected only because
+thrash flagged them by mistake. No rule detector targets drift.) Its failure mode shows up in precision and
 FPR instead: two-thirds of clean runs get a spurious flag. That's the
 actual anchor — a tool that isn't really detecting anything can still
 look decent on raw recall, which is exactly why RQ2/RQ3 report precision,

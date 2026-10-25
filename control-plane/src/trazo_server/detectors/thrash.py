@@ -1,8 +1,18 @@
 """ThrashDetector (TRZ-P5-04, AI_DEBUGGER.md §1-2).
 
 Signature: several distinct tool calls made recently, none of which have
-turned up anything the run hasn't already seen — busy, but cycling
-through a fixed, unhelpful repertoire instead of making real progress.
+turned up anything the run hasn't already seen, and all of which came
+back with the same result — busy, but cycling through a fixed, unhelpful
+repertoire instead of making real progress.
+
+The last clause is what separates thrash from a healthy retry pattern.
+An agent that revisits earlier queries still learns something each time:
+different queries return different results. An agent whose different
+queries all return the same result (``no results``, the same error, an
+empty list) is asking a tool that has stopped answering. Measuring only
+whether the *calls* repeat could not tell the two apart, and fired on
+every long run in the benchmark corpus -- budget and drift runs included
+(precision 33%); requiring the results to collapse removes those.
 
 AI_DEBUGGER.md §1's literal wording ties "no progress" to step.finished
 state-hash stagnation — the same wording LoopDetector's docstring
@@ -87,6 +97,12 @@ class ThrashDetector:
             # loop, not several calls genuinely cycling with no progress.
             return None
 
+        recent_results = list(window.recent_tool_result_keys)[-self.window_calls :]
+        if len(set(recent_results)) > 1:
+            # Different calls are still returning different things: the
+            # run is revisiting calls but learning from them.
+            return None
+
         half = len(recent_fps) // 2
         seen_first_half = set(recent_fps[:half])
         novel_in_second_half = [
@@ -108,6 +124,7 @@ class ThrashDetector:
             details={
                 "distinct_tool_names": sorted(set(recent_names)),
                 "distinct_fingerprint_count": len(distinct_fps),
+                "distinct_result_count": len(set(recent_results)),
                 "min_distinct_calls": self.min_distinct_calls,
                 "window_calls": self.window_calls,
             },

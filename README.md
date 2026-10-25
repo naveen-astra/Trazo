@@ -502,7 +502,7 @@ Detections are raised during execution, not in a post-hoc batch job.
 |---|---|---|
 | `loop` | The same tool called with a near-identical input fingerprint repeatedly, with no state progress | `warn` |
 | `budget` | Cost velocity exceeding a configured rate cap | `critical` |
-| `thrash` | Many distinct tools invoked with no resulting state change | `warn` |
+| `thrash` | Varied tool calls that keep returning the same result, with nothing new turning up | `warn` |
 
 Each detection carries the event IDs that triggered it, so the dashboard links
 straight to the evidence rather than asserting a conclusion. Measured accuracy is
@@ -702,13 +702,13 @@ with `make benchmark` — they are computed, not transcribed.
 |---|---|---|---|
 | loop | 67% | 100% | 0% |
 | budget | 100% | 100% | 0% |
-| thrash | 33% | 50% | 0% |
+| thrash | 100% | 50% | 0% |
 
 **Baseline comparison**, flag-any-fault, against a random flagger:
 
 | Adapter | Precision | Recall | False positive rate |
 |---|---|---|---|
-| Trazo (loop + budget + thrash) | 100% | 75% | 0% |
+| Trazo (loop + budget + thrash) | 100% | 62% | 0% |
 | Random flagger baseline | 71% | 82% | 67% |
 
 **Replay fidelity** across the demo corpus: 100% boundary fidelity, 100% state
@@ -716,7 +716,14 @@ fidelity, 0 divergences, with replay overhead between 1.5x and 5x depending on
 machine and cache state.
 
 These numbers are reported as measured, including where they are weak. The
-`thrash` detector's 33% precision is a real limitation, not a rounding artifact.
+`thrash` detector used to fire on every long research-assistant run, budget and
+drift runs included, which was a 33% precision. It now also requires the recent
+calls to have returned the same result, so an agent that revisits queries but
+learns from each one is left alone. That raised thrash precision to 100% and
+lowered the flag-any-fault recall from 75% to 62%: the 25 drift runs had only
+looked detected because thrash fired on them by mistake, and no rule detector
+targets drift. Thrash recall stays at 50% because the content-pipeline corpus
+runs make five tool calls, fewer than the six-call window.
 A third-party tool can be scored against the same corpus by implementing the
 adapter interface in `benchmark/adapter.py`. Details in
 [benchmark/README.md](benchmark/README.md).
@@ -818,8 +825,11 @@ Known limitations, stated explicitly:
   going after a denial; the denied tool never runs, and `kickoff()` raises
   `PolicyDenied` once the crew stops. Tools added to an agent mid-run are not
   governed.
-- The `thrash` detector has low precision (33%). It is shipped because the number
-  is published and reproducible, not because it is finished.
+- The `thrash` detector catches only half of the injected thrash runs (50%
+  recall): runs shorter than its six-call window are never judged. It flags a
+  run when varied calls keep returning the identical result, so a tool that
+  fails differently each time, or an agent that thrashes through a tool whose
+  results vary, is not caught.
 - Goal-drift detection is not implemented.
 - The demo agents use deterministic scripted model responses by default so the
   demo costs nothing and reproduces exactly. Pass `--live` for real model

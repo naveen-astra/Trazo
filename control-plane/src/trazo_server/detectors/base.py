@@ -13,6 +13,8 @@ imports.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections import deque
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -25,6 +27,14 @@ _BOUNDARY_KINDS = frozenset(
 )
 
 _DEFAULT_WINDOW_SIZE = 50
+
+
+def result_key(result: Any) -> str:
+    """A stable digest of a tool call's result, so a window can tell
+    whether calls are returning anything new without holding the results
+    themselves."""
+    encoded = json.dumps(result, sort_keys=True, default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
 
 
 @dataclass(frozen=True)
@@ -67,6 +77,7 @@ class RunWindow:
         self.recent_llm_costs: deque[float] = deque(maxlen=max_size)
         self.recent_tool_names: deque[str] = deque(maxlen=max_size)
         self.recent_tool_fingerprints: deque[str | None] = deque(maxlen=max_size)
+        self.recent_tool_result_keys: deque[str] = deque(maxlen=max_size)
         self.cost_usd_total = 0.0
         self.tokens_total = 0
         self.step_count = 0
@@ -102,6 +113,7 @@ class RunWindow:
         if event.kind == "tool.call":
             self.recent_tool_names.append(event.payload.tool_name)
             self.recent_tool_fingerprints.append(event.fingerprint)
+            self.recent_tool_result_keys.append(result_key(event.payload.result))
         if event.kind == "step.finished":
             self.recent_state_hashes.append(event.payload.state_after_hash)
             self.step_count += 1

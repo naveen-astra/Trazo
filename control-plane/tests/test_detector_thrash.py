@@ -16,7 +16,13 @@ from trazo_server.events import Event, EventAdapter
 _RUN_ID = "run_1"
 
 
-def _tool_call(*, seq: int, fingerprint: str, tool_name: str = "web_search") -> Event:
+def _tool_call(
+    *,
+    seq: int,
+    fingerprint: str,
+    tool_name: str = "web_search",
+    result: Any = "no results",
+) -> Event:
     base: dict[str, Any] = {
         "schema": "trazo.v1",
         "event_id": f"evt_tool_{seq}",
@@ -29,7 +35,7 @@ def _tool_call(*, seq: int, fingerprint: str, tool_name: str = "web_search") -> 
         "payload": {
             "tool_name": tool_name,
             "args": {},
-            "result": "no results",
+            "result": result,
             "status": "ok",
             "latency_ms": 1.0,
             "side_effect_class": "external",
@@ -162,3 +168,47 @@ def test_thrash__non_tool_call_events_never_trigger_the_check() -> None:
     detection = detector.on_event(event, window)
 
     assert detection is None
+
+
+def test_thrash__does_not_fire_when_different_calls_return_different_results() -> None:
+    """The same three queries cycle, but each returns its own answer: the
+    agent is revisiting calls and still learning from them -- a healthy
+    retry pattern, not thrash. This is the shape that made every long
+    benchmark run (budget and drift ones included) look like thrash when
+    only the calls were compared."""
+    detector = ThrashDetector(min_distinct_calls=2, window_calls=6)
+    window = RunWindow(_RUN_ID)
+    fingerprints = [_FP_A, _FP_B, _FP_C, _FP_A, _FP_B, _FP_C]
+    events = [
+        _tool_call(seq=i, fingerprint=fp, result=f"answer for {fp[-4:]}")
+        for i, fp in enumerate(fingerprints)
+    ]
+
+    assert _feed(detector, window, events) == []
+
+
+def test_thrash__fires_when_one_result_comes_back_for_every_call() -> None:
+    detector = ThrashDetector(min_distinct_calls=2, window_calls=6)
+    window = RunWindow(_RUN_ID)
+    fingerprints = [_FP_A, _FP_B, _FP_C, _FP_A, _FP_B, _FP_C]
+    events = [
+        _tool_call(seq=i, fingerprint=fp, result={"hits": []})
+        for i, fp in enumerate(fingerprints)
+    ]
+
+    detections = _feed(detector, window, events)
+
+    assert len(detections) == 1
+    assert detections[0].details["distinct_result_count"] == 1
+
+
+def test_thrash__one_differing_result_in_the_window_is_enough_to_stay_quiet() -> None:
+    detector = ThrashDetector(min_distinct_calls=2, window_calls=6)
+    window = RunWindow(_RUN_ID)
+    fingerprints = [_FP_A, _FP_B, _FP_C, _FP_A, _FP_B, _FP_C]
+    events = [
+        _tool_call(seq=i, fingerprint=fp, result="no results" if i else "found it")
+        for i, fp in enumerate(fingerprints)
+    ]
+
+    assert _feed(detector, window, events) == []

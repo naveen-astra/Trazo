@@ -6,7 +6,7 @@ Regenerate with `uv run --project sdk python benchmark/detection/runner.py`.
 |---|---|---|---|---|---|---|---|---|
 | loop | 50 | 50 | 0 | 25 | 67% | 100% | 0% | 15.0 |
 | budget | 50 | 50 | 0 | 0 | 100% | 100% | 0% | 21.0 |
-| thrash | 50 | 25 | 25 | 50 | 33% | 50% | 0% | n/a |
+| thrash | 50 | 25 | 25 | 0 | 100% | 50% | 0% | n/a |
 
 Clean corpus: 100 runs. Drift corpus: 50 runs — no rule detector targets drift (AI_DEBUGGER.md §5's stretch classifier, TRZ-P5-07); reported as corpus size only.
 
@@ -16,5 +16,5 @@ RandomFlaggerAdapter has no notion of loop/budget/thrash classes -- only "did th
 
 | Adapter | Corpus (faulty) | TP | FN | FP | Precision | Recall | FPR (clean) |
 |---|---|---|---|---|---|---|---|
-| trazo (loop+budget+thrash) | 200 | 150 | 50 | 0 | 100% | 75% | 0% |
+| trazo (loop+budget+thrash) | 200 | 125 | 75 | 0 | 100% | 62% | 0% |
 | random_flagger (baseline) | 200 | 164 | 36 | 67 | 71% | 82% | 67% |
