@@ -62,7 +62,12 @@ events = sa.Table(
     # SDK event at `seq` (migration 0003 explains why).
     sa.Column("sub_seq", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("idempotency_key", sa.Text, nullable=True),
+    # Assigned by Postgres on insert: the order events were stored, which
+    # no machine's clock can disturb. The firehose pages on it (migration
+    # 0004). Never written by the application.
+    sa.Column("ingest_seq", sa.BigInteger, sa.Identity(always=False), nullable=False),
     sa.PrimaryKeyConstraint("run_id", "seq", "sub_seq"),
+    sa.Index("events_ingest_seq", "ingest_seq", unique=True),
     sa.Index("events_kind", "run_id", "kind", "seq", "sub_seq"),
     sa.Index(
         "events_idempotency",

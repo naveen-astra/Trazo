@@ -206,39 +206,40 @@ class PostgresTraceStore:
         self,
         project_id: str | None,
         *,
-        after_event_id: str | None = None,
+        after_ingest_seq: int | None = None,
+        exclude_ingest_seqs: frozenset[int] = frozenset(),
         limit: int = 100,
     ) -> list[EventRow]:
         stmt = (
             sa.select(events)
             .select_from(events.join(runs, events.c.run_id == runs.c.run_id))
-            .order_by(events.c.event_id)
+            .order_by(events.c.ingest_seq)
             .limit(limit)
         )
         if project_id is not None:
             stmt = stmt.where(runs.c.project_id == project_id)
-        if after_event_id is not None:
-            stmt = stmt.where(events.c.event_id > after_event_id)
+        if after_ingest_seq is not None:
+            stmt = stmt.where(events.c.ingest_seq > after_ingest_seq)
+        if exclude_ingest_seqs:
+            stmt = stmt.where(events.c.ingest_seq.not_in(sorted(exclude_ingest_seqs)))
         async with self._engine.connect() as conn:
             result = await conn.execute(stmt)
             fetched = result.mappings().all()
         return [_event_row_from_mapping(row) for row in fetched]
 
-    async def latest_event_id(self, project_id: str | None) -> str | None:
-        # ORDER BY event_id DESC LIMIT 1 rather than max(): with a project
-        # filter the join makes an index-backed backwards scan the cheaper
-        # plan, and without one it degrades to the same thing max() does.
+    async def latest_ingest_seq(self, project_id: str | None) -> int | None:
         stmt = (
-            sa.select(events.c.event_id)
+            sa.select(events.c.ingest_seq)
             .select_from(events.join(runs, events.c.run_id == runs.c.run_id))
-            .order_by(events.c.event_id.desc())
+            .order_by(events.c.ingest_seq.desc())
             .limit(1)
         )
         if project_id is not None:
             stmt = stmt.where(runs.c.project_id == project_id)
         async with self._engine.connect() as conn:
             result = await conn.execute(stmt)
-            return result.scalar_one_or_none()
+            value: int | None = result.scalar_one_or_none()
+            return value
 
     async def append_server_event(
         self,
@@ -516,6 +517,7 @@ def _event_row_from_mapping(row: sa.RowMapping) -> EventRow:
         payload=row["payload"],
         blobs=row["blobs"],
         sub_seq=row["sub_seq"],
+        ingest_seq=row["ingest_seq"],
     )
 
 

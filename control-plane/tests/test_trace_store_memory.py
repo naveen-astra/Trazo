@@ -174,7 +174,7 @@ async def test_trace_store__list_runs_keyset_pagination_stable_under_insert() ->
     assert [r.run_id for r in page2] == ["run_2", "run_1"]
 
 
-async def test_trace_store__get_project_events_spans_runs_ordered_by_event_id() -> None:
+async def test_trace_store__get_project_events_spans_runs_in_storage_order() -> None:
     store = InMemoryTraceStore()
     await store.upsert_run(_run(run_id="run_a", project_id="proj_a"))
     await store.upsert_run(_run(run_id="run_b", project_id="proj_a"))
@@ -195,9 +195,7 @@ async def test_trace_store__get_project_events_spans_runs_ordered_by_event_id() 
     ]
 
 
-async def test_trace_store__get_project_events_after_event_id_resumes_correctly() -> (
-    None
-):
+async def test_trace_store__get_project_events_resumes_after_an_ingest_seq() -> None:
     store = InMemoryTraceStore()
     await store.upsert_run(_run(run_id="run_a", project_id="proj_a"))
     await store.upsert_events(
@@ -208,9 +206,8 @@ async def test_trace_store__get_project_events_after_event_id_resumes_correctly(
         ]
     )
 
-    events = await store.get_project_events(
-        "proj_a", after_event_id="evt_0000000000000000000000001"
-    )
+    first = (await store.get_project_events("proj_a"))[0].ingest_seq
+    events = await store.get_project_events("proj_a", after_ingest_seq=first)
 
     assert [e.event_id for e in events] == [
         "evt_0000000000000000000000002",
@@ -501,3 +498,45 @@ async def test_trace_store__upsert_replay_report_replaces_not_accumulates() -> N
     assert fetched is not None
     assert fetched.boundary_fidelity == 1.0
     assert fetched.divergences == []
+
+
+async def test_trace_store__get_project_events_orders_by_storage_not_event_id() -> None:
+    """An event_id carries its minting machine's clock; storage order is
+    what the firehose needs."""
+    store = InMemoryTraceStore()
+    await store.upsert_run(_run(run_id="run_a", project_id="proj_a"))
+    await store.upsert_events([_event(run_id="run_a", seq=0, event_id="evt_9")])
+    await store.upsert_events([_event(run_id="run_a", seq=1, event_id="evt_1")])
+
+    events = await store.get_project_events("proj_a")
+
+    assert [e.event_id for e in events] == ["evt_9", "evt_1"]
+
+
+async def test_trace_store__get_project_events_honours_exclusions() -> None:
+    store = InMemoryTraceStore()
+    await store.upsert_run(_run(run_id="run_a", project_id="proj_a"))
+    await store.upsert_events(
+        [_event(run_id="run_a", seq=i, event_id=f"evt_{i}") for i in range(3)]
+    )
+    second = (await store.get_project_events("proj_a"))[1].ingest_seq
+
+    events = await store.get_project_events(
+        "proj_a", exclude_ingest_seqs=frozenset({second})
+    )
+
+    assert [e.event_id for e in events] == ["evt_0", "evt_2"]
+
+
+async def test_trace_store__an_upsert_keeps_the_rows_ingest_seq() -> None:
+    """Mirrors Postgres: a redelivered event updates its row in place and
+    must not jump to the head of the firehose."""
+    store = InMemoryTraceStore()
+    await store.upsert_events([_event(seq=0, event_id="evt_0")])
+    await store.upsert_events([_event(seq=1, event_id="evt_1")])
+    before = {e.event_id: e.ingest_seq for e in await store.get_events("run_1")}
+
+    await store.upsert_events([_event(seq=0, event_id="evt_0")])
+
+    after = {e.event_id: e.ingest_seq for e in await store.get_events("run_1")}
+    assert after == before

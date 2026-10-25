@@ -40,6 +40,10 @@ POLL_INTERVAL_SECONDS = 0.5
 # measured at 0.1-2.3 s on the demo stack -- and closing on run.finished
 # alone dropped every one of them.
 LATE_EVENT_GRACE_SECONDS = 3.0
+# How far behind its cursor the firehose re-reads each poll, for rows whose
+# insert committed after a later-numbered one. Commit reordering spans only
+# transactions in flight at the same moment, so this is generous.
+FIREHOSE_LOOKBACK_ROWS = 1000
 
 Position = tuple[int, int]
 
@@ -160,52 +164,99 @@ async def stream_run_events(
             await asyncio.sleep(poll_interval)
 
 
+def firehose_resume(
+    last_event_id: str | None, *, tail: bool
+) -> tuple[int | None, bool]:
+    """The firehose's resume position from an SSE ``Last-Event-ID``, and
+    whether to start at the head.
+
+    The id is an ``ingest_seq``. One that is not a number is an
+    ``event_id`` cursor from a client connected before the firehose paged
+    on storage order: it cannot be mapped onto the new order, so the stream
+    starts at the head rather than replaying the whole history.
+    """
+    if not last_event_id:
+        return None, tail
+    try:
+        return int(last_event_id), tail
+    except ValueError:
+        return None, True
+
+
 async def stream_project_events(
     store: TraceStore,
     project: str | None,
     *,
-    after_event_id: str | None,
+    after: int | None,
     is_disconnected: Callable[[], Awaitable[bool]],
     tail: bool = False,
     poll_interval: float = POLL_INTERVAL_SECONDS,
+    lookback: int = FIREHOSE_LOOKBACK_ROWS,
 ) -> AsyncIterator[str]:
     """Yields SSE messages for every event across every run in a project,
-    ordered by event_id (ULID — globally sortable, unlike per-run seq).
-    ``project=None`` streams every project — what the dashboard's
-    Overview subscribes to when no project filter is set, so it updates
-    the instant an event lands rather than on a poll tick.
-    Never terminates on its own; only a client disconnect ends it.
+    in the order the store saved them (``ingest_seq``). ``project=None``
+    streams every project -- what the dashboard's Overview subscribes to
+    when no project filter is set. Never terminates on its own; only a
+    client disconnect ends it.
+
+    Paged by ``ingest_seq``, never by ``event_id``: an id carries the clock
+    of the machine that minted it, so with an agent's clock ahead of the
+    server's, every detection the server minted sorted behind the cursor
+    and was never delivered -- critical-incident notifications included.
+
+    ``ingest_seq`` is assigned on insert but becomes visible on commit, and
+    two concurrent transactions can commit out of number order. So each
+    poll re-reads ``lookback`` rows behind the cursor and skips the ones
+    already sent: a row that becomes visible late, below the cursor, is
+    still delivered, exactly once.
 
     ``project`` may be a ``project_id`` or the human project name; it is
     re-resolved on every poll until it maps to a known id. Resolving once
     at subscribe time is not enough for a stream that outlives the
     lookup: a subscriber that connects *before* the project's first event
     finds no name to match, and a one-shot resolution would leave it
-    filtering on a value that can never match — silently delivering
-    nothing forever. scripts/smoke/phase2.sh does exactly that, opening
-    the subscription against an empty database before starting the agent.
+    filtering on a value that can never match -- silently delivering
+    nothing forever.
 
     ``tail`` starts the cursor at the current head, so the client is sent
-    only events that arrive after it connected. ``after_event_id`` always
-    wins over it: that carries the SSE ``Last-Event-ID`` resume position,
-    and silently skipping to the head on reconnect would drop exactly the
+    only events that arrive after it connected. ``after`` always wins over
+    it: that carries the SSE ``Last-Event-ID`` resume position, and
+    silently skipping to the head on reconnect would drop exactly the
     events the resume exists to recover.
     """
     project_id = await resolve_project_id(store, project)
-    last_event_id = after_event_id
-    if last_event_id is None and tail:
-        last_event_id = await store.latest_event_id(project_id)
+    cursor = after
+    if cursor is None and tail:
+        cursor = await store.latest_ingest_seq(project_id)
+    cursor = cursor or 0
+
+    sent: set[int] = set()
+    if cursor > 0:
+        # Resuming or tailing: everything at or below the cursor counts as
+        # already delivered, so the look-behind window does not resend it.
+        for row in await store.get_project_events(
+            project_id, after_ingest_seq=max(cursor - lookback, 0), limit=lookback
+        ):
+            if row.ingest_seq <= cursor:
+                sent.add(row.ingest_seq)
+
     while True:
         if await is_disconnected():
             return
         if project_id is not None and not project_id.startswith("proj_"):
             project_id = await resolve_project_id(store, project)
+        floor = max(cursor - lookback, 0)
+        sent = {seq for seq in sent if seq > floor}
         events = await store.get_project_events(
-            project_id, after_event_id=last_event_id, limit=100
+            project_id,
+            after_ingest_seq=floor,
+            exclude_ingest_seqs=frozenset(sent),
+            limit=100,
         )
         for event in events:
-            last_event_id = event.event_id
-            yield _sse_message(event.event_id, _event_out(event))
+            sent.add(event.ingest_seq)
+            cursor = max(cursor, event.ingest_seq)
+            yield _sse_message(str(cursor), _event_out(event))
         if not events:
             await asyncio.sleep(poll_interval)
 
@@ -244,7 +295,7 @@ async def live_firehose(
     project: str | None = None,
     tail: bool = False,
 ) -> StreamingResponse:
-    after_event_id = request.headers.get("last-event-id")
+    after, tail = firehose_resume(request.headers.get("last-event-id"), tail=tail)
 
     async def _generator() -> AsyncIterator[str]:
         SSE_CLIENTS.labels(endpoint="firehose").inc()
@@ -252,7 +303,7 @@ async def live_firehose(
             async for chunk in stream_project_events(
                 store,
                 project,
-                after_event_id=after_event_id,
+                after=after,
                 is_disconnected=request.is_disconnected,
                 tail=tail,
             ):

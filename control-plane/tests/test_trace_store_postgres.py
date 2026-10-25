@@ -590,3 +590,39 @@ async def test_postgres_store__upsert_replay_report_replaces_not_accumulates(
     assert fetched is not None
     assert fetched.boundary_fidelity == 1.0
     assert fetched.divergences == []
+
+
+async def test_postgres_store__project_events_follow_storage_order(
+    engine: AsyncEngine, ids: tuple[str, str]
+) -> None:
+    """ingest_seq is assigned by Postgres on insert, so the firehose order
+    is the order rows were stored -- not event_id order, which carries the
+    minting machine's clock. An upsert onto an existing row keeps its
+    number, so a redelivered event does not jump to the head."""
+    project_id, run_id = ids
+    store = PostgresTraceStore(engine)
+    await store.ensure_project(project_id, f"test-{project_id}")
+    await store.upsert_run(_run_row(project_id, run_id))
+    late_clock = EventRow(
+        **{**_sdk_row(run_id, 0).__dict__, "event_id": f"evt_9_{run_id}"}
+    )
+    early_clock = EventRow(
+        **{**_sdk_row(run_id, 1).__dict__, "event_id": f"evt_1_{run_id}"}
+    )
+    await store.upsert_events([late_clock])
+    await store.upsert_events([early_clock])
+
+    rows = await store.get_project_events(project_id)
+    assert [r.event_id for r in rows] == [late_clock.event_id, early_clock.event_id]
+    first, second = rows[0].ingest_seq, rows[1].ingest_seq
+    assert 0 < first < second
+    assert await store.latest_ingest_seq(project_id) == second
+
+    await store.upsert_events([late_clock])  # redelivery
+    rows = await store.get_project_events(project_id)
+    assert [r.ingest_seq for r in rows] == [first, second]
+
+    excluded = await store.get_project_events(
+        project_id, after_ingest_seq=0, exclude_ingest_seqs=frozenset({first})
+    )
+    assert [r.event_id for r in excluded] == [early_clock.event_id]

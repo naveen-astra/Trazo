@@ -33,9 +33,27 @@ class InMemoryTraceStore:
         # Keyed like the real table's primary key: (run_id, seq, sub_seq).
         self._events: dict[tuple[str, int, int], EventRow] = {}
         self._idempotency: dict[tuple[str, str], tuple[int, int]] = {}
+        self._next_ingest_seq = 1
         self._detections: dict[str, DetectionRow] = {}
         self._policy_decisions: dict[str, PolicyDecisionRow] = {}
         self._replay_reports: dict[str, ReplayReportRow] = {}
+
+    def _store_event(self, row: EventRow) -> None:
+        """Mirror Postgres: a new row is numbered on insert; an upsert onto
+        an existing row keeps that row's number. A non-zero ingest_seq on
+        the incoming row is honoured, so a test can stand in for a commit
+        that lands out of order."""
+        key = (row.run_id, row.seq, row.sub_seq)
+        existing = self._events.get(key)
+        if row.ingest_seq:
+            ingest_seq = row.ingest_seq
+            self._next_ingest_seq = max(self._next_ingest_seq, ingest_seq + 1)
+        elif existing is not None:
+            ingest_seq = existing.ingest_seq
+        else:
+            ingest_seq = self._next_ingest_seq
+            self._next_ingest_seq += 1
+        self._events[key] = replace(row, ingest_seq=ingest_seq)
 
     async def list_project_names(self) -> dict[str, str]:
         return dict(self._projects)
@@ -62,7 +80,7 @@ class InMemoryTraceStore:
 
     async def upsert_events(self, rows: Sequence[EventRow]) -> None:
         for row in rows:
-            self._events[(row.run_id, row.seq, row.sub_seq)] = row
+            self._store_event(row)
 
     async def get_run(self, run_id: str) -> RunRow | None:
         return self._runs.get(run_id)
@@ -125,7 +143,8 @@ class InMemoryTraceStore:
         self,
         project_id: str | None,
         *,
-        after_event_id: str | None = None,
+        after_ingest_seq: int | None = None,
+        exclude_ingest_seqs: frozenset[int] = frozenset(),
         limit: int = 100,
     ) -> list[EventRow]:
         run_ids_in_project = (
@@ -141,27 +160,15 @@ class InMemoryTraceStore:
             event
             for (event_run_id, _seq, _sub), event in self._events.items()
             if (run_ids_in_project is None or event_run_id in run_ids_in_project)
-            and (after_event_id is None or event.event_id > after_event_id)
+            and (after_ingest_seq is None or event.ingest_seq > after_ingest_seq)
+            and event.ingest_seq not in exclude_ingest_seqs
         ]
-        rows.sort(key=lambda event: event.event_id)
+        rows.sort(key=lambda event: event.ingest_seq)
         return rows[:limit]
 
-    async def latest_event_id(self, project_id: str | None) -> str | None:
-        run_ids_in_project = (
-            None
-            if project_id is None
-            else {
-                run.run_id
-                for run in self._runs.values()
-                if run.project_id == project_id
-            }
-        )
-        event_ids = [
-            event.event_id
-            for (event_run_id, _seq, _sub), event in self._events.items()
-            if run_ids_in_project is None or event_run_id in run_ids_in_project
-        ]
-        return max(event_ids) if event_ids else None
+    async def latest_ingest_seq(self, project_id: str | None) -> int | None:
+        rows = await self.get_project_events(project_id, limit=len(self._events) + 1)
+        return rows[-1].ingest_seq if rows else None
 
     async def append_server_event(
         self,
@@ -219,18 +226,20 @@ class InMemoryTraceStore:
             )
             + 1
         )
-        self._events[(run_id, anchor, sub_seq)] = EventRow(
-            run_id=run_id,
-            seq=anchor,
-            event_id=event_id,
-            kind=kind,
-            ts=ts,
-            step_id=None,
-            agent_id=None,
-            fingerprint=None,
-            payload=payload,
-            blobs=[],
-            sub_seq=sub_seq,
+        self._store_event(
+            EventRow(
+                run_id=run_id,
+                seq=anchor,
+                event_id=event_id,
+                kind=kind,
+                ts=ts,
+                step_id=None,
+                agent_id=None,
+                fingerprint=None,
+                payload=payload,
+                blobs=[],
+                sub_seq=sub_seq,
+            )
         )
         if idempotency_key is not None:
             self._idempotency[(run_id, idempotency_key)] = (anchor, sub_seq)

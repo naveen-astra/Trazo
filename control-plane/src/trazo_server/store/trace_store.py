@@ -124,32 +124,27 @@ class TraceStore(Protocol):
         self,
         project_id: str | None,
         *,
-        after_event_id: str | None = None,
+        after_ingest_seq: int | None = None,
+        exclude_ingest_seqs: frozenset[int] = frozenset(),
         limit: int = 100,
     ) -> list[EventRow]:
-        """List events across every run in a project, ordered by
-        ``event_id`` (a ULID — globally unique and creation-time-sortable,
-        unlike ``seq`` which only orders events within one run). Backs the
-        live firehose (TRZ-P2-06), where ``after_event_id`` is the resume
-        cursor.
+        """Events across every run in a project (all projects when
+        ``project_id`` is None), in the order they were stored
+        (``ingest_seq``). Backs the live firehose.
+
+        Not ``event_id`` order: an id carries the clock of the machine
+        that minted it, so an event can be stored after one whose id sorts
+        later, and a cursor on ids would skip it. ``exclude_ingest_seqs``
+        lets a caller re-read a window behind its cursor -- numbers are
+        assigned on insert but become visible on commit, which can be
+        briefly out of order -- without receiving rows it already has.
         """
         ...
 
-    async def latest_event_id(self, project_id: str | None) -> str | None:
-        """The greatest ``event_id`` currently stored for a project (or
-        across all projects when ``project_id`` is None), or None when
-        there are no events yet.
-
-        This is the firehose's "start at the head" cursor. A client that
-        only wants to know *that* something happened — the dashboard's
-        refresh trigger, which discards the payload — would otherwise be
-        served the entire event history before its first live message,
-        which gets slower the longer the deployment has been running.
-
-        Deliberately ``max(event_id)`` and not "newest by ``ts``": the
-        cursor is compared against ``event_id``, so seeding it from a
-        different ordering could skip or repeat events at the boundary.
-        """
+    async def latest_ingest_seq(self, project_id: str | None) -> int | None:
+        """The highest ``ingest_seq`` stored for a project (or across all
+        projects when ``project_id`` is None), or None when there are no
+        events yet. The firehose's "start at the head" cursor."""
         ...
 
     async def append_server_event(

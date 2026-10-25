@@ -38,6 +38,9 @@ class EventRow:
     payload: dict[str, Any]
     blobs: list[dict[str, Any]]
     sub_seq: int = 0
+    # The order the store saved this row in (0 until it has). Read-only:
+    # the store assigns it.
+    ingest_seq: int = 0
 
 
 # Kinds only the control plane may originate. Ingest rejects them from

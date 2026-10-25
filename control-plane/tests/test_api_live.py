@@ -12,6 +12,7 @@ StreamingResponse completes fast under TestClient.
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +24,7 @@ from fastapi.testclient import TestClient
 from trazo_server.api import live as live_module
 from trazo_server.api.deps import get_trace_store
 from trazo_server.api.live import (
+    firehose_resume,
     parse_resume_position,
     stream_project_events,
     stream_run_events,
@@ -312,15 +314,17 @@ async def test_stream_project_events__spans_runs_ordered_by_event_id() -> None:
         stream_project_events(
             store,
             "proj_a",
-            after_event_id=None,
+            after=None,
             is_disconnected=_DisconnectAfterN(1),
             poll_interval=0.01,
         )
     )
 
     assert len(chunks) == 2
-    assert chunks[0].startswith("id: evt_001")
-    assert chunks[1].startswith("id: evt_002")
+    assert re.match(r"id: \d+\n", chunks[0])
+    assert "evt_001" in chunks[0]
+    assert re.match(r"id: \d+\n", chunks[1])
+    assert "evt_002" in chunks[1]
 
 
 async def test_stream_project_events__tail_skips_the_backlog() -> None:
@@ -343,7 +347,7 @@ async def test_stream_project_events__tail_skips_the_backlog() -> None:
         stream_project_events(
             store,
             "proj_a",
-            after_event_id=None,
+            after=None,
             is_disconnected=_DisconnectAfterN(1),
             tail=True,
             poll_interval=0.01,
@@ -363,7 +367,7 @@ async def test_stream_project_events__tail_still_yields_events_that_arrive_after
     stream = stream_project_events(
         store,
         "proj_a",
-        after_event_id=None,
+        after=None,
         is_disconnected=_never_disconnected,
         tail=True,
         poll_interval=0.01,
@@ -377,7 +381,8 @@ async def test_stream_project_events__tail_still_yields_events_that_arrive_after
     await store.upsert_events([_event(run_id="run_a", seq=1, event_id="evt_002")])
     chunk = await asyncio.wait_for(pull, timeout=5.0)
 
-    assert chunk.startswith("id: evt_002")
+    assert re.match(r"id: \d+\n", chunk)
+    assert "evt_002" in chunk
     await stream.aclose()
 
 
@@ -393,11 +398,13 @@ async def test_stream_project_events__resume_cursor_beats_tail() -> None:
         ]
     )
 
+    first = (await store.get_project_events("proj_a"))[0].ingest_seq
+
     chunks = await _collect(
         stream_project_events(
             store,
             "proj_a",
-            after_event_id="evt_001",
+            after=first,
             is_disconnected=_DisconnectAfterN(1),
             tail=True,
             poll_interval=0.01,
@@ -405,26 +412,25 @@ async def test_stream_project_events__resume_cursor_beats_tail() -> None:
     )
 
     assert len(chunks) == 1
-    assert chunks[0].startswith("id: evt_002")
+    assert "evt_002" in chunks[0]
+    assert chunks[0].startswith(f"id: {first + 1}\n")
 
 
-async def test_latest_event_id__is_scoped_to_the_project_and_none_when_empty() -> None:
+async def test_latest_ingest_seq__is_scoped_to_the_project_and_none_when_empty() -> (
+    None
+):
     store = InMemoryTraceStore()
-    assert await store.latest_event_id(None) is None
+    assert await store.latest_ingest_seq(None) is None
 
     await store.upsert_run(_run(run_id="run_a", project_id="proj_a"))
     await store.upsert_run(_run(run_id="run_b", project_id="proj_b"))
-    await store.upsert_events(
-        [
-            _event(run_id="run_a", seq=0, event_id="evt_001"),
-            _event(run_id="run_b", seq=0, event_id="evt_009"),
-        ]
-    )
+    await store.upsert_events([_event(run_id="run_a", seq=0, event_id="evt_001")])
+    await store.upsert_events([_event(run_id="run_b", seq=0, event_id="evt_009")])
 
-    assert await store.latest_event_id("proj_a") == "evt_001"
-    assert await store.latest_event_id("proj_b") == "evt_009"
-    assert await store.latest_event_id(None) == "evt_009"
-    assert await store.latest_event_id("proj_missing") is None
+    assert await store.latest_ingest_seq("proj_a") == 1
+    assert await store.latest_ingest_seq("proj_b") == 2
+    assert await store.latest_ingest_seq(None) == 2
+    assert await store.latest_ingest_seq("proj_missing") is None
 
 
 @pytest.fixture
@@ -524,7 +530,7 @@ async def test_stream_project_events__resolves_a_late_appearing_name() -> None:
     stream = stream_project_events(
         store,
         "phase2-smoke",  # nothing in the store knows this name yet
-        after_event_id=None,
+        after=None,
         is_disconnected=_never_disconnected,
         poll_interval=0.01,
     )
@@ -541,6 +547,108 @@ async def test_stream_project_events__resolves_a_late_appearing_name() -> None:
 
     chunk = await asyncio.wait_for(pull, timeout=5.0)
 
-    assert chunk.startswith("id: evt_001")
+    assert re.match(r"id: \d+\n", chunk)
+    assert "evt_001" in chunk
     assert "run.started" in chunk
     await stream.aclose()
+
+
+async def test_stream_project_events__delivers_events_whose_ids_sort_earlier() -> None:
+    """Event ids carry the clock of the machine that minted them. When an
+    agent's clock runs ahead of the server's, a detection the server mints
+    afterwards gets a *lower* id than events already streamed. Paging by
+    event_id skipped it for good -- and with it the critical-incident
+    notification. The stream must page by the order events were stored."""
+    store = InMemoryTraceStore()
+    await store.upsert_run(_run(run_id="run_a", project_id="proj_a"))
+    # The agent's clock is ahead: its event id sorts late.
+    await store.upsert_events(
+        [_event(run_id="run_a", seq=0, event_id="evt_9_agent_clock_ahead")]
+    )
+    stream = stream_project_events(
+        store,
+        "proj_a",
+        after=None,
+        is_disconnected=_never_disconnected,
+        poll_interval=0.01,
+    )
+    assert "evt_9_agent_clock_ahead" in await asyncio.wait_for(anext(stream), 2)
+
+    # Stored afterwards, minted on the server's (earlier) clock.
+    await store.upsert_events(
+        [_event(run_id="run_a", seq=1, event_id="evt_1_server_clock")]
+    )
+
+    assert "evt_1_server_clock" in await asyncio.wait_for(anext(stream), 2)
+
+
+async def test_stream_project_events__delivers_a_row_that_commits_out_of_order() -> (
+    None
+):
+    """ingest_seq is assigned on insert but visible on commit, so a row can
+    appear *below* the cursor. The look-behind window still sends it, once."""
+    store = InMemoryTraceStore()
+    await store.upsert_run(_run(run_id="run_a", project_id="proj_a"))
+    await store.upsert_events(
+        [_event(run_id="run_a", seq=0, event_id="evt_first", ingest_seq=10)]
+    )
+    stream = stream_project_events(
+        store,
+        "proj_a",
+        after=None,
+        is_disconnected=_never_disconnected,
+        poll_interval=0.01,
+    )
+    assert "evt_first" in await asyncio.wait_for(anext(stream), 2)
+
+    # Numbered before the row above, but committed after it.
+    await store.upsert_events(
+        [_event(run_id="run_a", seq=1, event_id="evt_late", ingest_seq=7)]
+    )
+    late = await asyncio.wait_for(anext(stream), 2)
+    assert "evt_late" in late
+    # Its SSE id is the cursor, not its own lower number.
+    assert late.startswith("id: 10\n")
+
+    await store.upsert_events([_event(run_id="run_a", seq=2, event_id="evt_next")])
+    assert "evt_next" in await asyncio.wait_for(anext(stream), 2)
+
+
+async def test_stream_project_events__resume_does_not_resend_the_window() -> None:
+    store = InMemoryTraceStore()
+    await store.upsert_run(_run(run_id="run_a", project_id="proj_a"))
+    await store.upsert_events(
+        [_event(run_id="run_a", seq=i, event_id=f"evt_{i}") for i in range(5)]
+    )
+
+    chunks = await _collect(
+        stream_project_events(
+            store,
+            "proj_a",
+            after=3,
+            is_disconnected=_DisconnectAfterN(2),
+            poll_interval=0.01,
+        )
+    )
+
+    # Numbers start at 1: resuming after 3 (evt_2) delivers evt_3 and evt_4,
+    # and nothing from the window at or below the resume point.
+    names = ("evt_0", "evt_1", "evt_2", "evt_3", "evt_4")
+    delivered = [e for c in chunks for e in names if f'"{e}"' in c]
+    assert delivered == ["evt_3", "evt_4"]
+
+
+@pytest.mark.parametrize(
+    ("header", "tail", "expected"),
+    [
+        (None, False, (None, False)),
+        (None, True, (None, True)),
+        ("42", False, (42, False)),
+        ("42", True, (42, True)),
+        # An event_id cursor from before ingest_seq: start at the head
+        # instead of replaying all history.
+        ("evt_01OLDCURSOR", False, (None, True)),
+    ],
+)
+def test_firehose_resume(header: str | None, tail: bool, expected: object) -> None:
+    assert firehose_resume(header, tail=tail) == expected
