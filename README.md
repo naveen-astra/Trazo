@@ -525,6 +525,7 @@ interface, because a benchmark should not depend on a small model's judgment.
 | `TRAZO_POLICY_SCOPE` | `write,external` | Extra comma-separated side-effect classes to govern |
 | `TRAZO_REDACT_KEYS` | built-in set | Extra comma-separated key substrings to redact, on top of `api_key`, `authorization`, `password`, and similar |
 | `TRAZO_SPOOL_MAX_MB` | `256` | Disk spool cap before the oldest batches are dropped |
+| `TRAZO_PRICING_FILE` | none | JSON file of `{"model-prefix": [input, output]}` USD-per-million prices, merged over the built-in table used to estimate `cost_usd` |
 
 `observe` is the recommended way to introduce policies to an existing system:
 decisions are recorded and visible in the dashboard, but nothing is blocked until

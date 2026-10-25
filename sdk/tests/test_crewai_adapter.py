@@ -486,3 +486,30 @@ def test_instrument__without_a_policy_hook_tools_are_left_untouched() -> None:
     traced.kickoff()
 
     assert counting.executions == 1
+
+
+def test_instrument__llm_calls_are_priced_from_the_model_and_tokens() -> None:
+    context_init(project="toy-crew-test")
+    shipper = _FakeShipper()
+    agent = Agent(
+        role="Writer",
+        goal="Write",
+        backstory="A writer",
+        llm=_ScriptedLLM(model="gpt-4o-mini", script=["Final Answer: done"]),
+        allow_delegation=False,
+        verbose=False,
+    )
+    task = Task(description="Write", expected_output="text", agent=agent)
+    crew = Crew(agents=[agent], tasks=[task], process=Process.sequential)
+
+    instrument(crew, recorder=Recorder(shipper=shipper)).kickoff()
+
+    [llm_call] = _events_by_kind(shipper.enqueued, "llm.call")
+    # _ScriptedLLM reports 10 prompt and 5 completion tokens.
+    assert llm_call["payload"]["cost_usd"] == pytest.approx(
+        (10 * 0.15 + 5 * 0.60) / 1_000_000
+    )
+    [run_finished] = _events_by_kind(shipper.enqueued, "run.finished")
+    assert run_finished["payload"]["totals"]["cost_usd"] == pytest.approx(
+        llm_call["payload"]["cost_usd"]
+    )

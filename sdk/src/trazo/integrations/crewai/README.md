@@ -91,8 +91,10 @@ Tools CrewAI creates during the run (delegation) are not governed.
   same conservative-default rationale as the LangGraph adapter; CrewAI's
   `BaseTool` doesn't declare one either. Escape hatch: `@trace_tool
   (side_effect_class=...)` (TRZ-P2-05).
-- **`cost_usd` is always `0.0`.** Same known gap as the LangGraph adapter
-  — needs a per-provider pricing table.
+- **`cost_usd` is an estimate** from `trazo.core.pricing`'s per-model
+  table and the reported token counts: 0.0 for local providers and for
+  models the table doesn't know, and no prompt-cache or batch discounts.
+  Override or extend the table with `TRAZO_PRICING_FILE`.
 - **`provider` is a best-effort guess from the model name string**
   (`gpt-*`/`o1`/`o3` → openai, `claude*` → anthropic, `gemini*` → google,
   else `"unknown"`) — `LLMCallStartedEvent` doesn't carry a provider field.

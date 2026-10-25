@@ -40,6 +40,7 @@ from trazo.core.context import (
     step_scope,
 )
 from trazo.core.policy import PolicyHook
+from trazo.core.pricing import estimate_cost_usd
 from trazo.core.recorder import Recorder
 from trazo.core.serialization import hash_state, to_json_safe
 from trazo.core.ulid import new_step_id
@@ -252,7 +253,12 @@ class TrazoCallbackHandler(BaseCallbackHandler):
             else {"role": "assistant", "content": message_text},
             "tokens_in": tokens_in,
             "tokens_out": tokens_out,
-            "cost_usd": 0.0,  # needs a pricing table; tracked as a known gap
+            "cost_usd": estimate_cost_usd(
+                provider=in_flight.inputs.get("provider"),
+                model=in_flight.inputs.get("model"),
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+            ),
             "latency_ms": latency_ms,
         }
         self._emit_boundary("llm.call", in_flight.inputs, result, step=in_flight.step)

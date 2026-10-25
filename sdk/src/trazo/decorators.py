@@ -25,6 +25,7 @@ import time
 from collections.abc import Callable
 from typing import Any, TypeVar
 
+from trazo.core.pricing import estimate_cost_usd
 from trazo.core.runtime import get_recorder, try_get_policy_hook
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -115,8 +116,10 @@ def trace_llm(*, provider: str, model: str) -> Callable[[F], F]:
 
     The wrapped function's call arguments become ``messages_in``. If the
     function returns a dict containing a ``response`` key, its
-    ``tokens_in``/``tokens_out``/``cost_usd`` are used too (0/0.0 if
-    absent); otherwise the whole return value is treated as ``response``.
+    ``tokens_in``/``tokens_out``/``cost_usd`` are used too (tokens 0 if
+    absent; a missing ``cost_usd`` is estimated from ``provider``/``model``
+    and the tokens by ``trazo.core.pricing``); otherwise the whole return
+    value is treated as ``response``.
     In RECORD mode, the caller gets back exactly what the function
     returned, unchanged. In REPLAY mode ``fn`` is never called (TRZ-P4-02:
     that's the entire point), so there is no original return value to
@@ -141,11 +144,21 @@ def trace_llm(*, provider: str, model: str) -> Callable[[F], F]:
                 raw_result_holder["value"] = raw_result
                 latency_ms = (time.monotonic() - start) * 1000
                 if isinstance(raw_result, dict) and "response" in raw_result:
+                    tokens_in = raw_result.get("tokens_in", 0)
+                    tokens_out = raw_result.get("tokens_out", 0)
+                    cost_usd = raw_result.get("cost_usd")
+                    if cost_usd is None:
+                        cost_usd = estimate_cost_usd(
+                            provider=provider,
+                            model=model,
+                            tokens_in=int(tokens_in or 0),
+                            tokens_out=int(tokens_out or 0),
+                        )
                     return {
                         "response": raw_result["response"],
-                        "tokens_in": raw_result.get("tokens_in", 0),
-                        "tokens_out": raw_result.get("tokens_out", 0),
-                        "cost_usd": raw_result.get("cost_usd", 0.0),
+                        "tokens_in": tokens_in,
+                        "tokens_out": tokens_out,
+                        "cost_usd": cost_usd,
                         "latency_ms": latency_ms,
                     }
                 return {

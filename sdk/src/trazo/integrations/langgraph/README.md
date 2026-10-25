@@ -64,8 +64,10 @@ polling:
   `write`/`external`, EVENTS.md §2.3). A tool that wants a different
   classification should use the `@trace_tool(side_effect_class=...)`
   escape hatch (TRZ-P2-05) instead of relying on this adapter.
-- **`cost_usd` is always `0.0`.** Needs a per-provider pricing table this
-  task didn't build; tracked as a follow-up, not silently wrong-but-hidden.
+- **`cost_usd` is an estimate** from `trazo.core.pricing`'s per-model
+  table and the reported token counts: 0.0 for local providers (Ollama)
+  and for models the table doesn't know, and no prompt-cache or batch
+  discounts. Override or extend the table with `TRAZO_PRICING_FILE`.
 - **`provider` is the model class's Python name** (e.g. `ChatOpenAI`), not
   a normalized string like `openai` — LangChain's callback `serialized`
   payload doesn't carry a normalized provider id.

@@ -92,6 +92,7 @@ from crewai.events.types.tool_usage_events import (
 from crewai.utilities.string_utils import sanitize_tool_name
 
 from trazo.core.context import optional_agent_scope, optional_step_scope
+from trazo.core.pricing import estimate_cost_usd
 from trazo.core.recorder import Recorder
 from trazo.core.serialization import hash_state, to_json_safe
 from trazo.core.ulid import new_step_id
@@ -374,7 +375,12 @@ class CrewEventCapture:
             "response": to_json_safe(event.response),
             "tokens_in": tokens_in,
             "tokens_out": tokens_out,
-            "cost_usd": 0.0,  # needs a pricing table; known gap (see LangGraph adapter)
+            "cost_usd": estimate_cost_usd(
+                provider=pending.inputs.get("provider"),
+                model=pending.inputs.get("model"),
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+            ),
             "latency_ms": (time.monotonic() - pending.started_at) * 1000,
         }
         step = self._steps.get(pending.task_id)
