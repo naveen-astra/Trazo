@@ -792,7 +792,7 @@ suites, working end to end against a live stack.
 | Trace event schema | Frozen at `schema-v1.0`; CI enforces version bumps |
 | Python SDK | Complete |
 | LangGraph adapter | Complete |
-| CrewAI adapter | Complete (tracing); no synchronous pre-execution hook point exists in CrewAI's event bus, so inline policy enforcement is LangGraph-only |
+| CrewAI adapter | Complete: tracing, plus inline policy enforcement on the crew's agent and task tools |
 | Ingestion pipeline | Complete: HTTP to Redis Streams to PostgreSQL |
 | Replay engine | Complete: record-and-substitute, divergence detection, fidelity harness |
 | Failure detection | Complete: three rule-based detectors, scored against a 300-run labeled corpus |
@@ -804,9 +804,13 @@ suites, working end to end against a live stack.
 
 Known limitations, stated explicitly:
 
-- Inline policy enforcement works for LangGraph and decorator-instrumented code.
-  CrewAI's fire-and-forget event bus provides no synchronous pre-execution hook,
-  so CrewAI runs are traced and detected on, but not gated.
+- Inline policy enforcement covers LangGraph, CrewAI and decorator-instrumented
+  code. CrewAI's event bus is fire-and-forget, so the CrewAI adapter instead
+  wraps each tool on the crew's agents and tasks for the length of `kickoff()`.
+  CrewAI catches tool exceptions and shows them to the agent, so the crew keeps
+  going after a denial; the denied tool never runs, and `kickoff()` raises
+  `PolicyDenied` once the crew stops. Tools added to an agent mid-run are not
+  governed.
 - The `thrash` detector has low precision (33%). It is shipped because the number
   is published and reproducible, not because it is finished.
 - Goal-drift detection is not implemented.

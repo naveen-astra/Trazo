@@ -67,6 +67,22 @@ pass. Only after that is `run.finished`'s totals computed and emitted.
 Skipping `flush()` (or processing events live, un-buffered) reproduces
 the flaky drop/reorder within a handful of runs.
 
+## Policy enforcement (TRZ-P6-04)
+
+The event bus can't block anything: its handlers run on a thread pool after
+the tool has been dispatched (see `listener.py`). So `kickoff()` instead
+puts a `PolicyHook.check()` in front of every tool on the crew's agents and
+tasks, by shadowing each tool instance's `_run`/`_arun` for the length of
+the call and restoring them afterwards. CrewAI resolves `self._run` when it
+builds each task's executor and when the tool runs, so both the ReAct and
+native-function-calling paths go through the check.
+
+CrewAI catches tool exceptions and reports them to the agent as text, so a
+denial doesn't stop the crew by itself. The denied tool's body never runs;
+the adapter records the `PolicyDenied` and re-raises it from `kickoff()`
+when the crew finishes, and `run.finished` carries `status: "error"`.
+Tools CrewAI creates during the run (delegation) are not governed.
+
 ## Known limitations (Phase 3 scope; tracked, not hidden)
 
 - **`Process.sequential` only.** `Process.hierarchical`'s manager-agent

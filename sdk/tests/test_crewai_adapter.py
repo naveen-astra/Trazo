@@ -13,12 +13,16 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import httpx
+import pytest
 from crewai import Agent, Crew, Process, Task
 from crewai.llms.base_llm import BaseLLM, LLMCallType, llm_call_context
 from pydantic import Field
 
 from trazo.core.context import init as context_init
+from trazo.core.policy import PolicyHook, PolicyMode
 from trazo.core.recorder import Recorder
+from trazo.errors import PolicyDenied
 from trazo.integrations.crewai import instrument
 
 
@@ -347,3 +351,138 @@ def _web_search_tool() -> Any:
             return f"results for {query}"
 
     return _SearchTool()
+
+
+class _CountingTool:
+    """Builds a web_search tool whose body counts its own executions -- a
+    side-effect sentinel independent of anything the recorder observes."""
+
+    def __init__(self) -> None:
+        self.executions = 0
+
+    def build(self) -> Any:
+        from crewai.tools import BaseTool
+
+        sentinel = self
+
+        class _SearchTool(BaseTool):
+            name: str = "web_search"
+            description: str = "Search the web for a query"
+
+            def _run(self, query: str) -> str:
+                sentinel.executions += 1
+                return f"results for {query}"
+
+        return _SearchTool()
+
+
+def _policy_hook(decision: str) -> PolicyHook:
+    checked: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        checked.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "decision": decision,
+                "policy_id": "tool_blocklist",
+                "reasons": ["x"],
+            },
+        )
+
+    hook = PolicyHook(
+        endpoint="http://example.test",
+        api_key="k",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        mode=PolicyMode.ENFORCE,
+        governed_side_effect_classes=frozenset({"external"}),
+    )
+    hook.checked = checked  # type: ignore[attr-defined]
+    return hook
+
+
+def _searching_crew(tool: Any) -> Crew:
+    researcher = Agent(
+        role="Researcher",
+        goal="Find facts",
+        backstory="A careful researcher",
+        llm=_ScriptedLLM(
+            model="fake-model",
+            script=[
+                "Thought: I should search\n"
+                "Action: web_search\n"
+                'Action Input: {"query": "trazo"}',
+                *["Final Answer: done"] * 5,
+            ],
+        ),
+        allow_delegation=False,
+        verbose=False,
+        tools=[tool],
+    )
+    task = Task(
+        description="Research trazo",
+        expected_output="facts about trazo",
+        agent=researcher,
+    )
+    return Crew(
+        agents=[researcher], tasks=[task], process=Process.sequential, verbose=False
+    )
+
+
+def test_instrument__policy_denied_tool_call_never_actually_executes() -> None:
+    """TRZ-P6-04's DoD for CrewAI: the denied tool's body never runs, and
+    PolicyDenied reaches the caller even though CrewAI itself catches tool
+    exceptions and only reports them to the agent."""
+    context_init(project="toy-crew-test")
+    shipper = _FakeShipper()
+    counting = _CountingTool()
+    tool = counting.build()
+    hook = _policy_hook("deny")
+    traced = instrument(
+        _searching_crew(tool), recorder=Recorder(shipper=shipper), policy_hook=hook
+    )
+
+    with pytest.raises(PolicyDenied) as exc_info:
+        traced.kickoff()
+
+    assert exc_info.value.policy_id == "tool_blocklist"
+    assert counting.executions == 0, "the tool's real body must never have run"
+    checked = hook.checked  # type: ignore[attr-defined]
+    assert checked, "the policy endpoint must have been asked"
+    assert checked[0]["action"]["tool_name"] == "web_search"
+    run_finished = _events_by_kind(shipper.enqueued, "run.finished")
+    assert [e["payload"]["status"] for e in run_finished] == ["error"]
+    assert "_run" not in tool.__dict__, "the policy wrapper must be removed"
+
+
+def test_instrument__policy_allowed_tool_call_runs_normally() -> None:
+    context_init(project="toy-crew-test")
+    shipper = _FakeShipper()
+    counting = _CountingTool()
+    tool = counting.build()
+    traced = instrument(
+        _searching_crew(tool),
+        recorder=Recorder(shipper=shipper),
+        policy_hook=_policy_hook("allow"),
+    )
+
+    result = traced.kickoff()
+
+    assert result.raw == "done"
+    assert counting.executions == 1
+    tool_calls = _events_by_kind(shipper.enqueued, "tool.call")
+    assert [e["payload"]["result"] for e in tool_calls] == ["results for trazo"]
+    assert "_run" not in tool.__dict__
+
+
+def test_instrument__without_a_policy_hook_tools_are_left_untouched() -> None:
+    context_init(project="toy-crew-test")
+    counting = _CountingTool()
+    tool = counting.build()
+    traced = instrument(
+        _searching_crew(tool), recorder=Recorder(shipper=_FakeShipper())
+    )
+
+    traced.kickoff()
+
+    assert counting.executions == 1
