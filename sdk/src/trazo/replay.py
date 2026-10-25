@@ -35,7 +35,7 @@ from trazo.core.bundle_loader import load_bundle as _load_bundle
 from trazo.core.context import SdkConfig, config_scope
 from trazo.core.recorder import Recorder, RecorderMode
 from trazo.core.replay_bundle import RecordedEvent, ReplayBundle
-from trazo.core.replay_report import ReplayReport
+from trazo.core.replay_report import ReplayDivergence, ReplayReport
 from trazo.core.runtime import replay_recorder_scope
 from trazo.core.substituter import Substituter
 from trazo.errors import TrazoError
@@ -229,11 +229,14 @@ class Session:
 
     def run_to(self, step_index: int | None = None) -> ReplayReport:
         """Re-invoke the registered entrypoint end to end, substituting
-        every boundary call from this session's bundle. ``step_index`` is
-        informational only — the entrypoint runs to its own completion
-        (there is no generic way to pause a re-driven framework mid-run);
-        it truncates the returned report to the state as of that step
-        count instead of literally stopping execution there."""
+        every boundary call from this session's bundle.
+
+        ``step_index`` (0-based, in recorded step order) still lets the
+        entrypoint run to its own completion -- there is no generic way to
+        pause a re-driven framework mid-run -- and instead truncates the
+        returned report to what the recording reached by the end of that
+        step. In ``strict`` mode a divergence past that point therefore
+        does not raise. An index past the last step means the whole run."""
         entry = _registered_entrypoint(self.bundle.framework)
         run_started_events = self.bundle.events_by_kind("run.started")
         entry_input = (
@@ -250,10 +253,33 @@ class Session:
             project=self.bundle.project_id, endpoint=self._endpoint, api_key=""
         )
 
-        with config_scope(replay_config), replay_recorder_scope(replay_recorder):
-            entry(entry_input)
+        cutoff = self._step_cutoff_seq(step_index)
+        try:
+            with config_scope(replay_config), replay_recorder_scope(replay_recorder):
+                entry(entry_input)
+        except ReplayDivergence as divergence:
+            expected = divergence.detail.expected_seq
+            if cutoff is None or expected is None or expected <= cutoff:
+                raise
 
-        return substituter.report
+        if cutoff is None or step_index is None:
+            return substituter.report
+        return substituter.report.through(seq=cutoff, step_index=step_index)
+
+    def _step_cutoff_seq(self, step_index: int | None) -> int | None:
+        """The seq of step ``step_index``'s last recorded event, or
+        ``None`` for no truncation."""
+        if step_index is None:
+            return None
+        if step_index < 0:
+            raise ValueError(f"step_index must be >= 0, got {step_index}")
+        started = self.bundle.events_by_kind("step.started")
+        if step_index >= len(started):
+            return None
+        finished = self.bundle.events_by_kind("step.finished")
+        if step_index < len(finished):
+            return finished[step_index].seq
+        return started[step_index].seq
 
 
 def load(

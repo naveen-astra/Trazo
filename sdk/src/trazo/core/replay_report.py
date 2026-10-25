@@ -139,3 +139,20 @@ class ReplayReport:
     @property
     def reordered_count(self) -> int:
         return sum(1 for step in self.steps if step.reordered)
+
+    def through(self, *, seq: int, step_index: int) -> ReplayReport:
+        """A copy holding only what the recording reached by ``seq``, the
+        last event of step ``step_index``: the report as of that step. A
+        divergence with no recorded position (a call history never had)
+        cannot be placed, so it is kept rather than silently dropped."""
+        truncated = ReplayReport()
+        truncated.steps = [s for s in self.steps if s.matched_seq <= seq]
+        truncated.divergences = [
+            d
+            for d in self.divergences
+            if d.detail.expected_seq is None or d.detail.expected_seq <= seq
+        ]
+        truncated.step_fidelity_records = [
+            r for r in self.step_fidelity_records if r.step_index <= step_index
+        ]
+        return truncated

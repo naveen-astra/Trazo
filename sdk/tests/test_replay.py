@@ -12,6 +12,7 @@ import pytest
 from trazo import replay
 from trazo.core.fingerprint import fingerprint_for
 from trazo.core.replay_bundle import RecordedEvent, ReplayBundle
+from trazo.core.replay_report import ReplayDivergence
 
 
 @pytest.fixture(autouse=True)
@@ -328,3 +329,97 @@ def test_run_to__makes_get_config_project_available_to_the_entrypoint() -> None:
 
     assert seen_project["value"] == "the-bundles-project"
     assert is_initialized() is False
+
+
+def _llm_payload(question: str) -> dict[str, Any]:
+    return {
+        "provider": "fixture",
+        "model": "fixture-v1",
+        "params": {},
+        "messages_in": {"question": question},
+        "response": f"answer to {question}",
+        "tokens_in": 1,
+        "tokens_out": 1,
+        "cost_usd": 0.0,
+        "latency_ms": 1.0,
+    }
+
+
+def _two_step_bundle() -> ReplayBundle:
+    """Two steps, one llm.call each: seqs 1-3 are step 0, 4-6 step 1."""
+    first, second = _llm_payload("one"), _llm_payload("two")
+    return _bundle(
+        [
+            _event(0, "run.started", {"entry_input": {}}),
+            _event(1, "step.started", {"name": "a"}, step_id="s0"),
+            _event(
+                2,
+                "llm.call",
+                first,
+                step_id="s0",
+                fingerprint=fingerprint_for("llm.call", first),
+            ),
+            _event(3, "step.finished", {}, step_id="s0"),
+            _event(4, "step.started", {"name": "b"}, step_id="s1"),
+            _event(
+                5,
+                "llm.call",
+                second,
+                step_id="s1",
+                fingerprint=fingerprint_for("llm.call", second),
+            ),
+            _event(6, "step.finished", {}, step_id="s1"),
+        ]
+    )
+
+
+def _register_entrypoint_diverging_in_step_1() -> None:
+    @replay.entrypoint(framework="langgraph")
+    def run(entry_input: object) -> None:
+        from trazo.core.runtime import get_recorder
+
+        for question in ("one", "changed"):
+            get_recorder().boundary(
+                "llm.call",
+                {
+                    "provider": "fixture",
+                    "model": "fixture-v1",
+                    "params": {},
+                    "messages_in": {"question": question},
+                },
+                lambda: {},
+            )
+
+
+def test_run_to__step_index_truncates_the_report_to_that_step() -> None:
+    _register_entrypoint_diverging_in_step_1()
+    session = replay.Session(_two_step_bundle(), mode="lenient")
+
+    full = session.run_to()
+    through_first = session.run_to(step_index=0)
+
+    assert len(full.divergences) == 1
+    assert [s.matched_seq for s in through_first.steps] == [2]
+    assert through_first.divergences == []
+
+
+def test_run_to__strict_ignores_a_divergence_past_the_requested_step() -> None:
+    _register_entrypoint_diverging_in_step_1()
+    session = replay.Session(_two_step_bundle(), mode="strict")
+
+    report = session.run_to(step_index=0)
+    assert report.divergences == []
+
+    with pytest.raises(ReplayDivergence):
+        session.run_to(step_index=1)
+    with pytest.raises(ReplayDivergence):
+        session.run_to()
+
+
+def test_run_to__a_step_index_past_the_last_step_means_the_whole_run() -> None:
+    _register_entrypoint_diverging_in_step_1()
+    session = replay.Session(_two_step_bundle(), mode="lenient")
+
+    assert len(session.run_to(step_index=99).divergences) == 1
+    with pytest.raises(ValueError):
+        session.run_to(step_index=-1)
