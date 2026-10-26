@@ -63,3 +63,6 @@ Thumbs.db
 !/SECURITY.md
 !benchmark/detection/results.md
 !benchmark/fidelity/results.md
+
+# Resumable scoring cache for the optional drift judge (one file per model)
+benchmark/detection/.drift-cache-*.json

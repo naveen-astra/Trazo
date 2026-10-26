@@ -47,6 +47,7 @@ from trazo_server.detectors.base import (  # noqa: E402
 from trazo_server.detectors.budget import BudgetDetector  # noqa: E402
 from trazo_server.detectors.loop import LoopDetector  # noqa: E402
 from trazo_server.detectors.thrash import ThrashDetector  # noqa: E402
+from trazo_server.drift import DriftDetector  # noqa: E402
 from trazo_server.events import Event  # noqa: E402
 
 
@@ -65,7 +66,11 @@ class TrazoDetectorAdapter:
     from, not a separate offline-only reimplementation."""
 
     def __init__(
-        self, detectors: list[Detector] | None = None, *, run_id: str = "bench"
+        self,
+        detectors: list[Detector] | None = None,
+        *,
+        run_id: str = "bench",
+        drift: DriftDetector | None = None,
     ) -> None:
         self._detectors = (
             detectors
@@ -73,16 +78,25 @@ class TrazoDetectorAdapter:
             else [LoopDetector(), BudgetDetector(), ThrashDetector()]
         )
         self._run_id = run_id
+        # Opt-in: asks a model, so it is scored apart from the rule
+        # detectors (benchmark/detection/drift_runner.py).
+        self._drift = drift
 
     def detect(self, events: list[Event]) -> list[Detection]:
         window = RunWindow(self._run_id)
         found: list[Detection] = []
+        if self._drift is not None:
+            self._drift.forget(self._run_id)
         for event in sorted(events, key=lambda e: e.seq):
             window.record(event)
             for detector in self._detectors:
                 detection = detector.on_event(event, window)
                 if detection is not None:
                     found.append(detection)
+            if self._drift is not None:
+                drift_detection = self._drift.evaluate(event, window)
+                if drift_detection is not None:
+                    found.append(drift_detection)
         return found
 
 
