@@ -15,7 +15,7 @@ from trazo.decorators import (
 )
 from trazo.errors import PolicyDenied
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 
 def init(
