@@ -54,6 +54,15 @@ services:
       TRAZO_DATABASE_URL: postgresql://${POSTGRES_USER:-trazo}:${POSTGRES_PASSWORD:-trazo}@postgres:5432/${POSTGRES_DB:-trazo}
       TRAZO_REDIS_URL: redis://redis:6379/0
       TRAZO_OPA_URL: http://opa:8181
+      # Optional goal-drift judge, off by default (README, "Failure
+      # detection"). The model is yours to choose: there is no default.
+      TRAZO_FEATURE_DRIFT_DETECTOR: ${TRAZO_FEATURE_DRIFT_DETECTOR:-false}
+      TRAZO_DRIFT_BASE_URL: ${TRAZO_DRIFT_BASE_URL:-http://host.docker.internal:11434/v1}
+      TRAZO_DRIFT_MODEL: ${TRAZO_DRIFT_MODEL:-}
+    # Lets the judge reach an Ollama running on the host (Docker Desktop
+    # already provides the name; Linux needs this line).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${CONTROL_PLANE_PORT:-8420}:8420"
     volumes:

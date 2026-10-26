@@ -29,6 +29,7 @@ from pydantic import ValidationError
 
 from trazo_server.bus.protocol import BUS_BLOCK_MS, BusMessage, EventBus
 from trazo_server.detectors.base import Detection, Detector, RunWindow
+from trazo_server.drift import DriftDetector
 from trazo_server.events import Event, EventAdapter
 from trazo_server.store.rows import EventRow, RunRow
 from trazo_server.store.trace_store import TraceStore
@@ -91,6 +92,7 @@ class DetectorWorker:
         consumer_name: str,
         on_detection: OnDetection = _log_detection,
         window_rebuild_size: int = 200,
+        drift: DriftDetector | None = None,
     ) -> None:
         self._bus = bus
         self._trace_store = trace_store
@@ -98,6 +100,7 @@ class DetectorWorker:
         self._consumer_name = consumer_name
         self._on_detection = on_detection
         self._window_rebuild_size = window_rebuild_size
+        self._drift = drift
         self._windows: dict[str, RunWindow] = {}
 
     async def ensure_group(self) -> None:
@@ -230,5 +233,14 @@ class DetectorWorker:
             if detection is not None:
                 await self._on_detection(event, detection)
 
+        if self._drift is not None:
+            # A model call, run off the event loop; it fails open (a judge
+            # that is down yields no detection, never an exception).
+            detection = await self._drift.check(event, window)
+            if detection is not None:
+                await self._on_detection(event, detection)
+
         if event.kind == "run.finished":
             self._windows.pop(event.run_id, None)
+            if self._drift is not None:
+                self._drift.forget(event.run_id)

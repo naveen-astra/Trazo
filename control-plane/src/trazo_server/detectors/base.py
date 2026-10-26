@@ -29,6 +29,23 @@ _BOUNDARY_KINDS = frozenset(
 _DEFAULT_WINDOW_SIZE = 50
 
 
+# How much of one model prompt or reply a window keeps for the drift judge.
+_EXCERPT_HEAD_CHARS = 300
+_EXCERPT_TAIL_CHARS = 500
+_RECENT_EXCHANGES = 6
+
+
+def excerpt(value: Any) -> str:
+    """A prompt or reply cut to a size a judge can read: the start (who the
+    agent is, what it was asked) and the end (the current task, the latest
+    turn), with the middle elided."""
+    text = value if isinstance(value, str) else json.dumps(value, default=str)
+    limit = _EXCERPT_HEAD_CHARS + _EXCERPT_TAIL_CHARS
+    if len(text) <= limit:
+        return text
+    return f"{text[:_EXCERPT_HEAD_CHARS]} [...] {text[-_EXCERPT_TAIL_CHARS:]}"
+
+
 def result_key(result: Any) -> str:
     """A stable digest of a tool call's result, so a window can tell
     whether calls are returning anything new without holding the results
@@ -48,6 +65,15 @@ class Detection:
     evidence_event_ids: list[str]
     details: dict[str, Any]
     window: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class LlmExchange:
+    """One model call, as much of it as the drift judge needs."""
+
+    event_id: str
+    prompt: str
+    response: str
 
 
 @dataclass(frozen=True)
@@ -78,6 +104,11 @@ class RunWindow:
         self.recent_tool_names: deque[str] = deque(maxlen=max_size)
         self.recent_tool_fingerprints: deque[str | None] = deque(maxlen=max_size)
         self.recent_tool_result_keys: deque[str] = deque(maxlen=max_size)
+        # What the run was asked to do, and its latest model exchanges: the
+        # inputs to goal-drift judging (trazo_server.drift).
+        self.goal: Any = None
+        self.first_exchange: LlmExchange | None = None
+        self.recent_llm_exchanges: deque[LlmExchange] = deque(maxlen=_RECENT_EXCHANGES)
         self.cost_usd_total = 0.0
         self.tokens_total = 0
         self.step_count = 0
@@ -106,7 +137,18 @@ class RunWindow:
                     seq=event.seq,
                 )
             )
+        if event.kind == "run.started":
+            self.goal = event.payload.entry_input
+
         if event.kind == "llm.call":
+            exchange = LlmExchange(
+                event_id=event.event_id,
+                prompt=excerpt(event.payload.messages_in),
+                response=excerpt(event.payload.response),
+            )
+            self.recent_llm_exchanges.append(exchange)
+            if self.first_exchange is None:
+                self.first_exchange = exchange
             self.cost_usd_total += event.payload.cost_usd
             self.tokens_total += event.payload.tokens_in + event.payload.tokens_out
             self.recent_llm_costs.append(event.payload.cost_usd)

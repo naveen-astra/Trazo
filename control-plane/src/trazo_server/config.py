@@ -69,6 +69,22 @@ class Settings(BaseSettings):
     # background-task shape as the store worker above. On by default;
     # tests without a real Redis/Postgres to poll set this False.
     feature_detector_worker: bool = True
+    # Goal-drift detection (trazo_server.drift). Off by default: it needs a
+    # model to judge with, and the judge's accuracy is the model's. Any
+    # OpenAI-compatible endpoint works; a local Ollama costs nothing. There
+    # is deliberately no default model: the 3B model tried first could not
+    # tell clean runs from drifted ones (see
+    # benchmark/detection/results-drift-qwen2.5-3b.md), so the operator has
+    # to choose one and check it. In a container, "localhost" is the
+    # container itself -- point drift_base_url at the host, e.g.
+    # http://host.docker.internal:11434/v1.
+    feature_drift_detector: bool = False
+    drift_base_url: str = "http://localhost:11434/v1"
+    drift_model: str = ""
+    drift_api_key: str | None = None
+    drift_every_n_llm_calls: int = 2
+    drift_confirmations: int = 2
+    drift_timeout_seconds: float = 30.0
     # structlog output format (ARCHITECTURE.md §8): JSON in prod/containers,
     # human-readable console renderer for local dev.
     log_json: bool = True

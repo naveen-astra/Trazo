@@ -36,6 +36,7 @@ from trazo_server.detectors.base import Detector
 from trazo_server.detectors.budget import BudgetDetector
 from trazo_server.detectors.loop import LoopDetector
 from trazo_server.detectors.thrash import ThrashDetector
+from trazo_server.drift import build_drift_detector
 from trazo_server.logging import configure_logging
 from trazo_server.middleware import RequestIDMiddleware
 from trazo_server.policy.opa_client import HttpOpaClient
@@ -104,10 +105,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 BudgetDetector(),
                 ThrashDetector(),
             ]
+            drift_detector = build_drift_detector(settings)
             detector_worker = DetectorWorker(
                 bus=event_bus,
                 trace_store=trace_store,
                 detectors=detectors,
+                drift=drift_detector,
                 consumer_name=f"detector-worker-{socket.gethostname()}-{id(app)}",
                 on_detection=PersistDetection(trace_store=trace_store, bus=event_bus),
             )
