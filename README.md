@@ -115,7 +115,8 @@ every non-deterministic result from the recorded trace. See
 against known degenerate patterns: tool-call loops, budget runaways, and
 tool-call thrashing. Detections are raised while the run is still executing, not
 after the fact. Measured precision and recall are published in
-[Benchmarks](#benchmarks).
+[Benchmarks](#benchmarks). Goal drift is an opt-in, model-judged extra whose
+status is stated under [Failure detection](#failure-detection).
 
 **Policy and governance.** Guardrails evaluated by Open Policy Agent immediately
 *before* a governed action executes, with a 150 ms latency budget and explicit
@@ -508,9 +509,50 @@ Each detection carries the event IDs that triggered it, so the dashboard links
 straight to the evidence rather than asserting a conclusion. Measured accuracy is
 in [Benchmarks](#benchmarks).
 
-Goal drift — semantically wandering from the original task — is deliberately not
-covered by a rule detector. It is a stretch item behind the same detector
-interface, because a benchmark should not depend on a small model's judgment.
+### Goal drift (opt-in, judge model required)
+
+Goal drift — an agent wandering from what it was asked to do, or being steered
+off it mid-run — is not expressible as a rule, so it is judged by a language
+model instead, and it is off by default. When enabled, every second model call
+a judge reads the run's stated goal and its latest four model exchanges. A
+detection is raised after two consecutive off-task verdicts, at most once per
+run, so one noisy answer cannot raise an alarm. A crew started without a stated
+goal is judged on whether each reply answers the task in its own prompt, since
+a multi-agent pipeline legitimately changes task as work moves between agents.
+A judge that is unreachable, slow or unparseable counts as no verdict: drift
+detection fails open and never blocks a run.
+
+Any OpenAI-compatible endpoint can be the judge; a local Ollama costs nothing.
+There is deliberately **no default model**, because the judge's accuracy is the
+model's:
+
+```bash
+TRAZO_FEATURE_DRIFT_DETECTOR=true \
+TRAZO_DRIFT_BASE_URL=http://host.docker.internal:11434/v1 \
+TRAZO_DRIFT_MODEL=<model you have checked> \
+    docker compose --project-name trazo --env-file deploy/.env \
+    -f deploy/docker-compose.yml up -d control-plane
+```
+
+Score a candidate model against the labeled corpus before relying on it. The
+first 8 runs of each group are the development set, so skip them:
+
+```bash
+uv run --project sdk python benchmark/detection/drift_runner.py \
+    --model <model> --skip-first 8
+```
+
+**Status, stated plainly.** The detector, its wiring and its scorer are built
+and tested, and the whole path (event stream, worker, judge, stored detection,
+API) has been run end to end with a scripted stand-in judge. No real judge model
+has passed the benchmark yet. The one tried, Qwen2.5 3B served locally, raised
+drift on every run in the held-out corpus, clean runs included (100% false
+positive rate, 20% precision), through three rounds of prompt changes on the
+development set; its report is
+[results-drift-qwen2.5-3b.md](benchmark/detection/results-drift-qwen2.5-3b.md).
+A stronger model (Qwen2.5 7B is about 4.7 GB) has not been scored. The corpus's
+drift runs also come from scripted agents, so a model that passes still needs
+trying on your own agents.
 
 ## Configuration reference
 
@@ -552,6 +594,12 @@ you switch to `enforce`.
 | `TRAZO_LOG_JSON` | `true` | JSON logs in containers, human-readable when `false` |
 | `TRAZO_FEATURE_STORE_WORKER` | `true` | Run the persistence worker in-process |
 | `TRAZO_FEATURE_DETECTOR_WORKER` | `true` | Run the detection worker in-process |
+| `TRAZO_FEATURE_DRIFT_DETECTOR` | `false` | Judge goal drift with a model (needs `TRAZO_DRIFT_MODEL`) |
+| `TRAZO_DRIFT_MODEL` | none | Judge model name; required when drift detection is on |
+| `TRAZO_DRIFT_BASE_URL` | `http://localhost:11434/v1` | OpenAI-compatible judge endpoint (from a container, the host's Ollama is `http://host.docker.internal:11434/v1`) |
+| `TRAZO_DRIFT_API_KEY` | none | Bearer key for the judge endpoint, if it needs one |
+| `TRAZO_DRIFT_EVERY_N_LLM_CALLS` / `TRAZO_DRIFT_CONFIRMATIONS` | `2` / `2` | Judge every Nth model call; consecutive off-task verdicts needed to raise a detection |
+| `TRAZO_DRIFT_TIMEOUT_SECONDS` | `30` | Per-judgment time limit |
 
 In production, the control plane refuses to start if the API key, dashboard
 password, session secret, or database password is missing, too short, or a
@@ -809,7 +857,7 @@ suites, working end to end against a live stack.
 | CrewAI adapter | Complete: tracing, plus inline policy enforcement on the crew's agent and task tools |
 | Ingestion pipeline | Complete: HTTP to Redis Streams to PostgreSQL |
 | Replay engine | Complete: record-and-substitute, divergence detection, fidelity harness |
-| Failure detection | Complete: three rule-based detectors, scored against a 300-run labeled corpus |
+| Failure detection | Complete: three rule-based detectors, scored against a 300-run labeled corpus. Goal drift: opt-in judge built and tested, no judge model validated yet |
 | Policy engine | Complete: synchronous inline enforcement via OPA |
 | Dashboard | Complete: timeline, flow graph, memory inspector, replay stepper, incidents, policy log, settings |
 | TrazoBench | Complete: adapter interface, corpus manifests, baseline comparison |
@@ -830,7 +878,10 @@ Known limitations, stated explicitly:
   run when varied calls keep returning the identical result, so a tool that
   fails differently each time, or an agent that thrashes through a tool whose
   results vary, is not caught.
-- Goal-drift detection is not implemented.
+- Goal-drift detection is built but unproven: it needs a judge model, and the
+  one tried (Qwen2.5 3B) flagged every run, so no model is recommended yet.
+  While it runs it waits on the judge, so a slow judge delays other detectors on
+  the same worker.
 - The demo agents use deterministic scripted model responses by default so the
   demo costs nothing and reproduces exactly. Pass `--live` for real model
   calls: against OpenAI with an API key, or free against a local model served by

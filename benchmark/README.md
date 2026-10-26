@@ -53,6 +53,13 @@ results, skipped = score_corpus(
 Or run `benchmark/detection/runner.py` directly for Trazo's own numbers
 plus the random-flagger baseline (see below).
 
+The opt-in goal-drift judge is scored apart, by
+`benchmark/detection/drift_runner.py --model <model> --skip-first 8`, because
+its numbers belong to a named model and may vary between runs, where the rule
+detectors' reproduce exactly. One report is written per model
+(`detection/results-drift-<model>.md`); the committed one shows Qwen2.5 3B
+flagging every run, clean ones included.
+
 **Replay (RQ1).** Implement `ReplayAdapter` and register it in
 `benchmark/fidelity/run_harness.py`'s `_DEMO_ADAPTERS` under your own
 project name.
